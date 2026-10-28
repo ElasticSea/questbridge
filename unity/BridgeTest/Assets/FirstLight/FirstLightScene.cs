@@ -9,15 +9,13 @@ namespace ElasticSea.QuestLink.BridgeTest
     // first head pose the rig is recentred so the instructions are straight ahead and, if the
     // Link origin is at eye level, the floor drops below the head. Tracked hands show as joint
     // spheres (QuestLinkHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
-    // the hand instructions instead of the audio test. "-sequence" runs one guided pass once
-    // streaming starts: audio (beeps, mic record, playback), then hands, then DONE.
+    // the hand instructions instead of the audio test. "-sequence" runs BenchSequence (guided
+    // volume, audio, hands and yes/no questions on the board), "-sequence-audio" its audio part
+    // plus a handover to the next host; "-mock" uses the mock backend.
     public class FirstLightScene : MonoBehaviour
     {
         const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
         const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nHold up both hands, open and\nclose them and pinch:\nspheres follow your fingers.\n\nThen take the headset off.";
-        const string SequenceAudio = "Step 1 of 2: AUDIO\nListen, then speak\nwhen the board below says so.";
-        const string SequenceDone = "DONE\n\nTake the headset off.";
-        const float SequenceLeadIn = 4f, HandsTime = 30f;
         const string AudioInstructions = "Look around:\nobjects should stay still, in 3D.\n\nAudio test below.\nThen take the headset off.";
 
         public QuestLinkRig.BackendMode backend = QuestLinkRig.BackendMode.Native;
@@ -36,16 +34,17 @@ namespace ElasticSea.QuestLink.BridgeTest
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
-        bool sequence, sequenceDone;
+        bool sequence, audioOnly;
         AudioBench bench;
+        QuestLinkAudio output;
         TextMesh board;
-        float sequenceStart = -1f, handsStart = -1f;
-        int handsFrames, leftFrames, rightFrames, pinchFrames;
 
         void Awake()
         {
-            // Stream at the headset's rate even while the Editor is not focused
+            // Stream at the headset's rate even while the Editor is not focused; never hold the cursor
             Application.runInBackground = true;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 72;
             // Player builds: "-seconds N" quits after N s so the bench gets USB back
@@ -58,9 +57,14 @@ namespace ElasticSea.QuestLink.BridgeTest
             // "-hands": hand-tracking bench (hand instructions instead of the audio test)
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-hands") >= 0)
                 audioTest = false;
-            // "-sequence": audio then hands, once, with the steps on the board
+            // "-sequence": BenchSequence, once, with the steps and questions on the board
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence") >= 0)
                 sequence = audioTest = true;
+            // "-sequence-audio": volume + audio + questions, then hand the session to the next host
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-audio") >= 0)
+                sequence = audioTest = audioOnly = true;
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
+                backend = QuestLinkRig.BackendMode.Mock;
 
             var screen = new GameObject("Screen Camera").AddComponent<Camera>();
             screen.clearFlags = CameraClearFlags.SolidColor;
@@ -82,7 +86,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             Cube(new Vector3(2.2f, 0.5f, -0.5f), 1.0f, new Color(0.8f, 0.4f, 0.85f));
             Cube(new Vector3(-2.0f, 0.35f, -1.0f), 0.7f, new Color(0.95f, 0.6f, 0.2f));
             Cube(new Vector3(0.3f, 0.2f, -2.0f), 0.4f, new Color(0.3f, 0.85f, 0.85f));
-            board = Text(sequence ? "Starting soon..." : audioTest ? AudioInstructions : Instructions, new Vector3(0f, 1.9f, 3.2f), sequence ? 1.4f : audioTest ? 1.2f : 2.3f);
+            board = Text(sequence ? "Starting soon..." : audioTest ? AudioInstructions : Instructions, new Vector3(0f, sequence ? 2.1f : 1.9f, 3.2f), sequence ? 1.7f : audioTest ? 1.2f : 2.3f);
 
             var rigObject = new GameObject("QuestLink Rig");
             rigObject.SetActive(false);
@@ -96,12 +100,22 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
             if (audioTest && rig.Head != null)
                 AudioTest();
+            if (sequence && bench != null)
+            {
+                var seq = gameObject.AddComponent<BenchSequence>();
+                seq.rig = rig;
+                seq.hands = hands;
+                seq.bench = bench;
+                seq.output = output;
+                seq.board = board;
+                seq.audioOnly = audioOnly;
+            }
         }
 
         // Listener on the head, sent to the headset; beeps and mic record/playback below the instructions
         void AudioTest()
         {
-            var output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
+            output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
             output.rig = rig;
             bench = new GameObject("Audio Bench").AddComponent<AudioBench>();
             bench.once = sequence;
@@ -126,51 +140,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             if (!recentred && hasPose)
                 Recentre(head);
             TrackState(hasPose);
-            if (sequence)
-                Sequence();
         }
-
-        // Starts on Streaming: lead-in, one AudioBench pass, the hands step, then DONE
-        void Sequence()
-        {
-            if (sequenceDone)
-                return;
-            var now = Time.realtimeSinceStartup;
-            if (sequenceStart < 0f)
-            {
-                if (rig.State != QuestLinkState.Streaming)
-                    return;
-                sequenceStart = now;
-                board.text = SequenceAudio;
-                Debug.Log("[Sequence] streaming, audio step");
-                Invoke(nameof(BeginAudio), SequenceLeadIn);
-            }
-            if (bench != null && !bench.Done)
-                return;
-            if (handsStart < 0f)
-            {
-                handsStart = now;
-                Debug.Log("[Sequence] hands step");
-            }
-            var left = HandsTime - (now - handsStart);
-            if (left <= 0f)
-            {
-                sequenceDone = true;
-                board.text = SequenceDone;
-                Debug.Log($"[Sequence] done: {handsFrames} frames, left tracked {leftFrames}, right tracked {rightFrames}, pinch {pinchFrames}");
-                return;
-            }
-            handsFrames++;
-            if (hands.Left.tracked) leftFrames++;
-            if (hands.Right.tracked) rightFrames++;
-            var pinch = Mathf.Max(hands.Left.tracked ? hands.Left.Pinch(QuestLinkFinger.Index) : 0f,
-                                  hands.Right.tracked ? hands.Right.Pinch(QuestLinkFinger.Index) : 0f);
-            if (pinch > 0.8f) pinchFrames++;
-            board.text = $"Step 2 of 2: HANDS ({Mathf.CeilToInt(left)})\nPut the controllers down.\nHands up, open, close, pinch:\nspheres follow your fingers.\n" +
-                         $"left {(hands.Left.tracked ? "OK" : "--")}   right {(hands.Right.tracked ? "OK" : "--")}";
-        }
-
-        void BeginAudio() => bench.Begin();
 
         // Log every state change; poses while still Connecting mean the headset kept an old
         // session (our runtime waits for a fresh HELLO), which only Quit Link + Launch fixes.
@@ -235,6 +205,9 @@ namespace ElasticSea.QuestLink.BridgeTest
         void Quit()
         {
             Debug.Log($"[QuestLink] quit: {(rig != null ? rig.State.ToString() : "no rig")}, frame {(rig != null ? rig.FrameIndex : 0)}");
+            // Leaves the headset's session up and logs the resume numbers for an attaching host
+            if (rig != null && rig.Backend is NativeQuestLink)
+                NativeQuestLink.Shutdown();
             Application.Quit();
         }
 

@@ -20,7 +20,7 @@ namespace ElasticSea.QuestLink.BridgeTest
 
         public bool Done { get; private set; }
 
-        AudioSource source;
+        AudioSource source, tone;
         AudioClip beep;
         float[] recording = new float[Rate * 4];
         int recorded;
@@ -34,11 +34,26 @@ namespace ElasticSea.QuestLink.BridgeTest
             source = gameObject.AddComponent<AudioSource>();
             source.spatialBlend = 0f;
             beep = Beep();
+            tone = gameObject.AddComponent<AudioSource>();
+            tone.spatialBlend = 0f;
+            tone.loop = true;
+            tone.clip = ToneLoop();
             if (!once)
                 Begin();
         }
 
         public void Begin() => start = Time.realtimeSinceStartup;
+
+        public void PlayBeep() => source.PlayOneShot(beep);
+
+        // Looping 660 Hz pulse (0.4 s on, 0.6 s off) for the volume step
+        public void Tone(bool on)
+        {
+            if (on && !tone.isPlaying)
+                tone.Play();
+            else if (!on)
+                tone.Stop();
+        }
 
         void Update()
         {
@@ -129,22 +144,36 @@ namespace ElasticSea.QuestLink.BridgeTest
             source.PlayOneShot(clip);
         }
 
-        // 880 Hz, 150 ms, raised-cosine envelope, quiet
+        // 880 Hz, 300 ms, raised-cosine envelope, -6 dBFS peak
         static AudioClip Beep()
         {
-            var n = Rate * 15 / 100;
+            var n = Rate * 30 / 100;
             var s = new float[n];
             for (var i = 0; i < n; i++)
             {
                 var env = 0.5f - 0.5f * Mathf.Cos(2f * Mathf.PI * i / n);
-                s[i] = 0.25f * env * Mathf.Sin(2f * Mathf.PI * 880f * i / Rate);
+                s[i] = 0.5f * env * Mathf.Sin(2f * Mathf.PI * 880f * i / Rate);
             }
             var clip = AudioClip.Create("Beep", n, 1, Rate, false);
             clip.SetData(s, 0);
             return clip;
         }
 
-        static string Bar(float level)
+        static AudioClip ToneLoop()
+        {
+            var s = new float[Rate];
+            var n = Rate * 4 / 10;
+            for (var i = 0; i < n; i++)
+            {
+                var env = 0.5f - 0.5f * Mathf.Cos(2f * Mathf.PI * i / n);
+                s[i] = 0.4f * env * Mathf.Sin(2f * Mathf.PI * 660f * i / Rate);
+            }
+            var clip = AudioClip.Create("Volume tone", Rate, 1, Rate, false);
+            clip.SetData(s, 0);
+            return clip;
+        }
+
+        public static string Bar(float level)
         {
             // ~-60 dBFS .. 0 dBFS over 20 cells
             var db = 20f * Mathf.Log10(Mathf.Max(level, 1e-6f));
