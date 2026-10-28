@@ -7,6 +7,8 @@ its device-interface path, so adb (and live logcat) can keep running.
 import ctypes
 import ctypes.wintypes as wt
 import struct
+import sys
+import time
 
 XRSP_INTERFACE_GUID = "{f72fe0d4-cbcb-407d-8814-9ed673d0dd6b}"
 EP_OUT, EP_IN = 0x01, 0x81
@@ -18,7 +20,9 @@ FILE_SHARE_READ, FILE_SHARE_WRITE = 0x1, 0x2
 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED = 3, 0x80, 0x40000000
 INVALID_HANDLE = wt.HANDLE(-1).value
 PIPE_TRANSFER_TIMEOUT = 0x03
-ERROR_SEM_TIMEOUT = 121
+ERROR_SEM_TIMEOUT, ERROR_OPERATION_ABORTED, ERROR_IO_PENDING = 121, 995, 997
+WAIT_OBJECT_0, WAIT_TIMEOUT = 0, 0x102
+WAIT_SLICE_MS = 100  # wait in slices so Ctrl+C stays responsive
 
 
 class GUID(ctypes.Structure):
@@ -37,6 +41,11 @@ class SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
                 ("Reserved", ctypes.c_void_p)]
 
 
+class OVERLAPPED(ctypes.Structure):
+    _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p), ("Offset", wt.DWORD),
+                ("OffsetHigh", wt.DWORD), ("hEvent", wt.HANDLE)]
+
+
 setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 winusb = ctypes.WinDLL("winusb", use_last_error=True)
@@ -52,6 +61,11 @@ setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wt.HANDLE]
 kernel32.CreateFileW.restype = wt.HANDLE
 kernel32.CreateFileW.argtypes = [wt.LPCWSTR, wt.DWORD, wt.DWORD, ctypes.c_void_p, wt.DWORD, wt.DWORD, wt.HANDLE]
 kernel32.CloseHandle.argtypes = [wt.HANDLE]
+kernel32.CreateEventW.restype = wt.HANDLE
+kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.BOOL, wt.LPCWSTR]
+kernel32.ResetEvent.argtypes = [wt.HANDLE]
+kernel32.WaitForSingleObject.restype = wt.DWORD
+kernel32.WaitForSingleObject.argtypes = [wt.HANDLE, wt.DWORD]
 winusb.WinUsb_Initialize.argtypes = [wt.HANDLE, ctypes.POINTER(ctypes.c_void_p)]
 winusb.WinUsb_Free.argtypes = [ctypes.c_void_p]
 winusb.WinUsb_SetPipePolicy.argtypes = [ctypes.c_void_p, ctypes.c_ubyte, wt.ULONG, wt.ULONG, ctypes.c_void_p]
@@ -59,6 +73,9 @@ winusb.WinUsb_WritePipe.argtypes = [ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_vo
                                     ctypes.POINTER(wt.ULONG), ctypes.c_void_p]
 winusb.WinUsb_ReadPipe.argtypes = winusb.WinUsb_WritePipe.argtypes
 winusb.WinUsb_ResetPipe.argtypes = [ctypes.c_void_p, ctypes.c_ubyte]
+winusb.WinUsb_AbortPipe.argtypes = [ctypes.c_void_p, ctypes.c_ubyte]
+winusb.WinUsb_GetOverlappedResult.argtypes = [ctypes.c_void_p, ctypes.POINTER(OVERLAPPED), ctypes.POINTER(wt.ULONG),
+                                              wt.BOOL]
 
 
 def _check(ok, what):
@@ -93,7 +110,12 @@ def find_xrsp_paths():
 
 
 class WinUsbPipe:
-    """Raw bulk pipe pair on the XRSP interface."""
+    """Raw bulk pipe pair on the XRSP interface.
+
+    All transfers are overlapped: we wait on an event with our own deadline and
+    abort the pipe on timeout, so a call never blocks past timeout_ms and any
+    bytes that arrived before the abort are kept.
+    """
 
     def __init__(self):
         paths = find_xrsp_paths()
@@ -106,35 +128,66 @@ class WinUsbPipe:
             err = ctypes.get_last_error()
             raise OSError(err, f"cannot open XRSP interface (error {err}; is OVRService still running?)")
         self.handle = ctypes.c_void_p()
-        _check(winusb.WinUsb_Initialize(self.file, ctypes.byref(self.handle)), "WinUsb_Initialize")
-        self._timeout_ms = None
+        if not winusb.WinUsb_Initialize(self.file, ctypes.byref(self.handle)):
+            err = ctypes.get_last_error()
+            kernel32.CloseHandle(self.file)
+            raise OSError(err, f"WinUsb_Initialize failed (error {err})")
+        self.events = {ep: kernel32.CreateEventW(None, True, False, None) for ep in (EP_OUT, EP_IN)}
+        for ep in (EP_OUT, EP_IN):
+            # No driver-side timeout; _transfer enforces the deadline itself
+            v = wt.ULONG(0)
+            _check(winusb.WinUsb_SetPipePolicy(self.handle, ep, PIPE_TRANSFER_TIMEOUT, 4, ctypes.byref(v)),
+                   "WinUsb_SetPipePolicy")
 
     def close(self):
+        for ep in (EP_OUT, EP_IN):
+            winusb.WinUsb_AbortPipe(self.handle, ep)
         winusb.WinUsb_Free(self.handle)
         kernel32.CloseHandle(self.file)
+        for ev in self.events.values():
+            kernel32.CloseHandle(ev)
 
-    def _set_timeout(self, ep, ms):
-        v = wt.ULONG(ms)
-        _check(winusb.WinUsb_SetPipePolicy(self.handle, ep, PIPE_TRANSFER_TIMEOUT, 4, ctypes.byref(v)),
-               "WinUsb_SetPipePolicy")
+    def _transfer(self, call, ep, buf, size, timeout_ms):
+        """Run one overlapped transfer; return (bytes done, timed_out)."""
+        ov = OVERLAPPED(hEvent=self.events[ep])
+        kernel32.ResetEvent(ov.hEvent)
+        done = wt.ULONG()
+        if not call(self.handle, ep, buf, size, None, ctypes.byref(ov)):
+            err = ctypes.get_last_error()
+            if err != ERROR_IO_PENDING:
+                raise OSError(err, f"{call.__name__} failed (error {err})")
+        end = time.monotonic() + timeout_ms / 1000
+        timed_out = False
+        try:
+            while True:
+                left = max(0, int((end - time.monotonic()) * 1000))
+                r = kernel32.WaitForSingleObject(ov.hEvent, min(left, WAIT_SLICE_MS))
+                if r == WAIT_OBJECT_0:
+                    break
+                if r != WAIT_TIMEOUT:
+                    raise OSError(ctypes.get_last_error(), "WaitForSingleObject failed")
+                if left == 0:
+                    timed_out = True
+                    break
+        finally:
+            if timed_out or sys.exc_info()[0] is not None:
+                # Cancel, then wait for the cancelled transfer so buf is no longer in use
+                winusb.WinUsb_AbortPipe(self.handle, ep)
+            ok = winusb.WinUsb_GetOverlappedResult(self.handle, ctypes.byref(ov), ctypes.byref(done), True)
+            err = ctypes.get_last_error()
+        if not ok and err not in (ERROR_OPERATION_ABORTED, ERROR_SEM_TIMEOUT):
+            raise OSError(err, f"{call.__name__} failed (error {err})")
+        return done.value, timed_out or not ok
 
     def write(self, data, timeout_ms=1000):
-        self._set_timeout(EP_OUT, timeout_ms)
         buf = ctypes.create_string_buffer(bytes(data), len(data))
-        done = wt.ULONG()
-        _check(winusb.WinUsb_WritePipe(self.handle, EP_OUT, buf, len(data), ctypes.byref(done), None),
-               "WinUsb_WritePipe")
-        return done.value
+        done, timed_out = self._transfer(winusb.WinUsb_WritePipe, EP_OUT, buf, len(data), timeout_ms)
+        if timed_out:
+            raise OSError(ERROR_SEM_TIMEOUT, f"WinUsb_WritePipe timed out after {done}/{len(data)} bytes")
+        return done
 
     def read(self, size=READ_SIZE, timeout_ms=1000):
-        """Return bytes read, or None on timeout."""
-        if self._timeout_ms != timeout_ms:
-            self._set_timeout(EP_IN, timeout_ms)
-            self._timeout_ms = timeout_ms
+        """Return bytes read (possibly partial on timeout), or None if nothing arrived in time."""
         buf = ctypes.create_string_buffer(size)
-        done = wt.ULONG()
-        if not winusb.WinUsb_ReadPipe(self.handle, EP_IN, buf, size, ctypes.byref(done), None):
-            if ctypes.get_last_error() == ERROR_SEM_TIMEOUT:
-                return None
-            _check(False, "WinUsb_ReadPipe")
-        return buf.raw[:done.value]
+        done, _ = self._transfer(winusb.WinUsb_ReadPipe, EP_IN, buf, size, timeout_ms)
+        return buf.raw[:done] if done else None
