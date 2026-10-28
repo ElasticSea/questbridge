@@ -18,7 +18,7 @@ QUEST_VID = 0x2833
 QUEST_PIDS = (0x5010, 0x5011, 0x5012, 0x5013, 0x5017, 0x5018, 0x5019, 0x501A)
 XRSP_INTERFACE = 0
 EP_OUT, EP_IN = 0x01, 0x81
-READ_SIZE = 64 * 1024
+READ_SIZE = 1024  # Quest pads transfers to 1 KiB and sends no short packets; larger reads stall and lose data on timeout
 
 
 class LibusbPipe:

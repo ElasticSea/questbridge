@@ -10,7 +10,7 @@ import struct
 
 XRSP_INTERFACE_GUID = "{f72fe0d4-cbcb-407d-8814-9ed673d0dd6b}"
 EP_OUT, EP_IN = 0x01, 0x81
-READ_SIZE = 64 * 1024
+READ_SIZE = 1024  # Quest pads transfers to 1 KiB and sends no short packets; larger reads stall and lose data on timeout
 
 DIGCF_PRESENT, DIGCF_DEVICEINTERFACE = 0x2, 0x10
 GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
