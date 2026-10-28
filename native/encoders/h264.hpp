@@ -45,6 +45,10 @@ bool set_fixed_frame_rate(Bytes& sps_nal);
 // max_num_ref_frames, so the decoder outputs each picture at once. False if it already has VUI.
 bool add_vui(Bytes& sps_nal, int fps);
 
+// Baseline SPS -> Constrained Baseline (constraint_set0/1, what Meta sends) for encoders that
+// write plain Baseline; they use no FMO/ASO/redundant slices. False if not profile 66.
+bool set_constrained_baseline(Bytes& sps_nal);
+
 // The PPS fields a slice header depends on (7.3.2.2), single slice group only.
 struct Pps {
     int pic_init_qp = 26;
@@ -52,6 +56,7 @@ struct Pps {
     bool bottom_field_pic_order = false;
     bool weighted_pred = false;
     bool redundant_pic_cnt = false;
+    bool deblocking_control = false;  // deblocking_filter_control_present_flag
 };
 
 bool parse_pps(std::span<const uint8_t> nal, Pps& out);
@@ -70,6 +75,7 @@ struct SliceHeader {
     int first_mb = 0;
     int slice_type = 0;  // 0 P, 1 B, 2 I (mod 5)
     int qp = -1;         // SliceQP_Y; -1 without SPS/PPS or for headers not handled (B, weighted pred)
+    int deblock_idc = -1;  // disable_deblocking_filter_idc (0 = filter across slice edges); -1 = not parsed
 };
 
 // With sps and pps also reads the slice QP.

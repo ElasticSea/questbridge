@@ -1,11 +1,74 @@
 # Encoders
 
-`encoder.hpp` is the platform-neutral H.264 interface: CPU frame (NV12/BGRA) or GPU frame
-(D3D11 texture; later CVPixelBuffer) in, csd (SPS+PPS) plus slice NALs with their index and
+`encoder.hpp` is the platform-neutral H.264 interface: CPU frame (NV12/BGRA/RGBA) or GPU frame
+(D3D11 texture, CVPixelBuffer) in, csd (SPS+PPS) plus slice NALs with their index and
 `first_mb_in_slice` out. `h264.*` holds the shared Annex-B/SPS/slice-header parsing.
 
-- `mf/`: Windows Media Foundation. Uses the GPU's hardware MFT (async), software MFT as fallback.
+- `select.*`: which backend and layout to use on this machine (platform-neutral, unit-tested
+  with fakes in `native/tests/test_encoder_select.cpp`). `strips.*`: `Layout::Strips` out of any
+  one-picture encoder (one per strip, encoded in parallel).
+- `mf/`: Windows Media Foundation, one specific MFT per encoder (hardware by vendor, or the
+  Microsoft software MFT). `d3d11_input.*`: texture split into strips / zero-copy CPU read back.
+- `openh264/`: Cisco OpenH264 2.7.0, the software fallback (Windows). Loaded at run time.
+- `create_windows.cpp`: the Windows `create_encoder`.
 - `vt/`: macOS VideoToolbox. `Layout::Strips`: one session per 4096x448 strip, each its own stream.
+
+## Backend selection (Windows)
+
+`create_encoder` lists the H.264 MFTs (hardware first, vendor from
+`MFT_ENUM_HARDWARE_VENDOR_ID_Attribute`) plus OpenH264 if its DLL loads, and tries them in this
+order, each with its vendor's settings and layouts:
+
+| Backend (`--backend`, `QL_ENCODER`) | Layouts tried | Settings | Status |
+|---|---|---|---|
+| `mf-nvidia` (`nvidia`) | slices, strips | defaults as benched | slices bench-verified in the headset; strips pass qlenc + stress |
+| `mf-amd` (`amd`) | strips, slices | QualityVsSpeed 33 | untested (no AMD GPU here) |
+| `mf-intel` (`intel`) | slices, strips | QualityVsSpeed 33 | untested (no Quick Sync encoder here) |
+| other hardware MFT | strips, slices | QualityVsSpeed 33 | untested |
+| `openh264` | strips | CAVLC, 1 ref, no scene-change/frame skip | qlenc + stress pass; not yet in the headset |
+| `mf-software` (Microsoft MFT) | strips | QualityVsSpeed 0 | rejected by the probe: 4 slices per 4096x448 strip |
+
+Hardware on the adapter of the game's D3D11 device comes first (laptops: the dGPU running the
+game, not the iGPU listed first); hardware on another adapter reads the texture back to CPU.
+All MFTs get deblocking off, CAVLC, no B frames, 1 ref, level from the picture size (6.0 for
+4096x2240, 4.2 for a 4096x448 strip), the slice cap re-encode (`AVEncVideoMinQP`), SPS marked
+Constrained Baseline (if an MFT refuses ConstrainedBase and falls back to Baseline) and VUI timing.
+
+Each attempt encodes a gray **probe frame** (forced IDR) and must pass `check_frame`: 5 slices
+(slices: equal 28-row bands, `disable_deblocking_filter_idc` != 0; strips: first_mb 0 and own
+SPS/PPS each), one NAL each, IDR, Constrained Baseline (profile 66 + constraint_set1), SPS size
+matching the config (Quest 3 4096x2240, Pro 4096x2160). Anything else is skipped with the reason
+(`Encoder::selection()`), so an encoder that ignores slice control or deblocking can't reach the
+headset. The chosen backend's first real frame is an IDR again.
+
+The runtime (`ql_submit_frame_texture`) logs `encoder: <tag>: <name>` and `encoder skipped: ...`
+on the first frame and reports the tag + name in `ql_info.encoder` (API version 4);
+`QL_ENCODER=nvidia|amd|intel|mf|mf-software|openh264|software` forces a backend.
+
+### OpenH264 (software fallback)
+
+- License: OpenH264 source is **BSD-2-Clause** (`openh264/LICENSE`; the headers in
+  `openh264/include/wels` are vendored from tag v2.7.0). x264 was not used: GPL-2, incompatible
+  with the planned Apache-2.0 release.
+- Patents: H.264 royalties are covered only for **Cisco's prebuilt binary downloaded by the end
+  user** (http://www.openh264.org/BINARY_LICENSE.txt), so the DLL is never shipped with our
+  builds. `native\encoders\openh264\fetch.ps1` downloads `openh264-2.7.0-win64.dll` from
+  ciscobinary.openh264.org, checks Cisco's SHA-256 and puts it in
+  `%LOCALAPPDATA%\QuestLink\openh264\`. Search order: `QL_OPENH264` (full path), next to
+  `questlink.dll` / `qlenc.exe`, then that folder; the version must match the headers (2.7).
+  (Store Python's child processes can't see that AppData folder, so for `slice_cap_stress.py`
+  copy the DLL next to qlenc.)
+- Layout: 5 encoders of 4096x448, one per strip, on 5 threads; rate control per strip at
+  bitrate / 5. IDRs come from our frame count, so all strips switch on the same frame.
+- Slice cap: OpenH264's rate control never goes above QP 42, and noise at QP 42 is ~1.4 MB per
+  strip. An oversized strip is re-encoded as an IDR at a fixed QP (extra encoders without rate
+  control) and **stays on that QP floor** (P frames) until slices are under a quarter of the cap
+  for half a second, then hands back to rate control with an IDR. Without the sticky floor,
+  every noise/motion frame needed a re-encode (36-41 ms/frame).
+- Speed (this PC, 5 threads): tiles 2.9 ms/frame (NV12), 5.2 ms (BGRA), 10.3 ms from a D3D11
+  texture incl. read back and the test's upload; stress patterns 7-17 ms mean. 72 Hz holds on
+  normal content; on worst-case noise/motion it drops toward ~60 fps (the runtime drops the
+  oldest frame when the encoder is behind). No size reduction needed on this CPU.
 
 ## Build and run (Windows)
 
@@ -17,7 +80,8 @@ native\encoders\build\qlenc.exe --frames 144 --name qlenc
 Writes `capture/runs/<name>.h264` and `host/replay/<name>.json` (same clip format as
 `tools/encode_pattern.py`; stream it with `XRSP_REPLAY=host/replay/<name>.json`).
 Options: `--mbps 100`, `--vbr`, `--gop 72` (1 = all intra, 0 = first frame only),
-`--input nv12|bgra|d3d11`, `--software`, `--csd every|idr` (default every, like the x264 clip).
+`--input nv12|bgra|d3d11|d3d11-rgba`, `--software`, `--csd every|idr` (default every, like the x264
+clip), `--backend` and `--layout auto|slices|strips` (see below; default auto).
 
 ## Results on the bench (RTX 5060, driver 591.59, 2026-10-28)
 
@@ -99,6 +163,8 @@ noise|motion|cuts`, gop 1 and 72, 72 frames; also in the full `tools/test_all.ps
 | VT M5 Pro, 5 x 4096x448 H.264 | 118,787 B | up to 1,465,087 B | 4–11 of 72 | cuts: 26–37 → 46–47 | 39 ms (normal 17–18) |
 | VT, HEVC 5 x 4096x448 | 119,065 B | up to 1,689,673 B | 5–11 of 72 (up to 17 encodes) | (QP not parsed) | 40 ms (normal 11–15) |
 | VT, H.264 5 x 2880x320 | 112,435 B | up to 845,521 B | 8–11 of 72 | cuts: 21–31 → 45 | 30 ms (normal 10–12) |
+| MF NVIDIA strips, 5 x 4096x448 | 96,658 B | up to 1,122,799 B | 1–4 of 72 | cuts: 21–33 → 45–50 | 27 ms (normal 7–11) |
+| OpenH264 strips, 5 x 4096x448 | 84,887 B | up to 1,744,659 B | 1 of 72 (then QP floor) | cuts: 39–41 (incl. floor frames) → 46 | 61 ms (normal 7–17) |
 
 Quality cost: only the re-encoded frame, one IDR at QP ~45–51 (blocky on detail) instead of
 dropping it, plus one extra encode pass (MF +10–20 ms, VT +8–18 ms per pass). On noise/motion

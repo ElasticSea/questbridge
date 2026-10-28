@@ -47,7 +47,8 @@ static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) 
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
 static_assert(sizeof(void*) != 8 || (sizeof(ql_frame_submit) == 64 && offsetof(ql_frame_submit, frame_index) == 56));
-static_assert(sizeof(ql_link_status) == 32 && offsetof(ql_link_status, state_since_ns) == 24);
+static_assert(sizeof(ql_link_status) == 192 && offsetof(ql_link_status, state_since_ns) == 24 &&
+              offsetof(ql_link_status, encoder) == 32);
 
 namespace {
 
@@ -239,6 +240,7 @@ private:
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
     uint64_t refits_ = 0;   // encode thread only
+    std::string encoder_name_;  // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
     // USB back within this long after an error while streaming: try to resume (0 = never)
     const int64_t resume_window_ns_ = int64_t(env_int("QL_RESUME_MS", 500)) * 1'000'000;
@@ -422,6 +424,13 @@ private:
                 continue;
             }
             idr_generation = gen;
+            if (std::string name = enc->name(); name != encoder_name_) {  // created by the first encode
+                encoder_name_ = name;
+                set_encoder_info(name);
+                stderr_log(nullptr, "info", ("encoder: " + name).c_str(), -1);
+                if (std::string skipped = enc->selection(); !skipped.empty())
+                    stderr_log(nullptr, "info", ("encoder skipped: " + skipped).c_str(), -1);
+            }
             if (out.refits)
                 stderr_log(nullptr, "info",
                            ("slice cap: frame re-encoded as IDR (" + std::to_string(++refits_) + " so far), largest slice " +
@@ -530,6 +539,9 @@ int ql_get_link_status(ql_session* session, ql_link_status* out) {
     auto& rt = Runtime::get();
     if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
     *out = rt.link();
+    std::string enc = encoder_info();
+    std::memset(out->encoder, 0, sizeof out->encoder);
+    std::strncpy(out->encoder, enc.c_str(), sizeof out->encoder - 1);
     return QL_OK;
 }
 

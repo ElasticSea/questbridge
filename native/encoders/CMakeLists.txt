@@ -7,15 +7,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
   add_compile_options(/W4 /utf-8 /permissive-)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
   add_compile_options(-Wall -Wextra)
 endif()
 
-# Encoder backends behind encoder.hpp. Windows: Media Foundation. macOS: VideoToolbox.
-add_library(questlink_encoders STATIC h264.cpp)
+# Encoder backends behind encoder.hpp. Windows: Media Foundation by GPU vendor, OpenH264 (Cisco's
+# DLL, loaded at run time; BSD-2 headers in openh264/include) as the software fallback.
+# macOS: VideoToolbox. select/strips: platform-neutral selection and strip layout.
+add_library(questlink_encoders STATIC h264.cpp select.cpp strips.cpp)
 target_include_directories(questlink_encoders PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(WIN32)
-  target_sources(questlink_encoders PRIVATE mf/mf_encoder.cpp)
+  target_sources(questlink_encoders PRIVATE create_windows.cpp mf/mf_encoder.cpp mf/d3d11_input.cpp
+    openh264/openh264_encoder.cpp)
+  target_include_directories(questlink_encoders PRIVATE openh264/include)
   target_link_libraries(questlink_encoders PUBLIC mfplat mfuuid mf d3d11 ole32 strmiids)
 elseif(APPLE)
   target_sources(questlink_encoders PRIVATE vt/vt_encoder.cpp)

@@ -69,7 +69,9 @@ CVPixelBufferPoolRef make_pool(int w, int h, OSType format) {
 
 class VtEncoder final : public Encoder {
 public:
-    explicit VtEncoder(const EncoderConfig& c) : cfg_(c) {}
+    explicit VtEncoder(const EncoderConfig& c) : cfg_(c) {
+        if (cfg_.layout == Layout::Auto) cfg_.layout = Layout::Strips;  // no slice-count control
+    }
 
     ~VtEncoder() override {
         for (auto& s : strips_) {
@@ -160,6 +162,7 @@ public:
     }
 
     std::string name() const override { return name_; }
+    Layout layout() const override { return cfg_.layout; }
     const std::string& error() const override { return error_; }
 
 private:

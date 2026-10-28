@@ -28,6 +28,7 @@ namespace ElasticSea.QuestLink
         public int connects;     // streams started or resumed
         public int disconnects;  // streams lost
         public int resumes;      // streams that continued after a USB error without a new handshake
+        public string encoder;   // video encoder backend ("mf-nvidia: ...", "openh264: ..."); empty until the first frame
 
         public bool Reconnecting => disconnects > 0 && state != QuestLinkLinkState.Streaming;
     }

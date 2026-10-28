@@ -43,7 +43,14 @@ public:
     // Free a captured slot without encoding it.
     virtual void release(int slot) = 0;
     virtual std::string error() const = 0;
+    // Encoder backend in use ("" until the first encode() created it), and the ones skipped
+    virtual std::string name() const { return {}; }
+    virtual std::string selection() const { return {}; }
 };
+
+// The texture encoder's backend for ql_info::encoder (process-wide; the runtime sets it).
+void set_encoder_info(const std::string& name);
+std::string encoder_info();
 
 // Platform backend; null with *error set when unavailable.
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig& cfg, std::string* error);
