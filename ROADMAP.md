@@ -37,3 +37,15 @@
 - [~] tester build 0.1.0: UPM git install with `questlink.dll` (Win x64) + `libquestlink.dylib` (macOS arm64) committed, CHANGELOG, automatic OVRService stop/restore (one UAC prompt per process), QuestLink > Check Setup + `qlhost --check`, `TESTERS.md` (2026-10-28); tag `v0.1.0` after merge, UAC path and a tester install from git not tried yet
 - [ ] later: environment depth / body tracking over Link; native XR SDK display/input provider (managed loader exists); raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
 - [ ] M11 (last): public release as **QuestBridge for Mac** once a working Unity sample exists. Apache-2.0, fixes from docs/PUBLIC_RELEASE_AUDIT.md, targeted filter-repo rewrite into a new repo `questbridge-mac` as the very last step
+
+## Open / in progress (2026-10-28)
+Verified on hardware: Windows Editor Play mode on Quest 3 (head, hands, controllers + haptics, audio, connect without replug, sleep recovery, OpenH264 picture); Mac → Quest Pro video (H.264 and HEVC clips, 72 fps).
+
+- [ ] Mac Editor → Quest Pro: the headset ends the stream within ~1 s with "buffer too small". Not single-message size or bitrate. Next: compare Mac vs Windows USB bulk-write sizes and headers with `QL_FAKE_QUEST`.
+- [ ] Link quit while streaming: a new HELLO from the headset is ignored, so the host stays "streaming". Restart the handshake on any new HELLO.
+- [ ] Slice budget: OpenH264 (and possibly MF) IDR slices of 100–130 KB trigger "buffer too small" on Quest 3. Lower the per-slice budget and add a hard pre-send check.
+- [ ] MF strips encoder (AMD/Intel path): picture quality is weak on Quest 3.
+- [ ] Passthrough / environment depth: offered by the runtime, but Meta's AR Foundation plugin fails in a Windows player ("instanceProcAddr is null").
+- [ ] Headset media volume can't be read or set over adb; audio checks need an in-headset volume step.
+- [ ] Not yet verified on hardware: XR Plug-in Management loader (unchanged XRI project), tester package OVRService handling (UAC), left controller.
+- [ ] Final hardware pass after the above: Quest 3 (Windows Editor) and Quest Pro (Mac Editor).
