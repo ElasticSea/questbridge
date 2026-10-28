@@ -276,7 +276,7 @@ TEST(hello_v1_restarts_a_streaming_session) {
     to_streaming(r);
     CHECK_EQ(r.s.state(), State::Streaming);
     CHECK_EQ(r.s.streams(), uint32_t(2));
-    CHECK_EQ(r.s.stream_seq(31), uint16_t(40));
+    CHECK_EQ(r.s.stream_seq(31), uint16_t(48));  // setup + HapticsServer lookup and connect again
     CHECK_EQ(r.s.next_frame_index(), uint64_t(1));
 }
 

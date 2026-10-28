@@ -396,6 +396,8 @@ void Session::begin_phase(uint16_t version) {
         stream_seq_.clear();
         next_frame_index_ = cfg_.first_frame_index;
         clock_count_ = 0;
+        ripc_ = ripc::from_setup();  // RuntimeIPC starts over with the replayed setup
+        haptics_connected_ = false;
     }
     if (version == 3) refresh_hz_ = pick_refresh();
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
