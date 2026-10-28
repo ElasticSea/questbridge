@@ -18,7 +18,7 @@ Layouts (encoder gate experiments):
 Writes host/replay/<name>.json with "frames": [[{topic, flags, body}, ...], ...]
 and the setup messages copied from the Meta replay file.
 
-Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source]
+Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source] [gop]
 """
 import json
 import os
@@ -46,7 +46,7 @@ def source(src):
             "split[l][r];[l][r]hstack,format=yuv420p")
 
 
-def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2"):
+def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2", gop=1):
     vf = source(src)
     if crop_y is not None:
         vf += f",crop={WIDTH}:{height}:0:{crop_y}"
@@ -54,7 +54,7 @@ def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="test
         FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", vf,
         "-frames:v", str(frames), "-c:v", "libx264", "-profile:v", "baseline", "-level", "6.0",
-        "-preset", "ultrafast", "-tune", "zerolatency", "-g", "1", "-bf", "0", "-crf", str(crf),
+        "-preset", "ultrafast", "-tune", "zerolatency", "-g", str(gop), "-bf", "0", "-crf", str(crf),
         "-x264-params", f"{slice_params}:repeat-headers=1:aud=0",
         "-f", "h264", out], check=True)
 
@@ -80,7 +80,7 @@ def split_nals(es):
 
 def first_mb(nal):
     """first_mb_in_slice: the first ue(v) after the NAL header (no emulation bytes this early)."""
-    bits = int.from_bytes(nal[1:9], "big")
+    bits = int.from_bytes(nal[1:9].ljust(8, b"\0"), "big")  # short (all-skip) slices: pad
     zeros = 0
     while not bits >> (63 - zeros) & 1:
         zeros += 1
@@ -120,7 +120,7 @@ def es_pictures(path):
         return pictures_of(split_nals(f.read()))
 
 
-def build(count, name, crf, layout, src):
+def build(count, name, crf, layout, src, gop):
     """-> per frame a list of slices (csd, nal, yOffset px, heightInMacroBlocks)."""
     es = os.path.join(ROOT, "capture", "runs", f"{name}.h264")
     os.makedirs(os.path.dirname(es), exist_ok=True)
@@ -129,7 +129,7 @@ def build(count, name, crf, layout, src):
         streams = []
         for i in range(SLICES):
             part = es.replace(".h264", f"-{i}.h264")
-            encode(count, crf, part, "slices=1:threads=1", h, i * h, src)
+            encode(count, crf, part, "slices=1:threads=1", h, i * h, src, gop)
             streams.append(es_pictures(part))
         return [[(csd(sps, pps), nals[0], i * h, h // 16) for i, (sps, pps, nals) in enumerate(pics)]
                 for pics in zip(*streams)]
@@ -137,7 +137,7 @@ def build(count, name, crf, layout, src):
     if params is None:
         kind, n = layout.split(":")
         params = {"mbs": "slice-max-mbs", "bytes": "slice-max-size"}[kind] + f"={n}:threads=1"  # sliced threads would force >= threads slices
-    encode(count, crf, es, params, src=src)
+    encode(count, crf, es, params, src=src, gop=gop)
     out = []
     for sps, pps, nals in es_pictures(es):
         starts = [first_mb(n) for n in nals] + [MB_TOTAL]
@@ -155,7 +155,8 @@ def main():
     # Split each payload over XRSP messages of at most this many bytes (0 = one message each)
     chunk = int(sys.argv[5]) if len(sys.argv) > 5 else 0
     src = sys.argv[6] if len(sys.argv) > 6 else "testsrc2"
-    pictures = build(count, name, crf, layout, src)
+    gop = int(sys.argv[7]) if len(sys.argv) > 7 else 1  # 1 = all intra; else IDR every gop frames + P frames
+    pictures = build(count, name, crf, layout, src, gop)
 
     with open(TEMPLATE, encoding="utf-8") as f:
         meta = json.load(f)
@@ -174,7 +175,8 @@ def main():
             hdr = bytearray(header)
             d = 8 + 8 * ((struct.unpack_from("<Q", hdr, 0)[0] & 0xFFFFFFFF) >> 2)
             hdr[d + 48] = i                                       # slice.index
-            hdr[d + 49] = 1 | (2 if i == len(slices) - 1 else 0)  # isIntraFrame, isLastSliceOfAFrame
+            intra = nal[0] & 0x1F == 5
+            hdr[d + 49] = intra | (2 if i == len(slices) - 1 else 0)  # isIntraFrame, isLastSliceOfAFrame
             # yOffset (px), heightInMacroBlocks, csdLength, videoLength
             struct.pack_into("<IIII", hdr, d + 4 * 13, y, h_mb, len(c), len(video))
             frame.append({**seg_table, "topic": topic})
@@ -188,7 +190,7 @@ def main():
 
     dest = os.path.join(ROOT, "host", "replay", f"{name}.json")
     with open(dest, "w", encoding="utf-8") as f:
-        json.dump({"source": f"{src} x264 crf{crf} {layout}", "frame_index": 1, "setup": meta["setup"],
+        json.dump({"source": f"{src} x264 crf{crf} {layout} gop{gop}", "frame_index": 1, "setup": meta["setup"],
                    "frames": out_frames}, f)
     sizes = [sum(len(bytes.fromhex(m["body"])) for m in fr) for fr in out_frames]
     print(f"{name}: {len(out_frames)} frames, avg {sum(sizes) // max(1, len(sizes))} B/frame, "
