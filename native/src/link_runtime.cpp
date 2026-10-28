@@ -2,9 +2,10 @@
 // runtime. The runtime is created on first ql_open and never destroyed: the Unity Editor keeps
 // native plugins loaded across Play mode, and the headset session should survive with it.
 //
-// Threads: I/O (opens USB when the Quest appears, drives ql_host_poll, reopens after a drop)
-// and encode (encodes captured textures and sends them). Textures are captured on the caller's
-// render thread inside ql_submit_frame_texture / the render event.
+// Threads: I/O (opens USB when the Quest appears, drives ql_host_poll, reopens after a drop),
+// encode (encodes captured textures and sends them) and audio (one 10 ms block every 10 ms
+// from the game-audio queue while streaming, silence when it runs dry). Textures are captured
+// on the caller's render thread inside ql_submit_frame_texture / the render event.
 //
 // ql_session* values are registry tokens, never dereferenced, so render events still queued
 // for a closed session find nothing and are ignored.
@@ -20,8 +21,15 @@
 #include <string>
 #include <thread>
 
+#include "audio.hpp"
 #include "questlink.h"
 #include "texture_encoder.hpp"
+
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#endif
 
 // Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
@@ -49,6 +57,26 @@ struct Client {
 int env_int(const char* name, int fallback) {
     const char* v = std::getenv(name);
     return v && *v ? std::atoi(v) : fallback;
+}
+
+// Sleep until a ql_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
+// 15.6 ms, more than the 10 ms audio period)
+void sleep_until_ns(int64_t deadline) {
+    int64_t wait = deadline - ql_now_ns();
+    if (wait <= 0) return;
+#if defined(_WIN32)
+    thread_local HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                       TIMER_ALL_ACCESS);
+    if (timer) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(wait / 100);  // relative, 100 ns units
+        if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+            WaitForSingleObject(timer, INFINITE);
+            return;
+        }
+    }
+#endif
+    std::this_thread::sleep_for(std::chrono::nanoseconds(wait));
 }
 
 // stderr, or the file QL_LOG_FILE names (the Unity Editor on Windows drops plugin stderr)
@@ -115,6 +143,14 @@ public:
         return QL_OK;
     }
 
+    int submit_audio(const float* stereo, uint32_t frames, uint32_t rate) {
+        if (!audio_enabled_) return QL_ERR_UNSUPPORTED;
+        auto h = host();
+        if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) return QL_ERR_NOT_STREAMING;
+        playback_.write(stereo, frames, rate);
+        return QL_OK;
+    }
+
     // Unity restarts frame_index every Play session (every ql_session); accept only increasing
     // indices per session. The headset's frame.index comes from the host's session-wide counter.
     bool accept_index(ql_session* s, uint64_t index) {
@@ -138,13 +174,16 @@ private:
     std::deque<Job> jobs_;
     std::unique_ptr<TextureEncoder> encoder_;
     bool encoder_tried_ = false;
-    std::thread io_, encode_;
+    std::thread io_, encode_, audio_;
+    audio::PlaybackBuffer playback_;
+    const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
 
     Runtime() {
         io_ = std::thread([this] { io_loop(); });
         encode_ = std::thread([this] { encode_loop(); });
+        if (audio_enabled_) audio_ = std::thread([this] { audio_loop(); });
     }
 
     static uint64_t id(ql_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
@@ -243,6 +282,36 @@ private:
                 stderr_log(nullptr, "info", ql_host_get_error(h.get()), -1);
         }
     }
+
+    // Meta's host sends a block every 10 ms for the whole session, silent or not; the headset
+    // resamples adaptively around a 20 ms buffer.
+    void audio_loop() {
+        audio::Pacer pacer;
+        float block[audio::kBlockFrames * audio::kChannels];
+        uint64_t blocks = 0, real = 0;
+        for (;;) {
+            auto h = host();
+            if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) {
+                h.reset();
+                pacer.reset();
+                playback_.clear();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            for (int n = pacer.due(ql_now_ns()); n > 0; --n) {
+                if (playback_.read(block, audio::kBlockFrames) > 0) ++real;
+                if (ql_host_send_audio(h.get(), block, 0) != QL_OK) break;
+                if (++blocks % 1000 == 0) {  // every 10 s
+                    std::string what = "audio: " + std::to_string(blocks) + " blocks, " + std::to_string(real) +
+                                       " with sound, " + std::to_string(pacer.skipped()) + " skipped, " +
+                                       std::to_string(playback_.dropped_frames()) + " frames dropped";
+                    stderr_log(nullptr, "info", what.c_str(), -1);
+                }
+            }
+            h.reset();
+            sleep_until_ns(pacer.next_ns());
+        }
+    }
 };
 
 void QL_UNITY_CALL on_render_event(int event_id, void* data) {
@@ -311,5 +380,18 @@ int ql_submit_frame_texture(ql_session* session, void* native_texture, const ql_
 }
 
 ql_render_event_fn ql_get_render_event_func(void) { return on_render_event; }
+
+int ql_submit_audio(ql_session* session, const float* interleaved_stereo, uint32_t frames, uint32_t sample_rate) {
+    auto& rt = Runtime::get();
+    if (!interleaved_stereo || !sample_rate || !rt.known(session)) return QL_ERR_ARGUMENT;
+    return rt.submit_audio(interleaved_stereo, frames, sample_rate);
+}
+
+int ql_read_mic(ql_session* session, int16_t* out, uint32_t max_frames) {
+    auto& rt = Runtime::get();
+    if ((!out && max_frames) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    auto h = rt.host();
+    return h ? ql_host_read_mic(h.get(), out, max_frames) : 0;
+}
 
 }  // extern "C"

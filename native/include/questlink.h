@@ -243,6 +243,30 @@ QL_API ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slic
 /* The host's monotonic clock in ns (what clock offsets are relative to). */
 QL_API int64_t ql_now_ns(void);
 
+/* ======================= Audio =========================================================== */
+/* Link carries raw PCM on topic 6 (PROTOCOL_NOTES "Audio"): game audio to the headset as
+ * 48 kHz stereo float32 in 10 ms blocks, the headset microphone back as 48 kHz mono int16. */
+
+#define QL_AUDIO_RATE 48000
+#define QL_AUDIO_BLOCK_FRAMES 480 /* 10 ms */
+
+/* Queue game audio for the headset (any thread, e.g. the engine's audio thread). Interleaved
+ * L R float32 at sample_rate (resampled to 48 kHz). The runtime sends a 10 ms block every 10 ms
+ * while streaming, silence when the queue runs dry; at most ~100 ms is kept (oldest dropped).
+ * QL_ERR_NOT_STREAMING (audio dropped) until the headset session is up. QL_AUDIO=0 in the
+ * environment turns the sender off. */
+QL_API int ql_submit_audio(ql_session* session, const float* interleaved_stereo, uint32_t frames,
+                           uint32_t sample_rate);
+/* Headset microphone, 48 kHz mono int16, oldest first (the newest ~1 s is kept). Returns the
+ * frames copied (0 if none) or a negative ql_status. */
+QL_API int ql_read_mic(ql_session* session, int16_t* out, uint32_t max_frames);
+
+/* Host API: send one block of QL_AUDIO_BLOCK_FRAMES stereo frames (48 kHz float32) now;
+ * ts_ns = sender clock (ql_now_ns), 0 = now. The caller paces it every 10 ms. */
+QL_API ql_status ql_host_send_audio(ql_host* host, const float* interleaved_stereo, int64_t ts_ns);
+/* Host API: microphone samples received so far (as ql_read_mic). */
+QL_API int ql_host_read_mic(ql_host* host, int16_t* out, uint32_t max_frames);
+
 #ifdef __cplusplus
 }
 #endif

@@ -8,6 +8,7 @@ add_executable(questlink_tests
   test_session.cpp
   test_frame.cpp
   test_pose.cpp
+  test_audio.cpp
 )
 target_link_libraries(questlink_tests PRIVATE questlink_core)
 target_compile_definitions(questlink_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")

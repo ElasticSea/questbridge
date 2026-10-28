@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "audio.hpp"
 #include "capnp.hpp"
 #include "frame.hpp"
 #include "pose.hpp"
@@ -26,6 +27,7 @@ namespace ql {
 
 namespace topic {
 constexpr uint8_t kControl = 1;
+constexpr uint8_t kAudio = audio::kTopic;
 constexpr uint8_t kVideoFirst = 10;  // slice i on topic 10 + i
 constexpr uint8_t kHeadPose = 34;
 }  // namespace topic
@@ -117,6 +119,13 @@ public:
     Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
     uint64_t next_frame_index() const { return next_frame_index_; }
 
+    // One 10 ms block of game audio (audio::kBlockFrames stereo frames), stamped with our
+    // clock (ts 0 = now). NotStreaming before the stream setup is done.
+    Submit submit_audio(std::span<const float> stereo, int64_t ts_ns = 0);
+    // Quest microphone, 48 kHz mono int16, oldest first
+    size_t read_mic(int16_t* out, size_t max_frames) { return mic_.read(out, max_frames); }
+    uint64_t mic_blocks() const { return mic_blocks_; }
+
 private:
     void send_control(uint8_t type, uint16_t version);
     void send_clock(uint8_t type, const std::array<uint64_t, 4>& stamps);
@@ -151,6 +160,8 @@ private:
     size_t setup_next_ = 0;
     int64_t setup_due_ = 0;
     std::vector<std::vector<Bytes>> outbox_;
+    audio::MicBuffer mic_;
+    uint64_t mic_blocks_ = 0;
 };
 
 }  // namespace ql

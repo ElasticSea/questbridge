@@ -97,6 +97,23 @@ std::vector<SentFrame> sent_frames() {
     return out;
 }
 
+// Topic-6 blocks we sent; loud = PCM starts with 0.25 (else silence)
+int audio_blocks(bool loud) {
+    std::lock_guard<std::mutex> l(g_quest.mu);
+    int n = 0;
+    for (const auto& x : g_quest.written)
+        for (size_t i = 0; i + 8 <= x.size();) {
+            size_t size = 4 + size_t(rd16(&x[i + 2])) * 4;
+            if (x[i + 1] == 6 && size == 4096) {
+                float f;
+                std::memcpy(&f, &x[i + 8 + 24], 4);
+                n += loud ? f == 0.25f : f == 0.0f;
+            }
+            i += size;
+        }
+    return n;
+}
+
 template <class F>
 bool wait_for(F cond, int ms = 5000) {
     auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
@@ -155,7 +172,7 @@ TEST(runtime_unity_flow) {
         for (const auto& e : qltest::fixture("handshake", "control").items())
             if (e["dir"].as_string() == "quest_to_pc") add(e["raw"].as_hex());
         for (const auto& g : qltest::fixture("handshake", "streams").items())
-            if (g["topic"].as_u64() == 34)
+            if (g["topic"].as_u64() == 34 || (g["topic"].as_u64() == 6 && g["dir"].as_string() == "quest_to_pc"))
                 for (const auto& s : g["samples"].items()) add(s["raw"].as_hex());
         g_quest_plugged = true;
     }
@@ -199,6 +216,17 @@ TEST(runtime_unity_flow) {
     CHECK_EQ(frames[2].qw, 0.75f);
     CHECK(frames[0].intra);         // first frame of the connection forced to IDR
     CHECK(!frames[1].intra);
+
+    // Audio: a 10 ms block every 10 ms while streaming (silence so far), game audio when queued
+    REQUIRE(wait_for([] { return audio_blocks(false) >= 5; }));
+    std::vector<float> tone(2 * 4410, 0.25f);  // 100 ms at 44.1 kHz
+    CHECK_EQ(ql_submit_audio(s2, tone.data(), 4410, 44100), int(QL_OK));
+    CHECK_EQ(ql_submit_audio(s1, tone.data(), 4410, 44100), int(QL_ERR_ARGUMENT));  // closed
+    REQUIRE(wait_for([] { return audio_blocks(true) >= 3; }));
+    // Mic: the recorded Quest block
+    int16_t mic[2000];
+    CHECK_EQ(ql_read_mic(s2, mic, 2000), int(480));
+    CHECK_EQ(ql_read_mic(s2, mic, 2000), 0);
 
     ql_controller c;
     CHECK_EQ(ql_get_controller(s2, 0, &c), int(QL_ERR_UNSUPPORTED));

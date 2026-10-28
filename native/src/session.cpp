@@ -167,6 +167,13 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     return Submit::Ok;
 }
 
+Session::Submit Session::submit_audio(std::span<const float> stereo, int64_t ts_ns) {
+    if (state_ != State::Streaming) return Submit::NotStreaming;
+    if (stereo.size() != audio::kBlockFrames * audio::kChannels) return Submit::BadSlices;
+    send_stream(audio::encode_playback(uint64_t(ts_ns ? ts_ns : clock_()), stereo));
+    return Submit::Ok;
+}
+
 // --- receiving -------------------------------------------------------------
 
 void Session::on_message(std::span<const uint8_t> raw) {
@@ -179,6 +186,16 @@ void Session::on_message(std::span<const uint8_t> raw) {
         if (auto p = parse_head_pose(body)) {
             head_pose_ = *p;
             ++head_pose_count_;
+        }
+        return;
+    }
+    if (t == topic::kAudio) {
+        // Mic: the segment (the 8-byte segment table before it doesn't parse)
+        uint64_t ts;
+        std::span<const uint8_t> pcm;
+        if (audio::parse_block(body, ts, pcm)) {
+            mic_.write_le(pcm);
+            ++mic_blocks_;
         }
         return;
     }

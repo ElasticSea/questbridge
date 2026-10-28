@@ -282,4 +282,25 @@ ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uin
     return QL_ERR_INTERNAL;
 }
 
+ql_status ql_host_send_audio(ql_host* host, const float* interleaved_stereo, int64_t ts_ns) {
+    if (!host || !interleaved_stereo) return QL_ERR_ARGUMENT;
+    std::unique_lock<std::mutex> lock(host->mu);
+    if (host->broken) return QL_ERR_TRANSPORT;
+    Session::Submit r;
+    try {
+        r = host->session->submit_audio({interleaved_stereo, audio::kBlockFrames * audio::kChannels}, ts_ns);
+    } catch (const std::exception& e) {
+        host->error = e.what();
+        return QL_ERR_INTERNAL;
+    }
+    if (r == Session::Submit::Ok) return host->flush(lock);
+    return host->session->state() == State::Failed ? QL_ERR_FAILED : QL_ERR_NOT_STREAMING;
+}
+
+int ql_host_read_mic(ql_host* host, int16_t* out, uint32_t max_frames) {
+    if (!host || (!out && max_frames)) return QL_ERR_ARGUMENT;
+    std::lock_guard<std::mutex> lock(host->mu);
+    return int(host->session->read_mic(out, max_frames));
+}
+
 }  // extern "C"

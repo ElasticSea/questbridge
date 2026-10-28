@@ -22,6 +22,7 @@ endif()
 add_library(questlink_core STATIC
   src/xrsp.cpp
   src/json.cpp
+  src/audio.cpp
   src/capnp.cpp
   src/frame.cpp
   src/pose.cpp
