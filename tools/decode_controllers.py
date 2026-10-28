@@ -8,6 +8,9 @@ Modes:
   steps <pcap> <dev> <probe.log>       per step: message counts per topic/dir and
                                        which Cap'n Proto bytes change vs the
                                        "still" step (topics in DIFF_TOPICS)
+  timeline <pcap> <dev> <probe.log>    every change of the topic-35 buttons/touch
+                                       fields, plus analog ranges per step
+  golden <pcap> <dev> <out.json>       labelled messages at known events (fixture)
   dump <pcap> <dev> <topic> [n] [from-s] [--pc|--quest]
                                        pretty-print n Cap'n Proto messages
 
@@ -141,6 +144,146 @@ def steps(path, device, log_path):
                     print(f"    {p}+{i:#x}: {len(v)} values {sorted(v)[:6]}")
 
 
+def _data(node):
+    return struct.pack(f"<{len(node['s'])}Q", *node["s"])
+
+
+def decode_input(buf):
+    """Topic 35 DeviceInput -> (root fields, [controller entries]). Layout in PROTOCOL_NOTES."""
+    root, _ = decode(buf)
+    d = _data(root)
+    out = {"flags": d[0], "u8_1": d[1], "u16_2": struct.unpack_from("<H", d, 2)[0],
+           "f32_4": struct.unpack_from("<f", d, 4)[0], "ipd": struct.unpack_from("<f", d, 8)[0]}
+    entries = []
+    for e in (root["p"][0] or {}).get("lc", []):
+        b = _data(e)
+        entries.append({
+            "index": b[0], "battery": b[1], "u8_2": b[2], "u8_3": b[3],
+            "buttons": struct.unpack_from("<I", b, 0x04)[0],
+            "touches": struct.unpack_from("<I", b, 0x08)[0],
+            "trigger": struct.unpack_from("<f", b, 0x0C)[0],
+            "grip": struct.unpack_from("<f", b, 0x10)[0],
+            "stick": struct.unpack_from("<2f", b, 0x14),
+            "f32_1c": struct.unpack_from("<4f", b, 0x1C),
+            "f32_2c": struct.unpack_from("<3f", b, 0x2C),
+            "u8_38": b[0x38], "raw": b,
+        })
+    return out, entries
+
+
+def decode_tracking(buf):
+    """Topic 34 Pose2 controller list (root pointer 0) -> [(index, pose dict, status)]."""
+    root, _ = decode(buf)
+    out = []
+    for e in (root["p"][0] or {}).get("lp", []) or (root["p"][0] or {}).get("lc", []):
+        p = _data(e["p"][0]) if e["p"][0] else None
+        pose = None if p is None else {
+            "ang_vel": struct.unpack_from("<3f", p, 0x00), "lin_vel": struct.unpack_from("<3f", p, 0x0C),
+            "ang_acc": struct.unpack_from("<3f", p, 0x18), "lin_acc": struct.unpack_from("<3f", p, 0x24),
+            "quat": struct.unpack_from("<4f", p, 0x30), "pos": struct.unpack_from("<3f", p, 0x40),
+            "time": struct.unpack_from("<Q", p, 0x50)[0]}
+        status = e["p"][1]["s"][0] if e["p"][1] else None
+        out.append((e["s"][0] & 0xFFFFFFFF, pose, status))
+    return out
+
+
+def timeline(path, device, log_path):
+    """Print every change of the topic-35 digital fields, labelled with the probe step."""
+    t0 = pcap_start(path)
+    windows = [(n, b - t0, e - t0) for n, b, e in probe_steps(log_path)]
+    last = {}
+    analog = defaultdict(lambda: defaultdict(lambda: [9.0, -9.0]))
+    for ts, to_q, topic, buf in capnp_messages(path, device, {35}):
+        if to_q or buf is None:
+            continue
+        step = next((n for n, b, e in windows if b <= ts < e), "-")
+        root, entries = decode_input(buf)
+        key = ("root", root["flags"], root["u8_1"], root["u16_2"])
+        if last.get("root") != key:
+            print(f"{ts:9.3f} {step:16s} root flags={root['flags']:#x} u8_1={root['u8_1']} u16_2={root['u16_2']}"
+                  f" f32_4={root['f32_4']:.4f}")
+            last["root"] = key
+        for e in entries:
+            k = (e["index"], e["buttons"], e["touches"], e["u8_38"], e["battery"], e["u8_2"])
+            if last.get(e["index"]) != k:
+                print(f"{ts:9.3f} {step:16s} [{e['index']}] buttons={e['buttons']:#010x} touches={e['touches']:#06x}"
+                      f" b38={e['u8_38']} batt={e['battery']} u8_2={e['u8_2']}")
+                last[e["index"]] = k
+            vals = [e["trigger"], e["grip"], *e["stick"], *e["f32_1c"], *e["f32_2c"]]
+            for j, v in enumerate(vals):
+                a = analog[(step, e["index"])][j]
+                a[0], a[1] = min(a[0], v), max(a[1], v)
+    names = ["trig", "grip", "sx", "sy", "1c", "20", "24", "28", "2c", "30", "34"]
+    print("\nanalog ranges per step [index]:")
+    for (step, idx), a in analog.items():
+        print(f"  {step:16s} [{idx}] " + " ".join(f"{n}={a[j][0]:+.2f}..{a[j][1]:+.2f}"
+                                               for j, n in enumerate(names) if a[j][1] - a[j][0] > 0.02))
+
+
+HAPTIC_HASH = bytes.fromhex("6967dc2a")  # RIPC type hash of the haptic message on topic 31
+BUTTON_EVENTS = {  # label -> (controller index, buttons value seen first)
+    "a": (1, 0x1), "b": (1, 0x2), "r_stick_click": (1, 0x80000004),
+    "x": (0, 0x100), "y": (0, 0x200), "l_stick_click": (0, 0x80000400), "menu": (0, 0x40000000),
+}
+
+
+def golden(path, device, out_path):
+    """Write labelled topic 34/35/28/7/31 messages at known events for golden tests."""
+    import json
+    from scrub import Scrubber
+    scrub = Scrubber.from_capture(path, device)
+    picked = {}
+
+    def keep(label, ts, topic, to_q, buf):
+        if label not in picked:
+            picked[label] = {"label": label, "t": round(ts, 6), "topic": topic,
+                             "dir": "pc_to_quest" if to_q else "quest_to_pc", "capnp": scrub(buf).hex()}
+
+    best = {}
+    ripc = []
+    for ts, to_q, topic, buf in capnp_messages(path, device, {7, 28, 34, 35}):
+        if buf is None:
+            continue
+        if topic in (7, 28) and to_q:
+            keep(f"topic{topic}_first", ts, topic, to_q, buf)
+        elif topic == 34 and not to_q:
+            st = [s for _, _, s in decode_tracking(buf)]
+            if st == [15, 15]:
+                keep("pose_both_tracked", ts, topic, to_q, buf)
+            elif st and all(s == 0 for s in st):
+                keep("pose_controllers_lost", ts, topic, to_q, buf)
+        elif topic == 35 and not to_q:
+            root, entries = decode_input(buf)
+            if root["flags"] & 0x4 and root["u16_2"] == 0:
+                keep("hands_mode", ts, topic, to_q, buf)
+            for label, (idx, val) in BUTTON_EVENTS.items():
+                if any(e["index"] == idx and e["buttons"] == val for e in entries):
+                    keep(label, ts, topic, to_q, buf)
+            for e in entries:
+                side = "l" if e["index"] == 0 else "r"
+                for name, v in (("trigger", e["trigger"]), ("grip", e["grip"]),
+                                ("stick_x_max", e["stick"][0]), ("stick_x_min", -e["stick"][0]),
+                                ("stick_y_max", e["stick"][1]), ("stick_y_min", -e["stick"][1])):
+                    label = f"{side}_{name}"
+                    if v > best.get(label, (0.5,))[0]:
+                        best[label] = (v, ts, buf)
+    for label, (v, ts, buf) in best.items():
+        keep(label, ts, 35, False, buf)
+    # Haptics ride RuntimeIPC (topic 31, raw frames, not Cap'n Proto): keep the first 0x23e group
+    for m in messages(path, device):
+        if m.topic == 31 and m.to_quest:
+            b = m.body[:-m.body[-1]] if m.flags & 0x08 else m.body
+            ripc.append(b)
+            if len(ripc) >= 4 and len(ripc[-2]) == 32 and ripc[-2][22:26] == HAPTIC_HASH:
+                picked["haptic_ripc"] = {"label": "haptic_ripc", "t": round(m.ts, 6), "topic": 31,
+                                         "dir": "pc_to_quest", "parts": [scrub(x).hex() for x in ripc[-4:]]}
+                break
+            ripc = ripc[-3:]
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(sorted(picked.values(), key=lambda p: p["t"]), f, indent=1)
+    print(f"{len(picked)} messages -> {out_path}: {sorted(picked)}")
+
+
 def dump(path, device, topic, count, start, want_dir):
     from capnp_dump import pretty
     n = 0
@@ -161,6 +304,10 @@ if __name__ == "__main__":
     mode = args[0]
     if mode == "steps":
         steps(args[1], int(args[2]), args[3])
+    elif mode == "timeline":
+        timeline(args[1], int(args[2]), args[3])
+    elif mode == "golden":
+        golden(args[1], int(args[2]), args[3])
     elif mode == "dump":
         d = True if "--pc" in flags else False if "--quest" in flags else None
         dump(args[1], int(args[2]), int(args[3]), int(args[4]) if len(args) > 4 else 5,
