@@ -21,6 +21,12 @@ target_link_libraries(questlink_tests PRIVATE questlink_core)
 target_compile_definitions(questlink_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
 add_test(NAME questlink_tests COMMAND questlink_tests)
 
+# Encoder selection and strip layout over fake encoders (no GPU or codec needed)
+add_executable(questlink_encoder_tests test_main.cpp test_encoder_select.cpp)
+target_link_libraries(questlink_encoder_tests PRIVATE questlink_encoders questlink_core)
+target_compile_definitions(questlink_encoder_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
+add_test(NAME questlink_encoder_tests COMMAND questlink_encoder_tests)
+
 # The shared library through its C API only
 add_executable(questlink_capi_tests test_main.cpp test_capi.cpp ../src/json.cpp ../src/xrsp.cpp)
 target_include_directories(questlink_capi_tests PRIVATE ../src ../cli)
