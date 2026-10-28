@@ -17,8 +17,9 @@ $dir = Join-Path $root ("out\runs\firstlight-" + (Get-Date -Format "yyyyMMdd-HHm
 New-Item -ItemType Directory -Force $dir | Out-Null
 
 # Headset media volume (the user can't hear anything at 0)
-$adb = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools\adb.exe"
-$vol = & $adb -s QUEST0SERIAL00 shell cmd media_session volume --stream 3 --get 2>$null | Select-String "volume is (\d+)"
+$adb = if ($env:ADB) { $env:ADB } else { "adb" }
+$serial = if ($env:QUEST_ADB) { @("-s", $env:QUEST_ADB) } else { @() }
+$vol = & $adb @serial shell cmd media_session volume --stream 3 --get 2>$null | Select-String "volume is (\d+)"
 if ($vol) {
     $level = [int]$vol.Matches[0].Groups[1].Value
     Write-Host "headset media volume $level/15$(if ($level -eq 0) { ' -- MUTED, turn it up' })"

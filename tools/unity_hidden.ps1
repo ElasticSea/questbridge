@@ -7,7 +7,7 @@
 # while the child runs: run the script itself in the background instead of detaching the child.
 #   .\unity_hidden.ps1 -ArgLine "-batchmode -nographics -quit -projectPath ... -logFile x.log"
 param(
-    [string]$Exe = "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe",
+    [string]$Exe = $(if ($env:UNITY_EXE) { $env:UNITY_EXE } else { "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe" }),
     [string]$ArgLine = "",
     [string]$WorkingDirectory = (Get-Location).Path,
     [int]$TimeoutS = 1800

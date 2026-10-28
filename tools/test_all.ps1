@@ -14,7 +14,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
-$unityExe = "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe"
+$unityExe = if ($env:UNITY_EXE) { $env:UNITY_EXE } else { "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe" }
 $logDir = Join-Path $repo ("out\runs\test_all\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $results = @()

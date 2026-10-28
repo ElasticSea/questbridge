@@ -25,14 +25,13 @@ Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source
 """
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FFMPEG = os.path.join(os.environ["LOCALAPPDATA"], "Microsoft", "WinGet", "Packages",
-                      "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe", "ffmpeg-9.0.2-full_build", "bin",
-                      "ffmpeg.exe")
+FFMPEG = os.environ.get("FFMPEG") or shutil.which("ffmpeg") or "ffmpeg"
 WIDTH, HEIGHT, SLICES = 4096, 2240, 5
 MB_COLS, MB_TOTAL = WIDTH // 16, WIDTH // 16 * HEIGHT // 16
 TEMPLATE = os.path.join(ROOT, "tests", "fixtures", "replay", "idr-frame.json")

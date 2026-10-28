@@ -17,6 +17,7 @@ Exit code 0 only if every cycle reached phase 1. Log: out/runs/connect-soak-<sta
 import argparse
 import os
 import queue
+import shutil
 import statistics
 import subprocess
 import sys
@@ -26,16 +27,15 @@ from datetime import datetime
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QBHOST = os.path.join(REPO, "native", "build", "bin", "Release", "qbhost.exe")
-ADB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages",
-                   "Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe", "platform-tools", "adb.exe")
-SERIAL = "QUEST0SERIAL00"
+ADB = os.environ.get("ADB") or shutil.which("adb") or "adb"
+SERIAL = os.environ.get("QUEST_ADB", "")  # adb serial; empty = the only device
 DISTURBANCES = ["none", "orphan", "early", "sleep"]
 OTHER_HOSTS = ("FirstLight.exe", "qbhost.exe")
 
 
 def adb(*args, timeout=15):
     try:
-        r = subprocess.run([ADB, "-s", SERIAL, *args], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run([ADB, *(["-s", SERIAL] if SERIAL else []), *args], capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return ""

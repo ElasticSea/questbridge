@@ -14,13 +14,13 @@ Procedure and pass criteria: docs/testing.md
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 
-ADB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages",
-                   "Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe", "platform-tools", "adb.exe")
-SERIAL = "192.0.2.10:5555"
+ADB = os.environ.get("ADB") or shutil.which("adb") or "adb"
+SERIAL = os.environ.get("QUEST_ADB", "")  # adb serial; empty = the only device
 
 DROP = re.compile(r"\[Recovery\] drop (\d+) (\w+)")
 BACK = re.compile(r"\[Recovery\] back (\d+) (\w+): (.*)")
@@ -71,7 +71,7 @@ def run(step, serial, dry_run, out):
         return
     out(f"  adb {' '.join(step)}")
     if not dry_run:
-        subprocess.run([ADB, "-s", serial, *step], capture_output=True, timeout=20)
+        subprocess.run([ADB, *(["-s", serial] if serial else []), *step], capture_output=True, timeout=20)
 
 
 def main():
