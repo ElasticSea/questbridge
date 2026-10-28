@@ -5,6 +5,7 @@
 // recorded clip (host/replay/*.json) at the session's refresh rate with the render pose patched in.
 //
 // Usage: qlhost [seconds]
+//        qlhost --check [--no-claim]   setup check (ql_check_setup); exit 1 if anything failed
 // Env (as handshake.py): XRSP_WAIT (600 s to wait for the device), XRSP_HELLO_WAIT (300 s),
 //   XRSP_REPLAY=<clip.json>, XRSP_POSE=fixed|live|template, XRSP_ATTACH=1 with
 //   XRSP_CONTROL_SEQ (16), XRSP_VIDEO_SEQ (0), XRSP_FRAME_START (clip's frame_index),
@@ -185,9 +186,31 @@ private:
     const int64_t vsync_lead_ns_ = int64_t(env_num("QL_VSYNC_LEAD_MS", 16) * 1'000'000);
 };
 
+// Setup check: one line per check, the fix indented below it
+int check_setup(bool claim) {
+    ql_check checks[QL_MAX_CHECKS];
+    int n = ql_check_setup(claim ? 0 : QL_CHECK_NO_CLAIM, checks, QL_MAX_CHECKS);
+    if (n < 0) {
+        std::printf("setup check failed (%d)\n", n);
+        return 2;
+    }
+    static const char* tags[] = {"[ OK ]", "[WARN]", "[FAIL]", "[SKIP]"};
+    bool failed = false;
+    for (int i = 0; i < n && i < QL_MAX_CHECKS; ++i) {
+        const ql_check& c = checks[i];
+        std::printf("%s %s: %s\n", tags[c.status & 3], c.title, c.detail);
+        if (c.fix[0] && c.status != QL_CHECK_OK) std::printf("       %s\n", c.fix);
+        failed |= c.status == QL_CHECK_FAIL;
+    }
+    std::printf(failed ? "Not ready: fix the [FAIL] lines above.\n" : "Ready.\n");
+    return failed ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (argc > 1 && std::strcmp(argv[1], "--check") == 0)
+        return check_setup(!(argc > 2 && std::strcmp(argv[2], "--no-claim") == 0));
     double seconds = argc > 1 ? std::atof(argv[1]) : 30;
     std::string replay = env("XRSP_REPLAY");
     std::string pose_mode = env("XRSP_POSE", "fixed");

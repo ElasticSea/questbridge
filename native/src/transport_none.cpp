@@ -9,4 +9,13 @@ std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     return nullptr;
 }
 
+UsbScan scan_usb() { return {}; }
+
+OpenError try_claim(std::string& detail) {
+    detail = "built without a USB backend";
+    return OpenError::Unsupported;
+}
+
+int open_transport_count() { return 0; }
+
 }  // namespace ql

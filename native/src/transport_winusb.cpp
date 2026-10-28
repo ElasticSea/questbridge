@@ -8,8 +8,11 @@
 #include <setupapi.h>
 #include <winusb.h>
 
+#include <atomic>
+#include <cwchar>
 #include <vector>
 
+#include "ovr_service.hpp"
 #include "transport.hpp"
 
 namespace ql {
@@ -18,6 +21,8 @@ namespace {
 
 // {f72fe0d4-cbcb-407d-8814-9ed673d0dd6b}: the XRSP interface's WinUSB device interface GUID
 const GUID kXrspGuid = {0xf72fe0d4, 0xcbcb, 0x407d, {0x88, 0x14, 0x9e, 0xd6, 0x73, 0xd0, 0xdd, 0x6b}};
+
+std::atomic<int> g_open{0};
 
 std::vector<std::wstring> find_xrsp_paths() {
     std::vector<std::wstring> paths;
@@ -41,6 +46,7 @@ std::vector<std::wstring> find_xrsp_paths() {
 class WinUsbTransport final : public Transport {
 public:
     WinUsbTransport(HANDLE file, WINUSB_INTERFACE_HANDLE usb) : file_(file), usb_(usb) {
+        ++g_open;
         ev_out_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         ev_in_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         for (UCHAR ep : {kEpOut, kEpIn}) {
@@ -56,6 +62,7 @@ public:
         CloseHandle(file_);
         CloseHandle(ev_out_);
         CloseHandle(ev_in_);
+        --g_open;
     }
 
     bool write(const uint8_t* data, size_t len, int timeout_ms) override {
@@ -102,9 +109,50 @@ private:
     }
 };
 
+// Any present USB device with the Quest's vendor ID (instance IDs look like USB\VID_2833&PID_5013\...)
+bool find_quest(uint16_t& pid) {
+    HDEVINFO info = SetupDiGetClassDevsW(nullptr, L"USB", nullptr, DIGCF_ALLCLASSES | DIGCF_PRESENT);
+    if (info == INVALID_HANDLE_VALUE) return false;
+    bool found = false;
+    SP_DEVINFO_DATA dev{sizeof(dev)};
+    for (DWORD i = 0; !found && SetupDiEnumDeviceInfo(info, i, &dev); ++i) {
+        wchar_t id[512];
+        if (!SetupDiGetDeviceInstanceIdW(info, &dev, id, 512, nullptr)) continue;
+        if (_wcsnicmp(id, L"USB\\VID_2833&PID_", 17) != 0) continue;
+        found = true;
+        pid = uint16_t(std::wcstoul(id + 17, nullptr, 16));
+    }
+    SetupDiDestroyDeviceInfoList(info);
+    return found;
+}
+
+bool quest_present() {
+    uint16_t pid;
+    return find_quest(pid);
+}
+
+bool yes() { return true; }
+
+// A failed open: let the OVRService helper see it and add its note to the log line
+void ovr_note(std::string& detail, bool (*quest)()) {
+    std::string note = ovr::on_open_failed(quest);
+    if (!note.empty()) detail += "; " + note;
+}
+
 }  // namespace
 
-std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
+UsbScan scan_usb() {
+    UsbScan s;
+    s.quest = find_quest(s.pid);
+    s.xrsp = !find_xrsp_paths().empty();
+    return s;
+}
+
+int open_transport_count() { return g_open; }
+
+namespace {
+
+std::unique_ptr<Transport> open_xrsp(OpenError& err, std::string& detail) {
     auto paths = find_xrsp_paths();
     if (paths.empty()) {
         err = OpenError::NotFound;
@@ -128,6 +176,21 @@ std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     }
     err = OpenError::None;
     return std::make_unique<WinUsbTransport>(file, usb);
+}
+
+}  // namespace
+
+std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
+    auto t = open_xrsp(err, detail);
+    if (err == OpenError::NotFound) ovr_note(detail, quest_present);
+    if (err == OpenError::Busy) ovr_note(detail, yes);
+    return t;
+}
+
+OpenError try_claim(std::string& detail) {
+    OpenError err;
+    open_xrsp(err, detail);  // the transport closes again right away
+    return err;
 }
 
 }  // namespace ql

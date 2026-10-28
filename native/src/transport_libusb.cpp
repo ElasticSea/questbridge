@@ -6,6 +6,7 @@
 // which works the same on every backend and needs no hotplug support from libusb.
 #include <libusb.h>
 
+#include <atomic>
 #include <mutex>
 
 #include "transport.hpp"
@@ -15,6 +16,8 @@ namespace ql {
 namespace {
 
 constexpr uint8_t kXrspClass = 0xff, kXrspSubclass = 0x8a;  // Meta's runtime: winusb,2833,ff,8A
+
+std::atomic<int> g_open{0};
 
 // libusb: 0 means wait forever. Ours (as WinUSB's backend): < 0 forever, 0 = poll.
 unsigned ms(int timeout_ms) { return timeout_ms < 0 ? 0u : unsigned(timeout_ms == 0 ? 1 : timeout_ms); }
@@ -63,11 +66,12 @@ bool has_xrsp_interface(libusb_device* dev) {
 
 class LibusbTransport final : public Transport {
 public:
-    explicit LibusbTransport(libusb_device_handle* h) : h_(h) {}
+    explicit LibusbTransport(libusb_device_handle* h) : h_(h) { ++g_open; }
 
     ~LibusbTransport() override {
         libusb_release_interface(h_, kXrspInterface);
         libusb_close(h_);
+        --g_open;
     }
 
     bool write(const uint8_t* data, size_t len, int timeout_ms) override {
@@ -89,6 +93,32 @@ private:
 };
 
 }  // namespace
+
+UsbScan scan_usb() {
+    UsbScan s;
+    std::string detail;
+    libusb_context* ctx = context(detail);
+    if (!ctx) return s;
+    libusb_device** list = nullptr;
+    ssize_t n = libusb_get_device_list(ctx, &list);
+    for (ssize_t i = 0; i < n; ++i) {
+        libusb_device_descriptor d{};
+        if (libusb_get_device_descriptor(list[i], &d) != 0 || d.idVendor != kQuestVid) continue;
+        bool xrsp = is_quest(d) && has_xrsp_interface(list[i]);
+        if (s.quest && !xrsp) continue;  // prefer the one with the XRSP interface
+        s = {true, d.idProduct, xrsp};
+    }
+    if (n > 0) libusb_free_device_list(list, 1);
+    return s;
+}
+
+int open_transport_count() { return g_open; }
+
+OpenError try_claim(std::string& detail) {
+    OpenError err;
+    open_usb(err, detail);  // the transport closes again right away
+    return err;
+}
 
 std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     libusb_context* ctx = context(detail);
