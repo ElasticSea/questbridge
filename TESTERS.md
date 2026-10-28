@@ -35,7 +35,7 @@ Plug in the Quest, wake it up, then go to **QuestLink → Check Setup**. Each li
 3. **Windows only, once per Unity session:** a Windows prompt asks to let *Windows PowerShell* make changes. Press **Yes**. It stops Meta's Link service (OVRService), which otherwise holds the headset, and starts it again when you quit Unity. If you'd rather not see the prompt, stop "Oculus VR Runtime Service" in `services.msc` yourself before pressing Play.
 4. Put the headset on and press **Launch** on the Link dialog. Your scene shows up within a few seconds.
 
-You can Stop and Play again as often as you like and you stay in Link. Rig, controller, hand and audio details are in the [package README](unity/com.elasticsea.questlink/README.md).
+You can Stop and Play again as often as you like and you stay in Link. Using the head, controllers, hands and audio in your scripts: [QUICKSTART.md](unity/com.elasticsea.questlink/QUICKSTART.md); everything else is in the [package README](unity/com.elasticsea.questlink/README.md).
 
 ## If something's off
 | You see | Do this |
