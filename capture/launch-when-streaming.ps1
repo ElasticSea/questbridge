@@ -1,6 +1,6 @@
 # Waits until the running capture grows like a Link stream (> MinMB per 2 s), then starts a program minimized.
 # Use it so nobody waits in the headset during a capture.
-#   .\launch-when-streaming.ps1 -Pcap pcaps\x.pcap -Exe "...\Unity.exe" -ArgLine "-projectPath ... -executeMethod BuildScript.Play"
+#   .\launch-when-streaming.ps1 -Pcap pcaps\x.pcap -Exe ..\unity\SensorProbe\Build\SensorProbe.exe -ArgLine "-probeSteps passthrough,envdepth"
 param(
     [Parameter(Mandatory)][string]$Pcap,
     [Parameter(Mandatory)][string]$Exe,
