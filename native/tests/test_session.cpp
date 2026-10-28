@@ -323,3 +323,175 @@ TEST(attach_continues_numbering) {
     CHECK_EQ(r.s.stream_seq(12), uint16_t(500));
     CHECK(r.s.take_outgoing().empty());
 }
+
+// --- recovery inside a running session ---------------------------------------
+
+namespace {
+
+// The recorded head pose (segment table, then the segment)
+void feed_pose(Session& s) {
+    for (const auto& g : qltest::fixture("handshake", "streams").items())
+        if (g["topic"].as_u64() == topic::kHeadPose)
+            for (const auto& m : g["samples"].items()) s.on_message(m["raw"].as_hex());
+}
+
+// Streaming with a clock offset (one recorded ping) and a head pose
+void to_live_stream(Rig& r) {
+    to_streaming(r);
+    for (const auto* e : entries("quest_to_pc")) {
+        Bytes raw = (*e)["raw"].as_hex();
+        if (is_clock(raw) && raw[8] == control::kClockPing) {
+            r.s.on_message(raw);
+            break;
+        }
+    }
+    feed_pose(r.s);
+    r.s.take_outgoing();
+}
+
+// One 5-slice frame; returns (frame index, topic 10 seq) of what went out
+std::pair<uint64_t, uint16_t> send_frame(Rig& r) {
+    static const Bytes csd = {0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x68}, nal = {0, 0, 0, 1, 0x65, 1, 2, 3};
+    std::vector<SliceData> slices(5, SliceData{csd, nal});
+    uint16_t seq = r.s.stream_seq(topic::kVideoFirst);
+    if (r.s.submit_frame(slices, {}) != Session::Submit::Ok) throw std::runtime_error("frame not sent");
+    r.s.take_outgoing();
+    return {r.s.next_frame_index() - 1, seq};
+}
+
+}  // namespace
+
+TEST(silence_ends_stream) {
+    Rig r;
+    r.s.start();
+    to_live_stream(r);
+    REQUIRE(r.s.head_pose().has_value());
+    r.now += 2'900'000'000;
+    r.s.tick();
+    CHECK_EQ(r.s.state(), State::Streaming);
+    feed_pose(r.s);  // anything from the Quest keeps it alive
+    r.now += 2'900'000'000;
+    r.s.tick();
+    CHECK_EQ(r.s.state(), State::Streaming);
+    r.now += 200'000'000;
+    r.s.tick();
+    // Headset asleep with USB up, or its xrspd gone: BYE now, so a living one sends HELLO
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kBye);
+    CHECK_EQ(r.s.losses(), uint32_t(1));
+    CHECK(r.s.last_loss() == Loss::Silence);
+    CHECK(!r.s.head_pose().has_value());  // no stale pose while reconnecting
+    // Not while waiting for HELLO or Launch: only BYE retries there
+    r.now += 10'000'000'000;
+    r.s.tick();
+    CHECK_EQ(r.s.losses(), uint32_t(1));
+}
+
+TEST(silence_disabled) {
+    SessionConfig cfg;
+    cfg.silence_timeout_ns = 0;
+    Rig r(cfg);
+    r.s.start();
+    to_live_stream(r);
+    r.now += 60'000'000'000;
+    r.s.tick();
+    CHECK_EQ(r.s.state(), State::Streaming);
+}
+
+TEST(stream_losses_have_reasons) {
+    Rig r;
+    r.s.start();
+    to_live_stream(r);
+    r.s.on_message(quest_msg(control::kBye, 1));
+    CHECK_EQ(r.s.losses(), uint32_t(1));
+    CHECK(r.s.last_loss() == Loss::HeadsetBye);
+    CHECK(!r.s.head_pose().has_value());
+    to_live_stream(r);
+    REQUIRE(r.s.state() == State::Streaming);
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.losses(), uint32_t(2));
+    CHECK(r.s.last_loss() == Loss::NewHello);
+    // A restart before the stream was up is no lost stream
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.losses(), uint32_t(2));
+}
+
+TEST(resume_continues_numbering) {
+    Rig r;
+    r.s.start();
+    to_live_stream(r);
+    auto [index, seq] = send_frame(r);
+    uint16_t control = r.s.control_seq(), audio = r.s.stream_seq(topic::kAudio);
+
+    // USB reopened: no BYE, no handshake, the stream goes on where it was
+    r.s.resume();
+    CHECK(r.s.resuming());
+    CHECK_EQ(r.s.state(), State::Streaming);
+    CHECK(r.s.take_outgoing().empty());
+    CHECK(!r.s.head_pose().has_value());
+    r.now += 300'000'000;
+    feed_pose(r.s);
+    CHECK(!r.s.resuming());
+    CHECK_EQ(r.s.resumes(), uint32_t(1));
+    CHECK_EQ(r.s.losses(), uint32_t(0));
+    auto [index2, seq2] = send_frame(r);
+    CHECK_EQ(index2, index + 1);
+    CHECK_EQ(seq2, uint16_t(seq + 4));  // table, header, csd, video on each slice topic
+    CHECK_EQ(r.s.control_seq(), control);
+    CHECK_EQ(r.s.stream_seq(topic::kAudio), audio);
+    r.now += 1'000'000'000;
+    r.s.tick();
+    CHECK_EQ(r.s.state(), State::Streaming);
+}
+
+TEST(resume_times_out_to_new_handshake) {
+    Rig r;
+    r.s.start();
+    to_live_stream(r);
+    r.s.resume();
+    r.now += 900'000'000;
+    r.s.tick();
+    CHECK(r.take_control().empty());
+    r.now += 200'000'000;
+    r.s.tick();
+    // The headset dropped the stream with its USB function: BYE, and its HELLO starts over
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kBye);
+    CHECK_EQ(r.s.resumes(), uint32_t(0));
+    CHECK_EQ(r.s.losses(), uint32_t(0));  // the USB error was the loss (the runtime counts it)
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.state(), State::Phase1);
+}
+
+TEST(resume_hello_starts_over) {
+    // Link quit: the reopened USB carries the headset's new INVITE, not the old stream
+    Rig r;
+    r.s.start();
+    to_live_stream(r);
+    r.s.resume();
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.state(), State::Phase1);
+    CHECK(!r.s.resuming());
+    CHECK_EQ(r.s.resumes(), uint32_t(0));
+    CHECK_EQ(r.s.losses(), uint32_t(0));
+}
+
+TEST(resume_during_handshake_starts_over) {
+    Rig r;
+    r.s.start();
+    r.s.on_message(quest_msg(control::kHello, 1));
+    REQUIRE(r.s.state() == State::Phase1);
+    r.take_control();
+    r.s.resume();
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    CHECK(!r.s.resuming());
+    r.now += 60'000'000;
+    r.s.tick();
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kBye);
+}
