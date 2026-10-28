@@ -1,7 +1,9 @@
 #include "session.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <stdexcept>
+#include <utility>
 
 #include "templates.hpp"
 
