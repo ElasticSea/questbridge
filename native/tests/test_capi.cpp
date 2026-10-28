@@ -15,6 +15,8 @@ struct FakeUsb {
     Bytes rx;  // bytes the "Quest" will send
     size_t rx_pos = 0;
     std::vector<Bytes> written;
+    bool fail = false;  // reads and writes fail (unplugged)
+    int closed = 0;
 
     void queue_message(const Bytes& raw) {
         Bytes x = pack_transfer(std::vector<Bytes>{raw});
@@ -25,16 +27,20 @@ struct FakeUsb {
         ql_transport t{};
         t.user = this;
         t.write = [](void* u, const uint8_t* d, size_t n, int) {
-            static_cast<FakeUsb*>(u)->written.emplace_back(d, d + n);
+            auto* f = static_cast<FakeUsb*>(u);
+            if (f->fail) return -1;
+            f->written.emplace_back(d, d + n);
             return 0;
         };
         t.read = [](void* u, uint8_t* buf, size_t cap, int) {
             auto* f = static_cast<FakeUsb*>(u);
+            if (f->fail) return -1;
             size_t n = std::min(cap, f->rx.size() - f->rx_pos);
             std::copy(f->rx.begin() + f->rx_pos, f->rx.begin() + f->rx_pos + n, buf);
             f->rx_pos += n;
             return int(n);
         };
+        t.close = [](void* u) { ++static_cast<FakeUsb*>(u)->closed; };
         return t;
     }
 };
@@ -333,5 +339,86 @@ TEST(capi_controllers) {
     REQUIRE(usb.written.size() == 2);  // attached: lookup + connect first, then the call
     CHECK_EQ(usb.written[0][1], uint8_t(31));
     CHECK_EQ(usb.written[1][1], uint8_t(31));
+    ql_host_close(h);
+}
+
+TEST(capi_reopen_resumes_stream) {
+    // Attached stream with a clock offset and a pose, one frame sent
+    FakeUsb usb;
+    Bytes ping(8 + 32);
+    ping[0] = 0x06;
+    ping[1] = 0x80;
+    wr16(&ping[2], 2);
+    wr64(&ping[8 + 16], uint64_t(ql_now_ns() + 71'400'000'000));
+    usb.queue_message(encode_message(0x10, 1, 0, ping));
+    std::vector<Bytes> pose;  // segment table, segment
+    for (const auto& g : qltest::fixture("handshake", "streams").items())
+        if (g["topic"].as_u64() == 34)
+            for (const auto& m : g["samples"].items()) pose.push_back(m["raw"].as_hex());
+    for (const auto& m : pose) usb.queue_message(m);
+    ql_config cfg;
+    ql_config_init(&cfg);
+    cfg.attach = 1;
+    cfg.attach_video_seq = 7;
+    cfg.first_frame_index = 1000;
+    ql_transport t = usb.transport();
+    ql_host* h = nullptr;
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
+    uint8_t csd[] = {0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x68};
+    uint8_t nal[] = {0, 0, 0, 1, 0x65, 1, 2, 3, 4, 5};
+    ql_slice slices[5];
+    for (auto& s : slices) s = {csd, sizeof csd, nal, sizeof nal};
+    REQUIRE(ql_host_submit_frame_slices(h, slices, 5, nullptr) == QL_OK);
+
+    // USB error: everything fails until the host is reopened
+    usb.fail = true;
+    CHECK_EQ(ql_host_poll(h, 0), QL_ERR_TRANSPORT);
+    CHECK_EQ(ql_host_submit_frame_slices(h, slices, 5, nullptr), QL_ERR_TRANSPORT);
+
+    FakeUsb usb2;
+    ql_transport t2 = usb2.transport();
+    REQUIRE(ql_host_reopen(h, &t2) == QL_OK);
+    CHECK_EQ(usb.closed, 1);
+    CHECK(usb2.written.empty());  // no BYE: the headset may still be streaming
+    ql_info info;
+    ql_host_get_info(h, &info);
+    CHECK_EQ(info.resuming, 1);
+    CHECK_EQ(ql_host_get_state(h), QL_STATE_STREAMING);
+    ql_head_pose none;
+    CHECK_EQ(ql_host_get_head_pose(h, &none), QL_ERR_NO_DATA);  // the old pose is stale
+
+    for (const auto& m : pose) usb2.queue_message(m);
+    while (usb2.rx_pos < usb2.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
+    ql_host_get_info(h, &info);
+    CHECK_EQ(info.resuming, 0);
+    CHECK_EQ(info.resumes, uint32_t(1));
+    REQUIRE(ql_host_submit_frame_slices(h, slices, 5, nullptr) == QL_OK);
+    REQUIRE(usb2.written.size() == 1);
+    const Bytes& x = usb2.written[0];
+    CHECK_EQ(rd16(&x[4]), uint16_t(7 + 4));       // topic 10 seq continues
+    CHECK_EQ(rd64(&x[16 + 8 + 8]), uint64_t(1001));  // and the frame index
+    ql_host_close(h);
+    CHECK_EQ(usb2.closed, 1);
+}
+
+TEST(capi_reopen_without_stream_answers_with_bye) {
+    FakeUsb usb;
+    ql_transport t = usb.transport();
+    ql_config cfg;
+    ql_config_init(&cfg);
+    cfg.bye_retry_ms = -1;
+    ql_host* h = nullptr;
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    usb.fail = true;
+    CHECK_EQ(ql_host_poll(h, 0), QL_ERR_TRANSPORT);
+    FakeUsb usb2;
+    ql_transport t2 = usb2.transport();
+    REQUIRE(ql_host_reopen(h, &t2) == QL_OK);
+    ql_info info;
+    ql_host_get_info(h, &info);
+    CHECK_EQ(info.state, QL_STATE_WAIT_HELLO);
+    CHECK_EQ(info.resuming, 0);
+    CHECK_EQ(ql_host_reopen(nullptr, &t2), QL_ERR_ARGUMENT);
     ql_host_close(h);
 }

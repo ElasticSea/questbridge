@@ -67,6 +67,7 @@ GameObject:
   - component: {fileID: 137329077749742663}
   - component: {fileID: 5767397569908506421}
   - component: {fileID: 6242368773972492036}
+  - component: {fileID: 5642510677466389411}
   m_Layer: 0
   m_Name: QuestLink Rig
   m_TagString: Untagged
@@ -142,6 +143,22 @@ MonoBehaviour:
   rightColor: {r: 0.55, g: 0.8, b: 0.95, a: 1}
   pinchColor: {r: 1, g: 0.25, b: 0.2, a: 1}
   radiusScale: 1
+--- !u!114 &5642510677466389411
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6073691053943952398}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66fdbb02cc4c4ce28f0d8af1abc23784, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ElasticSea.QuestLink::ElasticSea.QuestLink.QuestLinkConnectionStatus
+  rig: {fileID: 0}
+  showOverlay: 1
+  reconnectedSeconds: 3
+  logEvents: 1
 --- !u!1 &7895107900642596641
 GameObject:
   m_ObjectHideFlags: 0
@@ -196,12 +213,12 @@ MonoBehaviour:
       m_Name: Position
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: c125b2b6-ba85-4cc1-ba4d-0fb42196c16a
+      m_Id: 0d26d254-ca3b-4371-bbd2-623c64fe7357
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: 1818e379-298d-4294-b2ec-53c100f79882
+        m_Id: 1f9f1738-1d47-44a0-8d41-28f954373f65
         m_Path: <XRController>{LeftHand}/devicePosition
         m_Interactions: 
         m_Processors: 
@@ -216,12 +233,12 @@ MonoBehaviour:
       m_Name: Rotation
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: 5953246c-f33e-4b33-9146-16414e2c9364
+      m_Id: e92d1873-f5aa-48f4-80ab-fbc198d0386e
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: 87960fef-652e-4e3b-b8fd-bdf710745451
+        m_Id: 55b6ef2f-724f-4334-8e96-84d3e6d25c27
         m_Path: <XRController>{LeftHand}/deviceRotation
         m_Interactions: 
         m_Processors: 
@@ -236,12 +253,12 @@ MonoBehaviour:
       m_Name: Tracking State
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: 34722fcd-9abd-4838-84e1-bcbb5879069f
+      m_Id: 1d143e39-595f-4f88-b5cc-68a4a794cfa9
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: f184983f-868f-42e5-96d2-c5d7830d9add
+        m_Id: cf9f8b6c-21a5-4f73-914f-bedd082553c9
         m_Path: <XRController>{LeftHand}/trackingState
         m_Interactions: 
         m_Processors: 
@@ -254,7 +271,7 @@ MonoBehaviour:
     m_Name: 
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: 02477fdc-97a7-4db4-b578-06510bbde57f
+    m_Id: 62e32c71-a10e-4961-b2f4-5887081220ef
     m_Processors: 
     m_Interactions: 
     m_SingletonActionBindings: []
@@ -263,7 +280,7 @@ MonoBehaviour:
     m_Name: 
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: 33c6efe1-d073-4423-808c-184e926e3dc1
+    m_Id: 790c5c46-8151-4e08-ae20-7ccd6b5c31d1
     m_Processors: 
     m_Interactions: 
     m_SingletonActionBindings: []
@@ -336,12 +353,12 @@ MonoBehaviour:
       m_Name: Position
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: 4c31ba9a-853b-4b04-82b8-50ed959d9dce
+      m_Id: 7e7a9052-6372-4e3e-b07d-3d4cd48dde52
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: 0b65fd73-ec97-4168-a422-afa037a86dd8
+        m_Id: c88d1d35-272d-40c2-a980-4a6d311ebfb6
         m_Path: <XRController>{RightHand}/devicePosition
         m_Interactions: 
         m_Processors: 
@@ -356,12 +373,12 @@ MonoBehaviour:
       m_Name: Rotation
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: 684750c1-1a0c-4f53-a2c2-675e349405fc
+      m_Id: 40791dc8-9178-49cc-b7ef-61396ec27ee7
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: 673bc7a0-d969-447d-af91-c607a0729e2e
+        m_Id: 51b150f5-3eba-44f3-8bca-c0c5d411d1bd
         m_Path: <XRController>{RightHand}/deviceRotation
         m_Interactions: 
         m_Processors: 
@@ -376,12 +393,12 @@ MonoBehaviour:
       m_Name: Tracking State
       m_Type: 0
       m_ExpectedControlType: 
-      m_Id: 024006f0-a5ec-4579-8811-cd3e2a9d5db8
+      m_Id: ea496e3f-66f8-48fd-83db-09a4d695e2ef
       m_Processors: 
       m_Interactions: 
       m_SingletonActionBindings:
       - m_Name: 
-        m_Id: dc317184-5fe4-4d2e-bda1-7268331bcc8f
+        m_Id: 0619c0fb-c256-4028-9d82-a5a38986b4a0
         m_Path: <XRController>{RightHand}/trackingState
         m_Interactions: 
         m_Processors: 
@@ -394,7 +411,7 @@ MonoBehaviour:
     m_Name: 
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: 77520bd0-5d8c-4dd2-a63d-82c1ece7a96a
+    m_Id: 6e818390-c690-457a-bee1-5685f17d7c4a
     m_Processors: 
     m_Interactions: 
     m_SingletonActionBindings: []
@@ -403,7 +420,7 @@ MonoBehaviour:
     m_Name: 
     m_Type: 0
     m_ExpectedControlType: 
-    m_Id: d6ce6fb4-3567-4627-8ee1-aa387f961174
+    m_Id: 9ecbda1e-4676-49c3-8531-1e19d0406088
     m_Processors: 
     m_Interactions: 
     m_SingletonActionBindings: []

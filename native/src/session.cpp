@@ -107,6 +107,7 @@ Session::Session(SessionConfig cfg, Clock clock, Log log)
     : cfg_(cfg), clock_(std::move(clock)), log_(std::move(log)), next_frame_index_(cfg.first_frame_index) {}
 
 void Session::start() {
+    last_rx_ns_ = clock_();
     if (cfg_.attach) {
         // Headset session is still up from an earlier run: continue its numbering
         control_seq_ = cfg_.attach_control_seq;
@@ -122,6 +123,39 @@ void Session::enter(State s, int64_t timeout_ns) {
     state_ = s;
     deadline_ = timeout_ns > 0 ? clock_() + timeout_ns : 0;
     bye_due_ = 0;
+    resume_deadline_ = 0;
+}
+
+void Session::resume() {
+    if (state_ != State::Streaming) {
+        // Handshake or setup cut short: nothing to continue
+        log("info", "USB reopened; starting over");
+        wait_hello(cfg_.bye_delay_ns);
+        return;
+    }
+    clear_input();
+    int64_t now = clock_();
+    last_rx_ns_ = now;
+    resume_deadline_ = cfg_.resume_timeout_ns > 0 ? now + cfg_.resume_timeout_ns : 0;
+    log("info", "USB reopened; resuming the stream at frame " + std::to_string(next_frame_index_) + ", control seq " +
+                    std::to_string(control_seq_));
+}
+
+// The stream is over: count it, and drop input that would otherwise look live
+void Session::lose(Loss why) {
+    if (state_ == State::Streaming && !resume_deadline_) {
+        ++losses_;
+        last_loss_ = why;
+    }
+    clear_input();
+}
+
+void Session::clear_input() {
+    head_pose_.reset();
+    hands_.reset();
+    controller_poses_ = {};
+    device_input_.reset();
+    mic_ = audio::MicBuffer();
 }
 
 // The headset sends HELLO (INVITE) once per pairing attempt; if nobody answered it, it waits
@@ -269,6 +303,12 @@ void Session::on_message(std::span<const uint8_t> raw) {
     int seq = rd16(&raw[4]);
     auto body = unpad_body(raw[0], raw.subspan(kHeaderSize));
     ++rx_counts_[t];
+    last_rx_ns_ = clock_();
+    if (resume_deadline_ && !(t == topic::kControl && !body.empty() && body[0] == control::kHello)) {
+        resume_deadline_ = 0;
+        ++resumes_;
+        log("info", "stream resumed after the USB reopen");
+    }
     if (t == topic::kHeadPose) {
         if (auto p = parse_pose2(body)) {
             head_pose_ = p->head;
@@ -372,6 +412,7 @@ void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
         }
         if (state_ != State::WaitHello && state_ != State::WaitHelloV3)
             log("info", std::string("headset restarted the handshake during ") + state_name(state_));
+        lose(Loss::NewHello);
         if (version == 1) session_id_ = tree ? tree->word(6) : 0;
         begin_phase(version);
         return;
@@ -390,6 +431,7 @@ void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
             if (type != control::kBye) return;
             // Protocol error or Link quit: its xrspd sends a new HELLO v1 soon; BYE if not
             log("info", "headset ended the session (BYE)");
+            lose(Loss::HeadsetBye);
             wait_hello(cfg_.bye_retry_ns);
             break;
         default:
@@ -506,6 +548,18 @@ void Session::tick() {
         }
         std::string what = state_ == State::WaitHelloV3 ? "no HELLO v3" : "no " + hex2(expected_);
         log("info", what + " in time; restarting the handshake");
+        wait_hello(0);
+    }
+    if (resume_deadline_ && now > resume_deadline_) {
+        // The headset dropped its stream with the USB function (Link quit, cable): start over
+        log("info", "no Quest message since the USB reopen; restarting the handshake");
+        clear_input();
+        wait_hello(0);
+    } else if ((state_ == State::Setup || state_ == State::Streaming) && cfg_.silence_timeout_ns > 0 &&
+               now - last_rx_ns_ > cfg_.silence_timeout_ns) {
+        log("info", "no Quest message for " + std::to_string((now - last_rx_ns_) / 1'000'000) +
+                        " ms; restarting the handshake");
+        lose(Loss::Silence);
         wait_hello(0);
     }
     if (state_ == State::WaitHello && bye_due_ && now >= bye_due_) {

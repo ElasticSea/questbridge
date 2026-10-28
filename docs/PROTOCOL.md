@@ -343,6 +343,11 @@ topic 4 (inferred: built in, or the topic-4 values only repeat the headset's def
   once more.
 - **Relaunch:** quitting Link in the headset and pressing Launch again produces BYE/HELLO; no
   replug is needed while a host keeps the interface open.
+- **Our hosts' in-session recovery** (not Meta behaviour, our policy): no Quest message for 3 s
+  while streaming (pings ≤ 1 s, poses at the display rate) is treated as a lost stream: BYE,
+  wait for HELLO. After a USB error with the interface back within 500 ms the host continues
+  the same stream (same `seq`s and frame index, IDR first) and falls back to BYE if nothing
+  arrives within 1 s. Not verified on the headset yet (`docs/RECOVERY_LIVE_CHECK.md`).
 - **Replug while a HELLO is unanswered:** the headset's pairing attempt fails (`no device`) but
   `xrspd` stays in `HOST_CONNECTING`, so the next USB enable starts no new attempt and a BYE has
   no reader; only a second disconnect resets it (the "second replug works" observation). A host
