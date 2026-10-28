@@ -22,7 +22,7 @@
        → if M2a or M2c fails: decide on the own-APK path before M3
 - [ ] M3: Mac encoder bench: VideoToolbox 4096×2240 (or chosen size) in real time, slice layout from M2a
 - [ ] M4: Mac host CLI: libusb transport, handshake, clock sync, VideoToolbox test pattern in the headset
-- [ ] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it
+- [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qlhost` and macOS build pending
 - [ ] M6: Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
 - [ ] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap)
