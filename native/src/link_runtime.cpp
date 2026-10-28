@@ -397,6 +397,7 @@ private:
 
     void encode_loop() {
         uint64_t idr_generation = 0;  // force an IDR on the first frame of each connection
+        int stream_frames = 0;        // frames encoded in this stream; the first few are logged
         for (;;) {
             Job job;
             std::shared_ptr<ql_host> h;
@@ -423,6 +424,7 @@ private:
                 stderr_log(nullptr, "info", ("encode failed: " + enc->error()).c_str(), -1);
                 continue;
             }
+            stream_frames = gen != idr_generation ? 1 : stream_frames + 1;
             idr_generation = gen;
             if (std::string name = enc->name(); name != encoder_name_) {  // created by the first encode
                 encoder_name_ = name;
@@ -437,6 +439,15 @@ private:
                             std::to_string(out.first_try_bytes) + " B -> " + std::to_string(out.largest) + " B at QP " +
                             std::to_string(out.qp)).c_str(),
                            -1);
+            if (stream_frames <= 3) {
+                size_t csd = 0;
+                for (auto& c : out.slice_csd) csd = std::max(csd, c.size());
+                stderr_log(nullptr, "info",
+                           ("frame " + std::to_string(stream_frames) + (out.idr ? " IDR" : "") + ": " +
+                            std::to_string(out.slices.size()) + " slices, largest " + std::to_string(out.largest) +
+                            " B, csd " + std::to_string(std::max(csd, out.csd.size())) + " B, QP " + std::to_string(out.qp)).c_str(),
+                           -1);
+            }
             std::vector<ql_slice> slices;
             for (size_t i = 0; i < out.slices.size(); ++i) {
                 const Bytes& csd = i < out.slice_csd.size() ? out.slice_csd[i] : out.csd;
