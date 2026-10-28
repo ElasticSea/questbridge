@@ -35,7 +35,9 @@ struct EncoderConfig {
     int slices = 5;                    // equal bands of MB rows; 0 = encoder default
     Codec codec = Codec::H264;
     Layout layout = Layout::Slices;    // VideoToolbox has no slice-count control: use Strips
-    size_t max_slice_bytes = 120'000;  // per slice NAL; the headset drops messages over ~128 KiB
+    size_t max_slice_bytes = 120'000;  // per slice NAL; the headset ends the session on messages over
+                                       // ~128 KiB. encode() guarantees it: a frame with a larger slice
+                                       // is re-encoded as an IDR under a QP floor, else encode() fails.
     uint32_t bitrate = 100'000'000;    // bits/s
     bool cbr = true;                   // false = peak-constrained VBR (peak 1.5x)
     int gop = 72;                      // IDR interval in frames; 1 = all intra, 0 = first frame only
@@ -65,6 +67,7 @@ struct Slice {
     int first_mb = 0;   // first_mb_in_slice from the slice header
     Bytes nal;          // Annex-B: 00 00 00 01 + slice NAL
     Bytes csd;          // Strips: this strip's SPS + PPS (HEVC: VPS + SPS + PPS); Slices: empty
+    int qp = -1;        // slice QP (H.264); -1 = not parsed
 };
 
 struct EncodedFrame {
@@ -72,7 +75,9 @@ struct EncodedFrame {
     std::vector<Slice> slices;
     bool idr = false;
     int64_t timestamp_ns = 0;
-    double encode_ms = 0;      // submit-to-output wall time
+    double encode_ms = 0;      // submit-to-output wall time, re-encodes included
+    int refits = 0;            // re-encodes needed to bring every slice under max_slice_bytes
+    size_t first_try_bytes = 0;  // refits > 0: largest slice of the rejected first encode
 };
 
 class Encoder {
