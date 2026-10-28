@@ -138,6 +138,10 @@ TEST(frame_timewarp_fields) {
 }
 
 TEST(message_cap) {
+    // At or under the largest message seen working on every headset (Quest Pro HEVC: 106,340 B;
+    // 115,332 B ended the session), with room for the encoders' 100,000 B slice cap
+    CHECK(kMaxStreamMessage <= 106'340);
+    CHECK(100'000 + kHeaderSize + 4 <= kMaxStreamMessage);
     Bytes big(kMaxStreamMessage - kHeaderSize - 4), bigger(big.size() + 1), csd(16);
     std::vector<SliceData> ok = {{csd, big}}, too_big = {{csd, bigger}}, csd_too_big = {{bigger, csd}};
     CHECK(fits_message_cap(ok));

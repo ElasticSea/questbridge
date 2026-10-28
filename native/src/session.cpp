@@ -235,6 +235,13 @@ void Session::send_raw_control(Bytes body, const std::string& label) {
 }
 
 void Session::send_stream(std::vector<StreamMessage> msgs) {
+    // A message over the headset's limit would end the session: drop the batch instead
+    for (auto& m : msgs)
+        if (kHeaderSize + m.body.size() > kMaxStreamMessage) {
+            log("info", "dropped a topic " + std::to_string(m.topic) + " message of " + std::to_string(kHeaderSize + m.body.size()) +
+                            " B (over " + std::to_string(kMaxStreamMessage) + " B)");
+            return;
+        }
     std::vector<Bytes> raw;
     for (auto& m : msgs) {
         uint32_t& seq = stream_seq_[m.topic];

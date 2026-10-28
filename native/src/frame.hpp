@@ -46,10 +46,11 @@ struct FrameParams {
     uint32_t encode_height = 0;
 };
 
-// Largest XRSP message (header + padded body) the headset accepts with margin: ~128 KiB
-// works, 148,544 B ends the session with "buffer too small". Each slice's csd and NAL data
-// go in one message each and may not be split.
-constexpr size_t kMaxStreamMessage = 120 * 1024;
+// Largest XRSP message (header + padded body) we send, on any topic. Over the headset's limit it
+// ends the session with "buffer too small". Quest 3 (H.264): 128,480 B works, 148,544 B fails;
+// Quest Pro (HEVC): 106,340 B works, 115,332 B fails. Each slice's csd and NAL data go in one
+// message each and may not be split.
+constexpr size_t kMaxStreamMessage = 100 * 1024;
 
 // EncodedSlice data-section layout (byte offsets from the start of the data section)
 namespace encoded_slice {

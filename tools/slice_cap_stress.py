@@ -5,7 +5,7 @@ noise / motion / cuts patterns, all intra and with P frames, and fails if any sl
 the cap (qlenc exits 4) or the encoder gives up. Prints the largest slice, how many frames needed
 the re-encode fallback, the QP it cost and the slowest encode() call.
 
-Usage: py tools/slice_cap_stress.py [--frames 72] [--qlenc PATH] [--cap 120000] [-- extra qlenc args]
+Usage: py tools/slice_cap_stress.py [--frames 72] [--qlenc PATH] [--cap 100000] [-- extra qlenc args]
        e.g. -- --codec hevc   or   -- --size 2880x1600
 """
 import argparse
@@ -54,7 +54,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", type=int, default=72)
     ap.add_argument("--qlenc")
-    ap.add_argument("--cap", type=int, default=120_000)
+    ap.add_argument("--cap", type=int, default=100_000)
     ap.add_argument("extra", nargs="*", help="extra qlenc arguments (after --)")
     a = ap.parse_args()
     qlenc = a.qlenc or find_qlenc()

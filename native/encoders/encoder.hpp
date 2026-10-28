@@ -37,8 +37,8 @@ struct EncoderConfig {
     int slices = 5;                    // equal bands of MB rows; 0 = encoder default
     Codec codec = Codec::H264;
     Layout layout = Layout::Slices;    // VideoToolbox has no slice-count control: use Strips
-    size_t max_slice_bytes = 120'000;  // per slice NAL; the headset ends the session on messages over
-                                       // ~128 KiB. encode() guarantees it: a frame with a larger slice
+    size_t max_slice_bytes = 100'000;  // per slice NAL; the headset ends the session on messages over
+                                       // its limit (Quest Pro: < 115 KB, see ql::kMaxStreamMessage). encode() guarantees it: a frame with a larger slice
                                        // is re-encoded as an IDR under a QP floor, else encode() fails.
     uint32_t bitrate = 100'000'000;    // bits/s
     bool cbr = true;                   // false = peak-constrained VBR (peak 1.5x)
