@@ -149,19 +149,28 @@ def main():
     # is reading. Like Meta's hotplug watcher, wait for the interface and open it at once.
     wait = float(os.environ.get("XRSP_WAIT", "600"))
     log("info", f"waiting up to {wait:.0f}s for the Quest to be plugged in", None)
-    link, end = None, time.time() + wait
-    while link is None:
+    end = time.time() + wait
+    while True:
+        link = None
+        while link is None:
+            try:
+                link = XrspLink()
+            except (RuntimeError, OSError):
+                if time.time() > end:
+                    raise
+                time.sleep(0.02)
+        log("info", "XRSP interface opened", None)
         try:
-            link = XrspLink()
-        except (RuntimeError, OSError):
-            if time.time() > end:
-                raise
-            time.sleep(0.02)
-    log("info", "XRSP interface opened", None)
-    try:
-        Host(link, log).run(seconds)
-    finally:
-        link.close()
+            Host(link, log).run(seconds)
+            return
+        except OSError as e:
+            # Unplugged/replugged mid-session: wait for it to come back and start over
+            log("info", f"transport lost ({e}); waiting for reconnect", None)
+        finally:
+            try:
+                link.close()
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":
