@@ -9,6 +9,9 @@
 //
 // ql_session* values are registry tokens, never dereferenced, so render events still queued
 // for a closed session find nothing and are ignored.
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdio>
@@ -126,6 +129,39 @@ public:
         return host_;
     }
 
+    // Stop sending, log the numbers another host needs to continue the headset's session
+    // (handshake.py XRSP_ATTACH), then close USB. The io thread ends; nothing reopens.
+    void shutdown() {
+        std::shared_ptr<ql_host> h;
+        {
+            std::lock_guard<std::mutex> l(mu_);
+            if (stopping_) return;
+            stopping_ = true;
+            h = std::move(host_);
+        }
+        if (io_.joinable()) io_.join();
+        // Frames or audio blocks already in flight still hold the host
+        for (int i = 0; i < 100 && h && h.use_count() > 1; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        ql_info info;
+        if (!h || ql_host_get_info(h.get(), &info) != QL_OK || info.state != QL_STATE_STREAMING) {
+            stderr_log(nullptr, "info", "shutdown: no streaming session", -1);
+            return;
+        }
+        std::string video, other;
+        for (int t = 0; t < 64; ++t) {
+            bool slice = t >= 10 && t < 15;
+            if (slice)
+                video += (video.empty() ? "" : ",") + std::to_string(info.tx_seq[t]);
+            else if (info.tx_seq[t])
+                other += (other.empty() ? "" : ",") + std::to_string(t) + ":" + std::to_string(info.tx_seq[t]);
+        }
+        std::string what = "resume with XRSP_FRAME_START=" + std::to_string(info.next_frame_index) +
+                           " XRSP_CONTROL_SEQ=" + std::to_string(info.control_seq) + " XRSP_VIDEO_SEQ=" + video +
+                           " XRSP_STREAM_SEQ=" + other;
+        stderr_log(nullptr, "info", what.c_str(), -1);
+    }
+
     int submit(ql_session* s, void* texture, const ql_pose* pose) {
         if (!texture || !pose) return QL_ERR_ARGUMENT;
         auto h = host();
@@ -177,6 +213,7 @@ private:
     std::unique_ptr<TextureEncoder> encoder_;
     bool encoder_tried_ = false;
     std::thread io_, encode_, audio_;
+    std::atomic<bool> stopping_{false};
     audio::PlaybackBuffer playback_;
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
@@ -205,7 +242,7 @@ private:
     }
 
     void io_loop() {
-        for (;;) {
+        while (!stopping_) {
             ql_config cfg;
             ql_config_init(&cfg);
             if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
@@ -218,13 +255,15 @@ private:
             std::shared_ptr<ql_host> h(raw, ql_host_close);
             {
                 std::lock_guard<std::mutex> l(mu_);
+                if (stopping_) return;
                 host_ = h;
                 ++host_generation_;
             }
-            for (;;) {
+            while (!stopping_) {
                 ql_status st = ql_host_poll(h.get(), 50);
                 if (st == QL_ERR_TRANSPORT || st == QL_ERR_FAILED) break;
             }
+            if (stopping_) return;  // shutdown() owns the host now
             {
                 // Unplugged, reset or handshake failed: start over with a fresh handshake
                 std::lock_guard<std::mutex> l(mu_);
@@ -291,7 +330,8 @@ private:
     void audio_loop() {
         audio::Pacer pacer;
         float block[audio::kBlockFrames * audio::kChannels];
-        uint64_t blocks = 0, real = 0;
+        uint64_t blocks = 0, real = 0, audible = 0;
+        float peak = 0.f;
         for (;;) {
             auto h = host();
             if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) {
@@ -303,11 +343,17 @@ private:
             }
             for (int n = pacer.due(ql_now_ns()); n > 0; --n) {
                 if (playback_.read(block, audio::kBlockFrames) > 0) ++real;
+                float p = 0.f;
+                for (float s : block) p = std::max(p, std::abs(s));
+                if (p > 1e-4f) ++audible;
+                peak = std::max(peak, p);
                 if (ql_host_send_audio(h.get(), block, 0) != QL_OK) break;
                 if (++blocks % 1000 == 0) {  // every 10 s
                     std::string what = "audio: " + std::to_string(blocks) + " blocks, " + std::to_string(real) +
-                                       " with sound, " + std::to_string(pacer.skipped()) + " skipped, " +
+                                       " from the game, " + std::to_string(audible) + " audible, peak " +
+                                       std::to_string(peak) + ", " + std::to_string(pacer.skipped()) + " skipped, " +
                                        std::to_string(playback_.dropped_frames()) + " frames dropped";
+                    peak = 0.f;
                     stderr_log(nullptr, "info", what.c_str(), -1);
                 }
             }
@@ -338,6 +384,8 @@ ql_session* ql_open(void) {
 void ql_close(ql_session* session) {
     if (session) Runtime::get().close(session);
 }
+
+void ql_shutdown(void) { Runtime::get().shutdown(); }
 
 int ql_poll(ql_session* session) {
     auto& rt = Runtime::get();

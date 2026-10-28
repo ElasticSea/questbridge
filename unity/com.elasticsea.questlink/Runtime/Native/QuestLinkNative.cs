@@ -108,6 +108,7 @@ namespace ElasticSea.QuestLink.Native
 
         [DllImport(Library)] public static extern IntPtr ql_open();
         [DllImport(Library)] public static extern void ql_close(IntPtr session);
+        [DllImport(Library)] public static extern void ql_shutdown();
         [DllImport(Library)] public static extern int ql_poll(IntPtr session);
         [DllImport(Library)] public static extern int ql_get_device_info(IntPtr session, out ql_device_info info);
         [DllImport(Library)] public static extern int ql_get_head_pose(IntPtr session, out ql_pose pose);

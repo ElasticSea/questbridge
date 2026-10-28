@@ -9,7 +9,9 @@ namespace ElasticSea.QuestLink.BridgeTest
     // first head pose the rig is recentred so the instructions are straight ahead and, if the
     // Link origin is at eye level, the floor drops below the head. Tracked hands show as joint
     // spheres (QuestLinkHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
-    // the hand instructions instead of the audio test.
+    // the hand instructions instead of the audio test. "-sequence" runs BenchSequence (guided
+    // volume, audio, hands and yes/no questions on the board), "-sequence-audio" its audio part
+    // plus a handover to the next host; "-mock" uses the mock backend.
     public class FirstLightScene : MonoBehaviour
     {
         const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
@@ -32,11 +34,17 @@ namespace ElasticSea.QuestLink.BridgeTest
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
+        bool sequence, audioOnly;
+        AudioBench bench;
+        QuestLinkAudio output;
+        TextMesh board;
 
         void Awake()
         {
-            // Stream at the headset's rate even while the Editor is not focused
+            // Stream at the headset's rate even while the Editor is not focused; never hold the cursor
             Application.runInBackground = true;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 72;
             // Player builds: "-seconds N" quits after N s so the bench gets USB back
@@ -49,6 +57,14 @@ namespace ElasticSea.QuestLink.BridgeTest
             // "-hands": hand-tracking bench (hand instructions instead of the audio test)
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-hands") >= 0)
                 audioTest = false;
+            // "-sequence": BenchSequence, once, with the steps and questions on the board
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence") >= 0)
+                sequence = audioTest = true;
+            // "-sequence-audio": volume + audio + questions, then hand the session to the next host
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-audio") >= 0)
+                sequence = audioTest = audioOnly = true;
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
+                backend = QuestLinkRig.BackendMode.Mock;
 
             var screen = new GameObject("Screen Camera").AddComponent<Camera>();
             screen.clearFlags = CameraClearFlags.SolidColor;
@@ -70,7 +86,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             Cube(new Vector3(2.2f, 0.5f, -0.5f), 1.0f, new Color(0.8f, 0.4f, 0.85f));
             Cube(new Vector3(-2.0f, 0.35f, -1.0f), 0.7f, new Color(0.95f, 0.6f, 0.2f));
             Cube(new Vector3(0.3f, 0.2f, -2.0f), 0.4f, new Color(0.3f, 0.85f, 0.85f));
-            Text(audioTest ? AudioInstructions : Instructions, new Vector3(0f, 1.9f, 3.2f), audioTest ? 1.2f : 2.3f);
+            board = Text(sequence ? "Starting soon..." : audioTest ? AudioInstructions : Instructions, new Vector3(0f, sequence ? 2.1f : 1.9f, 3.2f), sequence ? 1.7f : audioTest ? 1.2f : 2.3f);
 
             var rigObject = new GameObject("QuestLink Rig");
             rigObject.SetActive(false);
@@ -84,14 +100,25 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
             if (audioTest && rig.Head != null)
                 AudioTest();
+            if (sequence && bench != null)
+            {
+                var seq = gameObject.AddComponent<BenchSequence>();
+                seq.rig = rig;
+                seq.hands = hands;
+                seq.bench = bench;
+                seq.output = output;
+                seq.board = board;
+                seq.audioOnly = audioOnly;
+            }
         }
 
         // Listener on the head, sent to the headset; beeps and mic record/playback below the instructions
         void AudioTest()
         {
-            var output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
+            output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
             output.rig = rig;
-            var bench = new GameObject("Audio Bench").AddComponent<AudioBench>();
+            bench = new GameObject("Audio Bench").AddComponent<AudioBench>();
+            bench.once = sequence;
             var mic = bench.gameObject.AddComponent<QuestLinkMicrophone>();
             mic.rig = rig;
             bench.output = output;
@@ -178,6 +205,9 @@ namespace ElasticSea.QuestLink.BridgeTest
         void Quit()
         {
             Debug.Log($"[QuestLink] quit: {(rig != null ? rig.State.ToString() : "no rig")}, frame {(rig != null ? rig.FrameIndex : 0)}");
+            // Leaves the headset's session up and logs the resume numbers for an attaching host
+            if (rig != null && rig.Backend is NativeQuestLink)
+                NativeQuestLink.Shutdown();
             Application.Quit();
         }
 

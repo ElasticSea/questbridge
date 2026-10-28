@@ -232,5 +232,19 @@ TEST(runtime_unity_flow) {
     CHECK_EQ(ql_get_controller(s2, 0, &c), int(QL_ERR_UNSUPPORTED));
     CHECK_EQ(c.flags, uint32_t(0));
     CHECK_EQ(ql_haptic(s2, 1, 0.5f, 0.1f), int(QL_ERR_UNSUPPORTED));
+
+    // Shutdown hands the headset's session to another host: nothing more is sent, no reopen
+    ql_shutdown();
+    CHECK_EQ(ql_poll(s2), 0);
+    size_t written;
+    {
+        std::lock_guard<std::mutex> l(g_quest.mu);
+        written = g_quest.written.size();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    {
+        std::lock_guard<std::mutex> l(g_quest.mu);
+        CHECK_EQ(g_quest.written.size(), written);
+    }
     ql_close(s2);
 }

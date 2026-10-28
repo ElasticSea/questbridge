@@ -5,8 +5,9 @@ using UnityEngine;
 
 namespace ElasticSea.QuestLink.BridgeTest.Editor
 {
-    // Windows player of the FirstLight scene for hands-off bench runs:
-    // Unity.exe -batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build
+    // Windows player of the FirstLight scene for hands-off bench runs (small window; run it with
+    // unity\run-firstlight.ps1, which keeps it on tools\unity_hidden.ps1's hidden desktop). Build:
+    // tools\unity_hidden.ps1 -ArgLine "-batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build -logFile build.log"
     // Run unity\install-native.ps1 first so questlink.dll is in the package.
     public static class BuildFirstLight
     {
@@ -15,8 +16,8 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
         public static void Build()
         {
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
-            PlayerSettings.defaultScreenWidth = 1280;
-            PlayerSettings.defaultScreenHeight = 720;
+            PlayerSettings.defaultScreenWidth = 320;
+            PlayerSettings.defaultScreenHeight = 180;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.runInBackground = true;
             PlayerSettings.visibleInBackground = true;

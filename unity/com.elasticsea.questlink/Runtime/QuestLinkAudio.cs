@@ -20,8 +20,17 @@ namespace ElasticSea.QuestLink
         volatile int sampleRate;
         float[] stereo = new float[0];
         long submittedFrames;
+        volatile float peak;
 
         public long SubmittedFrames => Interlocked.Read(ref submittedFrames);
+
+        // Largest |sample| sent since the last call (level meters, diagnostics)
+        public float TakePeak()
+        {
+            var p = peak;
+            peak = 0f;
+            return p;
+        }
 
         void OnEnable()
         {
@@ -60,6 +69,10 @@ namespace ElasticSea.QuestLink
                 var frames = ToStereo(data, channels, ref stereo);
                 b.SubmitAudio(stereo, frames, sampleRate);
                 Interlocked.Add(ref submittedFrames, frames);
+                var p = peak;
+                for (var i = 0; i < frames * 2; i++)
+                    p = Math.Max(p, Math.Abs(stereo[i]));
+                peak = p;
             }
             if (muteLocal)
                 Array.Clear(data, 0, data.Length);

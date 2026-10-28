@@ -107,6 +107,11 @@ QL_API ql_session* ql_open(void);
 /* Ends this handle; the runtime and headset session stay up. Submit events for the handle
  * still queued on the render thread are ignored. */
 QL_API void ql_close(ql_session* session);
+/* Stop sending (frames, audio, clock replies) and close USB, leaving the headset's Link session
+ * up for another host: logs "resume with XRSP_FRAME_START=... XRSP_CONTROL_SEQ=...
+ * XRSP_VIDEO_SEQ=... XRSP_STREAM_SEQ=..." (host/handshake.py XRSP_ATTACH) to QL_LOG_FILE or
+ * stderr. Final for this process. */
+QL_API void ql_shutdown(void);
 /* 0 idle (no headset), 1 connecting (USB open, handshake or setup running), 2 streaming. */
 QL_API int ql_poll(ql_session* session);
 /* Nonzero until the HELLO arrived. */
@@ -209,6 +214,7 @@ typedef struct ql_info {
     uint16_t control_seq;
     uint16_t video_seq; /* next seq on topic 10 */
     uint64_t rx_counts[64]; /* messages received per topic */
+    uint16_t tx_seq[64];    /* next seq per PC->Q stream topic, 0 = not used yet */
 } ql_info;
 
 QL_API void ql_config_init(ql_config* cfg);
