@@ -21,9 +21,9 @@
 - [ ] backlog: Windows HW encoder P frames (deblocking off, bench pass 2026-10-28): confirmation run with logcat streamed during the run (72 fps, Glitches 0); qlenc per-eye test content (counter/bar in both eyes) to judge slice-edge smearing
 - [ ] M2c: sensor gate (bench): hands + controller input + haptics found on the wire via Meta-Link captures with the Unity sensor-probe app; feature bits identified
        → if M2a or M2c fails: decide on the own-APK path before M3
-- [ ] M3: Mac encoder bench: VideoToolbox 4096×2240 (or chosen size) in real time, slice layout from M2a
+- [~] M3: Mac encoder bench: VideoToolbox 4096×2240 (or chosen size) in real time, slice layout from M2a — 5-strip VT encoder + `qlenc` on the Mac, clip `vt-strips` awaiting bench; H.264 tops out at ~62 fps at 4096×2240 (16.5 ms/frame), so 72 Hz needs a smaller size or HEVC (2026-10-28)
 - [ ] M4: Mac host CLI: libusb transport, handshake, clock sync, VideoToolbox test pattern in the headset
-- [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qlhost` and macOS build pending
+- [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qlhost` pending; macOS build + CTest pass (libusb, 2026-10-28)
 - [~] M6: (Windows done 2026-10-28: FirstLight scene from a Unity player streams via native core + NVIDIA MF encoder, both eyes stable, timewarp OK; Mac/VideoToolbox pending) — Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
 - [~] audio: game audio → headset (topic 6, 10 ms paced float32 blocks) and headset mic → Unity (`QuestLinkAudio`, `QuestLinkMicrophone`); native + Unity tests pass, FirstLight beep/mic loop awaiting bench (2026-10-28)
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
