@@ -24,10 +24,12 @@ namespace ElasticSea.QuestLink.Tests
         {
             if (Environment.GetEnvironmentVariable("QL_USB") != "0")
                 Assert.Ignore("QL_USB=0 not set: the native library would open the headset's USB interface");
-            if (AssetImporter.GetAtPath(QuestLinkSetup.WindowsPluginPath) == null)
-                Assert.Ignore("questlink.dll not installed (unity\\install-native.ps1)");
-            if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11)
-                Assert.Ignore($"needs Direct3D11, Editor runs {SystemInfo.graphicsDeviceType} (drop -nographics)");
+            var mac = Application.platform == RuntimePlatform.OSXEditor;
+            if (AssetImporter.GetAtPath(mac ? QuestLinkSetup.MacPluginPath : QuestLinkSetup.WindowsPluginPath) == null)
+                Assert.Ignore(mac ? "libquestlink.dylib not installed (unity/install-native.sh)" : "questlink.dll not installed (unity\\install-native.ps1)");
+            var api = mac ? GraphicsDeviceType.Metal : GraphicsDeviceType.Direct3D11;
+            if (SystemInfo.graphicsDeviceType != api)
+                Assert.Ignore($"needs {api}, Editor runs {SystemInfo.graphicsDeviceType} (drop -nographics)");
         }
 
         // Locals don't survive the domain reload of EnterPlayMode, so state goes through SessionState

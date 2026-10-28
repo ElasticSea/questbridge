@@ -34,6 +34,7 @@ add_library(questlink_core STATIC
   src/hands.cpp
   src/controllers.cpp
   src/session.cpp
+  src/fake_quest.cpp
   src/templates_data.cpp
   src/ovr_service.cpp
   src/setup_check.cpp

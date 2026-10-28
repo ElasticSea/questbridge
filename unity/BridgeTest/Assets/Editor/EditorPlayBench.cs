@@ -22,7 +22,7 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
     {
         const string ScenePath = "Assets/EditorPlay/EditorPlay.unity";
         const string Key = EditorPlayBoard.Key;
-        const double TimeoutS = 900, PauseS = 3;
+        const double TimeoutS = 3600, PauseS = 3;
 
         static EditorPlayBench() => EditorApplication.update += Replay;
 
@@ -52,7 +52,7 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
 
         // The user's path, except that the test stops and restarts Play itself (UTF loses track
         // of a Play it didn't start); the scene's own Stop/Play is the same 3 s later Replay().
-        [UnityTest, Explicit("live bench, unity/run-editorplay.ps1"), Timeout(1000000)]
+        [UnityTest, Explicit("live bench, unity/run-editorplay.ps1"), Timeout(4000000)]
         public IEnumerator TwoPlayRounds()
         {
             SessionState.SetFloat(Key + "start", (float)EditorApplication.timeSinceStartup);

@@ -61,7 +61,7 @@ bool is_idr_nal(const Bytes& nal, bool hevc) {
     return hevc ? (vtdec::hevc_type(n[0]) == 19 || vtdec::hevc_type(n[0]) == 20) : vtdec::h264_type(n[0]) == 5;
 }
 
-std::unique_ptr<enc::Encoder> make(enc::Codec codec, int height, int gop, size_t cap = 120'000, uint32_t bitrate = 100'000'000) {
+std::unique_ptr<enc::Encoder> make(enc::Codec codec, int height, int gop, size_t cap = enc::EncoderConfig{}.max_slice_bytes, uint32_t bitrate = 100'000'000) {
     enc::EncoderConfig c;
     c.width = kW;
     c.height = height;
@@ -101,7 +101,7 @@ void round_trip(enc::Codec codec, int height) {
             const auto& s = out.slices[size_t(i)];
             CHECK_EQ(s.index, i);
             CHECK_EQ(s.first_mb, 0);  // every strip is its own picture
-            CHECK(s.nal.size() <= 120'000);
+            CHECK(s.nal.size() <= enc::EncoderConfig{}.max_slice_bytes);
             CHECK_EQ(is_idr_nal(s.nal, hevc), key);  // IDRs aligned across strips
             auto ps = vtdec::split_annexb(s.csd);
             CHECK_EQ(vtdec::is_hevc(s.csd), hevc);
@@ -157,7 +157,7 @@ TEST(vt_h264_strips_round_trip) { round_trip(enc::Codec::H264, 2240); }
 // Noise at a high rate: VideoToolbox overshoots; encode() must refit every strip under the cap
 // and the result (refit IDRs with their own parameter sets, then the main session) must decode.
 TEST(vt_hevc_strips_slice_cap) {
-    const size_t cap = 120'000;  // the real cap; pure noise is ~100 KB per strip even at QP 51
+    const size_t cap = 110'000;  // pure noise is ~100 KB per strip even at QP 51, over the real cap
     auto e = make(enc::Codec::HEVC, 2240, 72, cap, 400'000'000);
     REQUIRE(e);
     Canvas pic(2240);

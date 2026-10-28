@@ -161,6 +161,8 @@ public:
         if (slot >= 0 && slot < kSlots) state_[slot] = kFree;
     }
 
+    std::string name() const override { return encoder_ ? encoder_->name() : ""; }
+
     std::string error() const override {
         std::lock_guard<std::mutex> l(err_mu_);
         return error_;
@@ -275,6 +277,7 @@ private:
             ec.layout = enc::Layout::Strips;
             ec.bitrate = cfg_.bitrate;
             ec.gop = cfg_.gop;
+            ec.max_slice_bytes = cfg_.max_slice_bytes;
             ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;
             std::string err;
             encoder_ = enc::create_encoder(ec, &err);
@@ -299,9 +302,15 @@ private:
         std::sort(ef.slices.begin(), ef.slices.end(), [](auto& a, auto& b) { return a.index < b.index; });
         out.csd = std::move(ef.csd);
         out.idr = ef.idr;
+        out.refits = ef.refits;
+        out.first_try_bytes = ef.first_try_bytes;
+        out.largest = 0;
+        out.qp = -1;
         out.slices.clear();
         out.slice_csd.clear();
         for (auto& s : ef.slices) {
+            out.largest = std::max(out.largest, s.nal.size());
+            out.qp = std::max(out.qp, s.qp);
             out.slices.push_back(std::move(s.nal));
             out.slice_csd.push_back(std::move(s.csd));
         }

@@ -27,6 +27,14 @@ const templates::Control& control_template(uint8_t type, uint16_t version) {
 
 }  // namespace
 
+uint32_t default_bitrate(const DeviceInfo& d, uint32_t hz) {
+    constexpr uint64_t kVerified = 100'000'000;
+    if (d.product == "Meta Quest 3") return uint32_t(kVerified);
+    for (const auto& m : d.modes)
+        if (m.hz == hz && m.bitrate) return uint32_t(std::min(kVerified, m.bitrate * 7 / 10));
+    return uint32_t(kVerified);
+}
+
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
     // HELLO root p3 -> p0: display struct (layout: docs/PROTOCOL.md §8)
     const capnp::Node* desc = hello ? hello->child(3) : nullptr;
@@ -235,6 +243,14 @@ void Session::send_raw_control(Bytes body, const std::string& label) {
 }
 
 void Session::send_stream(std::vector<StreamMessage> msgs) {
+    // A message over the headset's limit would end the session: drop the batch instead
+    for (auto& m : msgs)
+        if (kHeaderSize + m.body.size() > cap().message) {
+            ++dropped_messages_;
+            log("info", "dropped a topic " + std::to_string(m.topic) + " message of " + std::to_string(kHeaderSize + m.body.size()) +
+                            " B (over " + std::to_string(cap().message) + " B)");
+            return;
+        }
     std::vector<Bytes> raw;
     for (auto& m : msgs) {
         uint32_t& seq = stream_seq_[m.topic];
@@ -253,7 +269,7 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     if (state_ != State::Streaming) return Submit::NotStreaming;
     if (!quest_offset_) return Submit::NoClock;  // need one clock ping to map our clock onto the Quest's
     if (slices.empty() || slices.size() > templates::slice_headers().size()) return Submit::BadSlices;
-    if (!fits_message_cap(slices)) return Submit::TooLarge;
+    if (!fits_message_cap(slices, cap().message)) return Submit::TooLarge;
     FrameParams p;
     p.index = opt.index ? opt.index : next_frame_index_;
     p.target_vsync_quest_ns = opt.target_vsync_quest_ns ? opt.target_vsync_quest_ns

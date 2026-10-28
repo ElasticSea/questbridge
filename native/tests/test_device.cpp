@@ -104,6 +104,25 @@ Bytes meta_config_v3() {
 
 }  // namespace
 
+// Quest 3 keeps its verified rate; the Pro gets 70% of what it advertises at 72 Hz
+TEST(default_bitrate_per_headset) {
+    for (const auto& path : device_files()) {
+        auto fx = json::parse_file(path.string());
+        DeviceInfo d = parse_body(fx["hello"].as_hex());
+        if (d.product == "Meta Quest 3") CHECK_EQ(default_bitrate(d, 72), uint32_t(100'000'000));
+        if (d.product == "Meta Quest Pro") {
+            uint64_t advertised = 0;
+            for (const auto& m : d.modes)
+                if (m.hz == 72) advertised = m.bitrate;
+            CHECK(advertised > 0);
+            CHECK_EQ(default_bitrate(d, 72), uint32_t(advertised * 7 / 10));
+            CHECK(default_bitrate(d, 72) < 90'000'000);
+        }
+    }
+    DeviceInfo unknown;
+    CHECK_EQ(default_bitrate(unknown, 72), uint32_t(100'000'000));
+}
+
 TEST(device_fixtures_match_expected) {
     auto files = device_files();
     CHECK(files.size() >= 2);  // quest3, quest_pro

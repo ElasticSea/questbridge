@@ -5,7 +5,7 @@
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
 //              [--input nv12|bgra|d3d11|d3d11-rgba|cvpixelbuffer] [--layout auto|slices|strips] [--software] [--low-latency]
 //              [--backend auto|nvidia|amd|intel|mf|mf-software|openh264|software]
-//              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
+//              [--slices 5] [--max-slice-bytes 100000] [--csd every|idr] [--root REPO]
 //              [--codec h264|hevc] [--size 4096x2240] [--pattern tiles|noise|motion|cuts]
 // Patterns noise (fresh random pixels every frame), motion (a random texture jumping ~300 px
 // per frame) and cuts (tiles with a 2-frame motion burst every 18 frames, so rate control is at
@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
     std::string layout_arg = "auto";  // per GPU vendor, checked on a probe frame
 #endif
     std::string backend = "auto";
-    size_t max_slice_bytes = 120'000;
+    size_t max_slice_bytes = 100'000;
     bool hevc = false;
     int width = 4096, height = 2240;
     for (int i = 1; i < argc; i++) {
@@ -339,7 +339,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
                             "[--input nv12|bgra|d3d11|d3d11-rgba|cvpixelbuffer] [--layout auto|slices|strips] [--software] [--low-latency] [--slices 5] "
                             "[--backend auto|nvidia|amd|intel|mf|mf-software|openh264|software] "
-                            "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO] [--codec h264|hevc] "
+                            "[--max-slice-bytes 100000] [--csd every|idr] [--root REPO] [--codec h264|hevc] "
                             "[--size 4096x2240]\n");
             return 2;
         }

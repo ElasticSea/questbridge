@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "xrsp.hpp"
@@ -46,10 +47,18 @@ struct FrameParams {
     uint32_t encode_height = 0;
 };
 
-// Largest XRSP message (header + padded body) the headset accepts with margin: ~128 KiB
-// works, 148,544 B ends the session with "buffer too small". Each slice's csd and NAL data
-// go in one message each and may not be split.
-constexpr size_t kMaxStreamMessage = 120 * 1024;
+// Largest XRSP message (header + padded body) we send, on any topic, and the encoders' slice NAL
+// cap under it. Over the headset's limit a message ends the session with "buffer too small".
+// Quest 3 (H.264): 128,480 B works, 148,544 B fails. Quest Pro (HEVC): 106,340 B works,
+// 115,332 B fails. Other or unknown headsets get the Pro's. Each slice's csd and NAL data go in
+// one message each and may not be split.
+struct MessageCap {
+    size_t message;  // header + padded body
+    size_t slice;    // slice NAL (or csd); + header + 4 B padding stays within message
+};
+constexpr MessageCap kQuest3Cap{120 * 1024, 120'000};
+constexpr MessageCap kConservativeCap{100 * 1024, 100'000};
+MessageCap message_cap(const std::string& product);  // by HELLO product name
 
 // EncodedSlice data-section layout (byte offsets from the start of the data section)
 namespace encoded_slice {
@@ -69,8 +78,8 @@ constexpr size_t kTargetVsyncWord = 11;
 constexpr size_t kFovWord = 18;         // pointers to the left / right eye FovPort (4x f32)
 }  // namespace encoded_slice
 
-// True if every slice's csd and video fit in one message of at most kMaxStreamMessage.
-bool fits_message_cap(std::span<const SliceData> slices);
+// True if every slice's csd and video fit in one message of at most max_message bytes.
+bool fits_message_cap(std::span<const SliceData> slices, size_t max_message);
 
 // Throws std::invalid_argument for 0 slices or more slices than recorded templates (5).
 std::vector<StreamMessage> build_frame(std::span<const SliceData> slices, const FrameParams& p);
