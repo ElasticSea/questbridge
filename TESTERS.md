@@ -3,7 +3,7 @@
 Press Play in Unity and your scene runs on a Quest 3 over a USB cable. There's nothing to install on the headset. This is build **0.1.0**; the changes are in [CHANGELOG.md](unity/com.elasticsea.questlink/CHANGELOG.md).
 
 ## You need
-- **Windows 10/11 (x64)** with a GPU that has a hardware H.264 encoder (NVIDIA, AMD or Intel from the last ~8 years), **or a Mac with Apple silicon** (M1 or newer) on macOS 26. The Mac path hasn't been tried with a headset yet, so tell us what happens.
+- **Windows 10/11 (x64)** with a GPU that has a hardware H.264 encoder (NVIDIA, AMD or Intel from the last ~8 years; no usable encoder? see [Software encoder](#optional-software-encoder-windows)), **or a Mac with Apple silicon** (M1 or newer) on macOS 26. The Mac path hasn't been tried with a headset yet, so tell us what happens.
 - **Unity 6000.3** and **git** on the PATH (Unity installs packages with it).
 - A **Quest 3** and a USB-C **data** cable. Plug it straight into the computer, not through a hub. Use a USB 3 port if you can.
 - **Access to the GitHub repo** `ElasticSea/meta-quest-link-for-mac`, which is private. Check access once in a terminal: `git ls-remote https://github.com/ElasticSea/meta-quest-link-for-mac.git`. It should list refs without asking again. If you use SSH keys, use the `git@github.com:` URL below instead.
@@ -46,7 +46,15 @@ You can Stop and Play again as often as you like and you stay in Link. Using the
 | You pressed **No** on the Windows prompt | Press **Stop OVRService now** in Check Setup, or restart Unity and press Play again. |
 | Headset: "Attempting to connect" for more than ~10 s, or no **Launch** button | Stop and Play again. |
 | Headset: no picture after Launch | Quit Link in the headset and press Launch again. |
+| No picture, native log says `no usable H.264 encoder` | Your GPU's encoder can't make the stream the headset needs: install the [software encoder](#optional-software-encoder-windows). |
 | Meta's own Link doesn't work after testing | Quit Unity. The service starts again by itself; rebooting also restores it. |
+
+## Optional: software encoder (Windows)
+QuestLink picks the GPU's hardware encoder by itself (NVIDIA, AMD, Intel) and checks that its output suits the headset. Only NVIDIA has been tried with a headset so far, so on AMD or Intel please send the native log line that starts with `encoder:`. If no hardware encoder works (no GPU encoder, a remote desktop, an old driver), QuestLink falls back to **OpenH264**, Cisco's free software encoder. It uses the CPU (a 6+ core CPU keeps up at 72 Hz on normal scenes) and isn't shipped with the package: Cisco covers the H.264 licence only when you download its binary yourself. To install it:
+- From a repo checkout: run `native\encoders\openh264etch.ps1`.
+- Without one: download [openh264-2.7.0-win64.dll.bz2](https://ciscobinary.openh264.org/openh264-2.7.0-win64.dll.bz2) (Cisco, ~450 KB), unpack it with 7-Zip and put `openh264-2.7.0-win64.dll` in `%LOCALAPPDATA%\QuestLink\openh264\`.
+
+Restart Unity afterwards. To force a backend for testing, set `QL_ENCODER=openh264` (or `nvidia`, `amd`, `intel`) before starting Unity Hub.
 
 **Reporting a bug:** send us the Check Setup report (**Copy report**), the Unity Console, and a native log. To get the native log, set the environment variables `QL_LOG=1` and `QL_LOG_FILE=<some folder>/questlink.log` before starting Unity Hub.
 
