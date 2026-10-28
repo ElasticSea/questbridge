@@ -1,4 +1,4 @@
-// Frame building against Meta's recorded IDR frame (host/replay/meta-idr.json).
+// Frame building against Meta's recorded IDR frame (tests/fixtures/replay/idr-frame.json).
 #include "frame.hpp"
 #include "harness.hpp"
 #include "session.hpp"
@@ -17,7 +17,7 @@ struct Recorded {
 const Recorded& recorded() {
     static Recorded rec = [] {
         Recorded r;
-        auto clip = json::parse_file(qltest::repo("host/replay/meta-idr.json"));
+        auto clip = json::parse_file(qltest::repo("tests/fixtures/replay/idr-frame.json"));
         for (const auto& m : clip["frame"].items())
             r.msgs.push_back({uint8_t(m["topic"].as_u64()), uint8_t(m["flags"].as_u64()), m["body"].as_hex()});
         // Per slice: table, header, csd, video

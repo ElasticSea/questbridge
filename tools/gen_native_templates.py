@@ -3,7 +3,7 @@
 - PC control templates (first per (type, version)) from tests/fixtures/handshake/control.json,
   as Meta's raw Cap'n Proto bytes; the host decodes them, patches the session id, re-encodes.
 - Post-handshake stream setup messages and the per-topic EncodedSlice segment table + header
-  from host/replay/meta-idr.json.
+  from tests/fixtures/replay/idr-frame.json.
 
 The C++ test `templates_match_fixtures` checks the output against the fixtures, so rerun this
 after re-extracting them.
@@ -28,7 +28,7 @@ def c_bytes(data, indent="    "):
 def main():
     with open(os.path.join(ROOT, "tests", "fixtures", "handshake", "control.json"), encoding="utf-8") as f:
         control = json.load(f)
-    with open(os.path.join(ROOT, "host", "replay", "meta-idr.json"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "tests", "fixtures", "replay", "idr-frame.json"), encoding="utf-8") as f:
         clip = json.load(f)
 
     controls, seen = [], set()

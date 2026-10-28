@@ -4,10 +4,9 @@
 # Suites: py (unittest), native (native\build.ps1: Release build incl. encoders, then CTest; the full
 #         run adds tools\slice_cap_stress.py: high-entropy clips through qlenc, slices under the cap),
 #         unity (BridgeTest EditMode + PlayMode in batchmode, PlayMode again in a minimized
-#         non-batchmode Editor, SensorProbe compile check; skipped if Unity is missing). Unity runs
+#         non-batchmode Editor; skipped if Unity is missing). Unity runs
 #         with QL_USB=0 (questlink.dll never opens the headset) and a D3D11 device (Editor Play tests).
-# Logs: capture\runs\test_all\<stamp>\<step>.log. Exit code 0 only if no step failed.
-# Keep in step with tools/test_all.sh (Mac): same steps, same summary format.
+# Logs: out\runs\test_all\<stamp>\<step>.log. Exit code 0 only if no step failed.
 param(
     [switch]$Quick,
     [ValidateSet("", "py", "native", "unity")][string]$Only = "",
@@ -16,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
 $unityExe = "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe"
-$logDir = Join-Path $repo ("capture\runs\test_all\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$logDir = Join-Path $repo ("out\runs\test_all\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force $logDir | Out-Null
 $results = @()
 
@@ -134,7 +133,6 @@ function Test-Unity {
     Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestLink.Tests;ElasticSea.QuestLink.XRManagement.Tests"
     Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests;ElasticSea.QuestLink.XRManagement.PlayModeTests"
     Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests" -Window
-    Test-UnityCompile "SensorProbe"
 }
 
 $total = Get-Date

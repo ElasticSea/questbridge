@@ -1,5 +1,5 @@
 // Windows transport: opens just the Quest's XRSP interface through WinUSB (port of
-// host/winusb_link.py). libusb on Windows opens every interface of a composite device, which
+// tools/pyhost/winusb_link.py). libusb on Windows opens every interface of a composite device, which
 // fails while adb holds the ADB interface; WinUSB opens interface 0 alone via its path.
 //
 // All transfers are overlapped: we wait on an event with our own deadline and abort the pipe

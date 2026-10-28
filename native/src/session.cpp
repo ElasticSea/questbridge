@@ -36,7 +36,7 @@ uint32_t default_bitrate(const DeviceInfo& d, uint32_t hz) {
 }
 
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
-    // HELLO root p3 -> p0: display struct (layout: docs/PROTOCOL.md §8)
+    // HELLO root p3 -> p0: display struct (layout: docs/protocol/spec.md §8)
     const capnp::Node* desc = hello ? hello->child(3) : nullptr;
     const capnp::Node* d = desc ? desc->child(0) : nullptr;
     if (!d || d->kind != capnp::Kind::Struct || d->data.size() < 6) return std::nullopt;

@@ -61,7 +61,7 @@ typedef struct ql_fov {
     float up, down, left, right; /* positive tangents of the half-angles (OVR FovPort order) */
 } ql_fov;
 
-/* From the headset's HELLO device description (docs/PROTOCOL.md §8). */
+/* From the headset's HELLO device description (docs/protocol/spec.md §8). */
 #define QL_MAX_REFRESH_RATES 8
 
 typedef struct ql_device_info {
@@ -131,7 +131,7 @@ QL_API ql_session* ql_open(void);
 QL_API void ql_close(ql_session* session);
 /* Stop sending (frames, audio, clock replies) and close USB, leaving the headset's Link session
  * up for another host: logs "resume with XRSP_FRAME_START=... XRSP_CONTROL_SEQ=...
- * XRSP_VIDEO_SEQ=... XRSP_STREAM_SEQ=..." (host/handshake.py XRSP_ATTACH) to QL_LOG_FILE or
+ * XRSP_VIDEO_SEQ=... XRSP_STREAM_SEQ=..." (tools/pyhost/handshake.py XRSP_ATTACH) to QL_LOG_FILE or
  * stderr. Final for this process. */
 QL_API void ql_shutdown(void);
 /* 0 idle (no headset), 1 connecting (USB open, handshake or setup running), 2 streaming. */
@@ -345,7 +345,7 @@ QL_API ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slic
 QL_API int64_t ql_now_ns(void);
 
 /* ======================= Audio =========================================================== */
-/* Link carries raw PCM on topic 6 (PROTOCOL_NOTES "Audio"): game audio to the headset as
+/* Link carries raw PCM on topic 6 (docs/protocol/spec.md): game audio to the headset as
  * 48 kHz stereo float32 in 10 ms blocks, the headset microphone back as 48 kHz mono int16. */
 
 #define QL_AUDIO_RATE 48000

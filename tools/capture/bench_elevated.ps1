@@ -2,7 +2,7 @@
 # trigger files from the non-elevated slot driver until capture\STOP exists:
 #   capture\CAP_START -> start a USB capture (pcaps\<Name>-<stamp>.pcap)  capture\CAP_STOP -> stop it
 #   capture\REPLUG    -> restart the hub the Quest is on (only with a host running: an unanswered
-#                       HELLO across a replug wedges xrspd, docs/CONNECTING.md)
+#                       HELLO across a replug wedges xrspd, docs/protocol/connecting.md)
 #   capture\OVR_START -> Start-Service OVRService      capture\OVR_STOP -> Stop-Service OVRService
 #   capture\STOP      -> stop the capture, stop OVRService, exit
 # Usage: .\bench_elevated.ps1 -Name slot [-Interface \\.\USBPcap1]   (asks for UAC itself)
@@ -13,7 +13,7 @@ if (-not $Elevated) {
     $ifaceArg = if ($Interface) { "-Interface $Interface" } else { "" }
     Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList `
         "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Name $Name $ifaceArg -Elevated"
-    Write-Host "bench_elevated: UAC requested; status in capture\pcaps\$Name-*.status"
+    Write-Host "bench_elevated: UAC requested; status in out\captures\$Name-*.status"
     return
 }
 

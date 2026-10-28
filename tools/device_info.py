@@ -1,6 +1,6 @@
 """Decode the device description in a Quest HELLO (topic 1, inner type 0x81).
 
-Layout: docs/PROTOCOL.md §8. The same parse lives in native/src/session.cpp
+Layout: docs/protocol/spec.md §8. The same parse lives in native/src/session.cpp
 (parse_device_info); both are checked against tests/fixtures/devices/*.json.
 
 Input (first argument):

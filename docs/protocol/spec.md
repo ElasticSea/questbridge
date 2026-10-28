@@ -6,8 +6,6 @@ from USB captures of Meta's own PC software, headset and PC logs, and bench runs
 
 - Reference setup: Quest 3, headset firmware `releases-oculus-14.0-v207`, Meta Horizon Link PC
   runtime 1.208. Other headsets and firmware versions may differ.
-- Raw, chronological lab log: [PROTOCOL_NOTES.md](../PROTOCOL_NOTES.md). This document is the
-  cleaned-up version. When they disagree, this one is newer, unless the log has a later entry.
 - All multi-byte values are little-endian. Offsets are in bytes unless noted. "Word" means a
   64-bit Cap'n Proto word unless the context says 32-bit XRSP words.
 - Personal identifiers are replaced by placeholders: `<SERIAL>`, `<DEVICE_ID>`, `<UUID>`.
@@ -155,7 +153,7 @@ messages (verified: `tools/capnp_codec.py`, schema-less decode/encode).
   capabilities seen. Segment table = `u32 segment_count − 1`, then `u32 words` per segment
   (padded to 8 B). Our codec handles single-segment messages only.
 - Only `video.capnp:EncodedSlice` (and a few unrelated schemas) are embedded in Meta's binaries
-  (`tools/capnp_extract.py` → `schemas/`). All other messages are decoded structurally; field
+  (`tools/capnp_extract.py` → `docs/protocol/schemas/`). All other messages are decoded structurally; field
   names in this spec are ours unless they come from that schema or from log strings.
 - **Allocation order.** Meta's builder places pointer targets in the order fields are
   initialised, not in pointer-slot order (e.g. CONFIG v3: p1, then p3, then p2), and leaves
@@ -222,10 +220,10 @@ user presses Launch (BYE + HELLO v3).
 
 ### 4.2 Phase 1 (cable plugged in)
 
-Bracketed names are the headset's (`xrspd`); the others are ours (`host/handshake.py`,
+Bracketed names are the headset's (`xrspd`); the others are ours (`tools/pyhost/handshake.py`,
 `native/src/session.hpp`). "Session id" is the random u64 from HELLO v1 `d6`. Field notation:
 `dN` = data word N, `pN` = pointer N of the root struct. All verified against the recording
-(`tests/test_handshake.py`, `capture/handshake-decoded.txt`); the host-built messages are
+(`tests/test_handshake.py`); the host-built messages are
 Meta's recorded ones with only the session id replaced.
 
 | # | Dir | Type | Name | Inner flags | Root (data/ptrs) | Content |
@@ -315,7 +313,7 @@ The Quest's mic audio (6) and telemetry (33) begin right after the handshake, ab
 the PC's audio.
 
 **What our host sends** (verified sufficient): Meta's 48 recorded setup messages on topics 26,
-31, 2 and 28 (`host/replay/meta-idr.json` `setup`, embedded in `native/src/templates_data.cpp`),
+31, 2 and 28 (`tests/fixtures/replay/idr-frame.json` `setup`, embedded in `native/src/templates_data.cpp`),
 spaced as recorded with gaps capped at 0.5 s, then video. It does not send topics 4 or 7, yet
 frames with `rectifyMeshId` 1001 are reprojected, so mesh 1001 is known to the headset without
 topic 4 (inferred: built in, or the topic-4 values only repeat the headset's defaults).
@@ -347,7 +345,7 @@ topic 4 (inferred: built in, or the topic-4 values only repeat the headset's def
   while streaming (pings ≤ 1 s, poses at the display rate) is treated as a lost stream: BYE,
   wait for HELLO. After a USB error with the interface back within 500 ms the host continues
   the same stream (same `seq`s and frame index, IDR first) and falls back to BYE if nothing
-  arrives within 1 s. Not verified on the headset yet (`docs/RECOVERY_LIVE_CHECK.md`).
+  arrives within 1 s. Not verified on the headset yet (`docs/testing.md`).
 - **Replug while a HELLO is unanswered:** the headset's pairing attempt fails (`no device`) but
   `xrspd` stays in `HOST_CONNECTING`, so the next USB enable starts no new attempt and a BYE has
   no reader; only a second disconnect resets it (the "second replug works" observation). A host

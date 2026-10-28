@@ -1,4 +1,4 @@
-// Replay clips (host/replay/*.json, written by tools/extract_replay.py and
+// Replay clips (out/clips/*.json, written by tools/extract_replay.py and
 // tools/encode_pattern.py) for qlhost.
 #pragma once
 

@@ -1,6 +1,6 @@
 """Extract what Meta's host sends after the handshake, for replay by our host.
 
-Writes host/replay/<name>.json:
+Writes out/clips/<name>.json:
   setup   PC->Quest stream messages (not topic 1, not video/audio) from session
           start until the first video frame, in order: {t, topic, flags, body}
   frame   the raw XRSP messages of one complete video frame on topics 10..14:
@@ -68,7 +68,7 @@ def main():
 
     out = {"source": os.path.basename(path), "session_start": start, "frame_index": want,
            "setup": [enc(m) for m in setup], "frame": [enc(m) for m in frame]}
-    dest = os.path.join(os.path.dirname(__file__), "..", "host", "replay")
+    dest = os.path.join(os.path.dirname(__file__), "..", "out", "clips")
     os.makedirs(dest, exist_ok=True)
     with open(os.path.join(dest, f"{name}.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)

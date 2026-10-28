@@ -129,8 +129,8 @@ std::string on_open_failed(bool (*quest_present)()) {
     if (!quest) return {};
     switch (state) {
         case HelperState::Prompting: return "waiting for the admin prompt to stop OVRService";
-        case HelperState::Declined: return "OVRService holds the Quest and the admin prompt was declined (host\\ovr_service.ps1 stop)";
-        case HelperState::Failed: return "could not stop OVRService (host\\ovr_service.ps1 stop)";
+        case HelperState::Declined: return "OVRService holds the Quest and the admin prompt was declined (tools\\windows\\ovr_service.ps1 stop)";
+        case HelperState::Failed: return "could not stop OVRService (tools\\windows\\ovr_service.ps1 stop)";
         default: return "OVRService is running again and holds the Quest";
     }
 }

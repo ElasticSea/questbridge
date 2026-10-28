@@ -1,4 +1,4 @@
-// Link host session, sans-I/O (port of host/handshake.py).
+// Link host session, sans-I/O (port of tools/pyhost/handshake.py).
 //
 // Feed it every Quest->PC message and call tick() regularly; it queues the PC->Quest
 // transfers to write. Not thread-safe: the C API wraps it in a mutex.
@@ -77,7 +77,7 @@ const char* state_name(State s);
 // Why a stream ended (same values as ql_loss)
 enum class Loss { None, Usb, HeadsetBye, NewHello, Silence };
 
-// HELLO device description (docs/PROTOCOL.md §8; tools/device_info.py is the same parse)
+// HELLO device description (docs/protocol/spec.md §8; tools/device_info.py is the same parse)
 struct DeviceInfo {
     struct Mode {
         uint32_t hz = 0;

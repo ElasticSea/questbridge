@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace ElasticSea.QuestLink.BridgeTest
 {
-    // "-sequence-recovery": the live recovery check (docs/RECOVERY_LIVE_CHECK.md), about one
+    // "-sequence-recovery": the live recovery check (docs/testing.md), about one
     // minute, every step on the board. The player keeps running; tools/recovery_check.py reads
     // the "[Recovery] drop N <kind>" log lines and disturbs the headset over adb (sleep, Link
     // quit). Each drop must come back to streaming without restarting anything; the user presses

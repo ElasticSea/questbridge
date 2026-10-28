@@ -1,6 +1,6 @@
 // Touch controllers: topic 35 DeviceInput (buttons, touches, trigger/grip/stick per controller)
 // and haptics. Controller poses ride topic 34 with the head pose (pose.hpp). Layouts in
-// PROTOCOL_NOTES.md "Controllers & haptics" and tools/decode_controllers.py.
+// docs/protocol/spec.md and tools/decode_controllers.py.
 //
 // Haptics are not a Link topic: Meta's PC opens a RuntimeIPC (topic 31) connection to the Quest's
 // HapticsServer (lookup + connect, with a client id the PC picks) and sends each pulse as a call

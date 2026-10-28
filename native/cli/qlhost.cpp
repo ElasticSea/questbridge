@@ -1,8 +1,8 @@
-// qlhost: Link host CLI on the questlink C API (same behaviour as host/handshake.py).
+// qlhost: Link host CLI on the questlink C API (same behaviour as tools/pyhost/handshake.py).
 //
 // Waits for the Quest's XRSP interface, does the handshake (press "Enable Link" in the
 // headset between the phases), then either listens for 5 s or, with XRSP_REPLAY set, loops a
-// recorded clip (host/replay/*.json) at the session's refresh rate with the render pose patched in.
+// recorded clip (out/clips/*.json) at the session's refresh rate with the render pose patched in.
 //
 // Usage: qlhost [seconds]
 //        qlhost --check [--no-claim]   setup check (ql_check_setup); exit 1 if anything failed

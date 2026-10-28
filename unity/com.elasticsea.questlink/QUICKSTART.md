@@ -1,6 +1,6 @@
 # Quest Link for Unity: 5-minute start (Windows)
 
-Play your own Unity scene on a Quest 3 over USB, straight from the Editor's Play button. No app on the headset. Setup of the PC and package: [TESTERS.md](../../TESTERS.md); this page is the rig and scripting part.
+Play your own Unity scene on a Quest 3 over USB, straight from the Editor's Play button. No app on the headset. Setup of the PC and package: [docs/getting-started.md](../../docs/getting-started.md); this page is the rig and scripting part.
 
 ## You need
 - Windows 10/11 PC with Unity **6000.3** and git installed.

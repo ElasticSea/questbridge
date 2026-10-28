@@ -1,6 +1,6 @@
 // Hand tracking: topic 8 Hands (per-hand root pose + 24 local bone rotations, 60/s) and
 // topic 9 Skeleton (bind pose, chunked, once after hands are enabled). Packed little-endian C
-// structs, not Cap'n Proto; layout in PROTOCOL_NOTES.md "Hand tracking (topics 8/9, decoded)"
+// structs, not Cap'n Proto; layout in docs/protocol/spec.md
 // and tools/decode_hands.py. Both flow only after InputControl hands-on (topic 28).
 #pragma once
 

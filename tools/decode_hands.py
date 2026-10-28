@@ -51,7 +51,7 @@ Blob:
 The right hand blob is the left one with positions negated.
 
 Usage: py decode_hands.py <dump.txt> [--json out.json] [--skeleton out.json]
-dump.txt is host/handshake.py's XRSP_DUMP=8,9 output: "<ns> <topic> <hex>" lines,
+dump.txt is tools/pyhost/handshake.py's XRSP_DUMP=8,9 output: "<ns> <topic> <hex>" lines,
 hex = whole XRSP message (8 B header + body).
 """
 import json

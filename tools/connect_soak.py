@@ -11,8 +11,8 @@ fresh qlhost and times open -> HELLO -> phase 1. Disturbances rotate:
   early     a host killed 50 ms after opening, before it said anything
   sleep     the headset sleeps 15 s (adb KEYCODE_SLEEP), then wakes
 Needs OVRService stopped and no other host (FirstLight, qlhost, handshake.py) on the bench.
-Phase 2 (Launch) needs a person, so it is not part of the soak; see docs/CONNECTING.md.
-Exit code 0 only if every cycle reached phase 1. Log: capture/runs/connect-soak-<stamp>.txt
+Phase 2 (Launch) needs a person, so it is not part of the soak; see docs/protocol/connecting.md.
+Exit code 0 only if every cycle reached phase 1. Log: out/runs/connect-soak-<stamp>.txt
 """
 import argparse
 import os

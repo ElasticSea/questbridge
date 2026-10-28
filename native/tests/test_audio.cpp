@@ -42,7 +42,7 @@ TEST(audio_blocks_encode_like_meta) {
         CHECK_EQ(raw_of(msgs[0], seq), r.table);
         CHECK_EQ(raw_of(msgs[1], uint16_t(seq + 1)), r.seg);
     }
-    // 4096 B / 1024 B messages, as PROTOCOL_NOTES says
+    // 4096 B / 1024 B messages, as docs/protocol/spec.md says
     CHECK_EQ(recorded("pc_to_quest").seg.size(), size_t(4096));
     CHECK_EQ(recorded("quest_to_pc").seg.size(), size_t(1024));
 }

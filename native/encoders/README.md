@@ -77,8 +77,8 @@ native\encoders\build.ps1
 native\encoders\build\qlenc.exe --frames 144 --name qlenc
 ```
 
-Writes `capture/runs/<name>.h264` and `host/replay/<name>.json` (same clip format as
-`tools/encode_pattern.py`; stream it with `XRSP_REPLAY=host/replay/<name>.json`).
+Writes `out/runs/<name>.h264` and `out/clips/<name>.json` (same clip format as
+`tools/encode_pattern.py`; stream it with `XRSP_REPLAY=out/clips/<name>.json`).
 Options: `--mbps 100`, `--vbr`, `--gop 72` (1 = all intra, 0 = first frame only),
 `--input nv12|bgra|d3d11|d3d11-rgba`, `--software`, `--csd every|idr` (default every, like the x264
 clip), `--backend` and `--layout auto|slices|strips` (see below; default auto).
@@ -101,7 +101,7 @@ NVIDIA H.264 Encoder MFT, 4096x2240 @ 72, Constrained Baseline (constraint flags
 
 ## Results on the Mac (M5 Pro, macOS 26.7.1, 2026-10-28)
 
-Build and run: [docs/MAC_SETUP.md](../../docs/MAC_SETUP.md). `qlenc` defaults to `--layout strips`
+Build and run: [docs/building.md](../../docs/building.md). `qlenc` defaults to `--layout strips`
 on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max-slice-bytes`.
 
 - **Layout:** 5 sessions of 4096x448 (`Layout::Strips`), Constrained Baseline (0xc0), level 4.2,

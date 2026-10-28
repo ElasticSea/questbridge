@@ -1,4 +1,4 @@
-// Video frame -> XRSP stream messages (port of the frame path in host/handshake.py and
+// Video frame -> XRSP stream messages (port of the frame path in tools/pyhost/handshake.py and
 // tools/encode_pattern.py).
 //
 // One picture = N slices; slice i goes on topic 10 + i as four messages: the 8-byte capnp

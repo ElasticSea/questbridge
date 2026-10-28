@@ -58,7 +58,7 @@ TEST(templates_match_fixtures) {
     }
     CHECK_EQ(found, size_t(6));
 
-    auto clip = json::parse_file(qltest::repo("host/replay/meta-idr.json"));
+    auto clip = json::parse_file(qltest::repo("tests/fixtures/replay/idr-frame.json"));
     const auto& setup = templates::stream_setup();
     REQUIRE(setup.size() == clip["setup"].size());
     for (size_t i = 0; i < setup.size(); ++i) {

@@ -64,7 +64,7 @@ namespace ElasticSea.QuestLink
         public float ipd;  // metres
         public EyeFov leftFov, rightFov;
 
-        // Quest 3 values from its HELLO device description (PROTOCOL_NOTES.md). The angle order
+        // Quest 3 values from its HELLO device description (docs/protocol/spec.md). The angle order
         // in HELLO is up/down/left/right: left eye 44/55/54/40, right eye mirrored 44/55/40/54.
         public static QuestLinkDeviceInfo Quest3Default => new QuestLinkDeviceInfo
         {

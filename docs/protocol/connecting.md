@@ -1,11 +1,11 @@
 # Connecting the Quest
 
-One procedure, no replugs. Why it works: `docs/PROTOCOL.md` §4.6.
+One procedure, no replugs. Why it works: `docs/protocol/spec.md` §4.6.
 
 ## Procedure
 
 1. Plug the Quest in (any time, before or after the app starts). Leave it plugged in.
-2. On Windows, Meta's OVRService must not hold the XRSP interface: `host\ovr_service.ps1 stop`
+2. On Windows, Meta's OVRService must not hold the XRSP interface: `tools\windows\ovr_service.ps1 stop`
    (once per boot; `start` restores Meta Link). The library does this itself when it finds the
    Quest busy: one UAC prompt per process, service restarted when the process exits
    (`QL_OVR_STOP=0` turns it off).
@@ -43,7 +43,7 @@ The runtime recovers inside a running app (Play mode or a player) without a rest
 Audio restarts with the stream, hands are turned on again, haptics reconnect. Stale head,
 hand and controller data are dropped while the link is down. `ql_get_link_status` (Unity:
 `QuestLinkConnectionStatus`) reports the state and raises Connected / Disconnected /
-Reconnecting. Live check: `docs/RECOVERY_LIVE_CHECK.md`.
+Reconnecting. Live check: `docs/testing.md`.
 
 ## If it still doesn't connect
 
@@ -53,7 +53,7 @@ xrstreaming` on the headset.
 - Host log shows `BYE (no HELLO yet)` every 3 s and never `0x81`: the headset isn't reading
   XRSP. Seen only when the cable was unplugged while the headset's HELLO was unanswered: its
   `xrspd` stays in `HOST_CONNECTING` and starts no new pairing until the next disconnect
-  (`PROTOCOL_NOTES.md`, "Replug bug"). Unplug and replug once, or `host\replug.ps1` (UAC).
+  (`docs/protocol/spec.md`, "Replug bug"). Unplug and replug once, or `host\replug.ps1` (UAC).
   Keeping the host running while plugging in avoids it.
 - `cannot open XRSP interface`: another program holds it (OVRService, a second host).
 - Nothing on USB: check `adb devices` and the cable.

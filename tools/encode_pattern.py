@@ -15,11 +15,11 @@ Layouts (encoder gate experiments):
   bytes:N       one picture, slices of at most N bytes (x264 slice-max-size, like
                 VideoToolbox's MaxH264SliceBytes)
 
-Writes host/replay/<name>.json with "frames": [[{topic, flags, body}, ...], ...]
+Writes out/clips/<name>.json with "frames": [[{topic, flags, body}, ...], ...]
 and the setup messages copied from the Meta replay file.
 
 codec hevc (split5 only): x265 Main strips with VPS+SPS+PPS as csd, always 72 fps, for the HEVC gate
-(CONFIG codec, XRSP_CODEC in host/handshake.py).
+(CONFIG codec, XRSP_CODEC in tools/pyhost/handshake.py).
 
 Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source] [gop] [h264|hevc]
 """
@@ -35,7 +35,7 @@ FFMPEG = os.path.join(os.environ["LOCALAPPDATA"], "Microsoft", "WinGet", "Packag
                       "ffmpeg.exe")
 WIDTH, HEIGHT, SLICES = 4096, 2240, 5
 MB_COLS, MB_TOTAL = WIDTH // 16, WIDTH // 16 * HEIGHT // 16
-TEMPLATE = os.path.join(ROOT, "host", "replay", "meta-idr.json")
+TEMPLATE = os.path.join(ROOT, "tests", "fixtures", "replay", "idr-frame.json")
 
 
 FONT = "/Windows/Fonts/arialbd.ttf"  # drive-less: a "C:" would need filtergraph escaping
@@ -271,7 +271,7 @@ def main():
                     frame.append({"topic": topic, "flags": flags, "body": body.hex()})
         out_frames.append(frame)
 
-    dest = os.path.join(ROOT, "host", "replay", f"{name}.json")
+    dest = os.path.join(ROOT, "out", "clips", f"{name}.json")
     with open(dest, "w", encoding="utf-8") as f:
         json.dump({"source": f"{src} {'x265' if codec == 'hevc' else 'x264'} crf{crf} {layout} gop{gop}",
                    "frame_index": 1, "setup": meta["setup"],

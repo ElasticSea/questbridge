@@ -9,7 +9,7 @@ The player shows every step in the headset (RecoveryCheck.cs); this script only 
   linkquit  adb force-stop com.oculus.xrstreamingclient (Link quit: the headset drops its USB
             function; the runtime re-handshakes and the user presses Launch)
 Exit code 0 when every drop came back (or was kept) and the user answered YES.
-Procedure and pass criteria: docs/RECOVERY_LIVE_CHECK.md
+Procedure and pass criteria: docs/testing.md
 """
 import argparse
 import os

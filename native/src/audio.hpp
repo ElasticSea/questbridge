@@ -1,4 +1,4 @@
-// Link audio on topic 6 (PROTOCOL_NOTES "Audio", port of tools/decode_audio.py).
+// Link audio on topic 6 (docs/protocol/spec.md, port of tools/decode_audio.py).
 //
 // One 10 ms block = one single-segment Cap'n Proto message {u64 ts (sender clock), Data pcm}
 // sent as two XRSP messages: the 8-byte segment table, then the segment padded so the whole

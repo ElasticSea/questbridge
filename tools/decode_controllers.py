@@ -150,7 +150,7 @@ def _data(node):
 
 
 def decode_input(buf):
-    """Topic 35 DeviceInput -> (root fields, [controller entries]). Layout in PROTOCOL_NOTES."""
+    """Topic 35 DeviceInput -> (root fields, [controller entries]). Layout in docs/protocol/spec.md."""
     root, _ = decode(buf)
     d = _data(root)
     out = {"flags": d[0], "u8_1": d[1], "u16_2": struct.unpack_from("<H", d, 2)[0],

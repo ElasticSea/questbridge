@@ -213,7 +213,7 @@ TEST(capi_attach_pose_and_frame) {
 }
 
 TEST(clip_splits_back_into_slices) {
-    auto clip = qlcli::load_clip(qltest::repo("host/replay/meta-idr.json"));
+    auto clip = qlcli::load_clip(qltest::repo("tests/fixtures/replay/idr-frame.json"));
     CHECK_EQ(clip.frame_index, uint64_t(2));
     REQUIRE(clip.frames.size() == 1);
     const auto& f = clip.frames[0];

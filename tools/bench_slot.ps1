@@ -5,14 +5,14 @@
 #   4 encoder sw     FirstLight with QL_ENCODER=openh264, "picture OK?"
 #   5 passthrough    OVRService on, Meta Link, SensorProbe player (passthrough + env depth)
 # Between parts the board says "press Launch when you see it". A focus watcher runs throughout.
-# Needs capture\bench_elevated.ps1 running (one UAC: capture + OVRService triggers) before the
+# Needs tools\capture\bench_elevated.ps1 running (one UAC: capture + OVRService triggers) before the
 # user puts the headset on; the USB capture runs during part 5 only. Players start minimized and
-# fall back to -NoMinimize if they stream without encoding. Results: capture\runs\slot-<stamp>\summary.txt.
+# fall back to -NoMinimize if they stream without encoding. Results: out\runs\slot-<stamp>\summary.txt.
 #   .\bench_slot.ps1 [-Parts 1,2,3,4,5]
 param([int[]]$Parts = @(1, 2, 3, 4, 5))
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
-$dir = Join-Path $repo ("capture\runs\slot-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$dir = Join-Path $repo ("out\runs\slot-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force $dir | Out-Null
 $summary = Join-Path $dir "summary.txt"
 $adb = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools\adb.exe"
@@ -96,7 +96,7 @@ if (4 -in $Parts) {
 if (5 -in $Parts) {
     $d = Join-Path $dir "5-passthrough"
     New-Item -ItemType Directory -Force $d | Out-Null
-    $pcaps = Join-Path $repo "capture\pcaps"
+    $pcaps = Join-Path $repo "out\captures"
     $before = Get-Date
     New-Item -ItemType File (Join-Path $repo "capture\CAP_START") -Force | Out-Null
     New-Item -ItemType File (Join-Path $repo "capture\OVR_START") -Force | Out-Null

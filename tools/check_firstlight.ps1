@@ -2,11 +2,11 @@
 # backend (no USB), writes its eye texture to a PNG and fails if it is magenta-dominant (missing
 # shaders) or one flat colour. Exit 0 = build OK and picture OK. Look at the PNG too.
 # -Mode checks one bench mode (-sequence-look, -sequence-recovery, ...); default: plain scene.
-#   .\check_firstlight.ps1 [-SkipBuild] [-Mode -sequence-look] [-Out capture\runs\firstlight-snapshot.png]
+#   .\check_firstlight.ps1 [-SkipBuild] [-Mode -sequence-look] [-Out out\runs\firstlight-snapshot.png]
 param([switch]$SkipBuild, [string]$Mode = "", [string]$Out = "")
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
-if (-not $Out) { $Out = Join-Path $repo "capture\runs\firstlight-snapshot.png" }
+if (-not $Out) { $Out = Join-Path $repo "out\runs\firstlight-snapshot.png" }
 $runs = Split-Path $Out
 New-Item -ItemType Directory -Force $runs | Out-Null
 if (-not $SkipBuild) {

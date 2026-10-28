@@ -1,17 +1,11 @@
-# Raw USB captures are large; keep locally, extract fixtures instead
-capture/pcaps/
+# Local captures, run logs and generated clips (raw captures hold a headset's identity)
+out/
 *.pcap
 *.pcapng
-capture/STOP
+tools/capture/STOP
+
 __pycache__/
 *.pyc
-
-# Local run logs
-capture/runs/
-
-# Generated test clips (rebuild with tools/encode_pattern.py or qlenc)
-host/replay/*.json
-!host/replay/meta-idr.json
 
 # Native build output
 native/**/build/

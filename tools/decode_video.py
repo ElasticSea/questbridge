@@ -1,6 +1,6 @@
 """Decode the PC->Quest video stream (XRSP topics 10-14) from a USB capture.
 
-Layout (see PROTOCOL_NOTES.md):
+Layout (see docs/protocol/spec.md):
   topic 10+i carries slice i of every frame. Per slice, in sequence order:
     1. 8-byte Cap'n Proto segment table (flags 0x10)
     2. segment: video.capnp:EncodedSlice (flags 0x10)

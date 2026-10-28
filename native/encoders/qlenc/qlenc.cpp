@@ -1,6 +1,6 @@
 // qlenc: encode a moving test pattern with the platform encoder, check the slice layout,
-// and write an Annex-B .h264 plus a host/replay/<name>.json clip (same format as
-// tools/encode_pattern.py, so `XRSP_REPLAY=... py host/handshake.py` streams it unchanged).
+// and write an Annex-B .h264 plus a out/clips/<name>.json clip (same format as
+// tools/encode_pattern.py, so `XRSP_REPLAY=... py tools/pyhost/handshake.py` streams it unchanged).
 //
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
 //              [--input nv12|bgra|d3d11|d3d11-rgba|cvpixelbuffer] [--layout auto|slices|strips] [--software] [--low-latency]
@@ -10,7 +10,7 @@
 // Patterns noise (fresh random pixels every frame), motion (a random texture jumping ~300 px
 // per frame) and cuts (tiles with a 2-frame motion burst every 18 frames, so rate control is at
 // a low QP when the burst hits) are the worst cases for the per-slice size cap.
-// Strips: one .h264 per strip, capture/runs/<name>-<i>.h264. Windows picks backend and layout
+// Strips: one .h264 per strip, out/runs/<name>-<i>.h264. Windows picks backend and layout
 // per machine (--layout auto); --backend forces one (see encoders/select.hpp).
 #include <algorithm>
 #include <chrono>
@@ -283,7 +283,7 @@ void bgra_to_nv12(const std::vector<uint8_t>& src, int w, int h, std::vector<uin
 
 fs::path find_root(fs::path p) {
     for (; !p.empty(); p = p.parent_path()) {
-        if (fs::exists(p / "host" / "replay" / "meta-idr.json")) return p;
+        if (fs::exists(p / "tests" / "fixtures" / "replay" / "idr-frame.json")) return p;
         if (p == p.parent_path()) break;
     }
     return {};
@@ -588,7 +588,7 @@ int main(int argc, char** argv) {
     }
 
     // Replay clip from the Meta template
-    std::ifstream tf(root / "host" / "replay" / "meta-idr.json", std::ios::binary);
+    std::ifstream tf(root / "tests" / "fixtures" / "replay" / "idr-frame.json", std::ios::binary);
     std::string ttext((std::istreambuf_iterator<char>(tf)), {});
     Json meta = JsonParser(ttext).value();
     const Json& msgs = *meta.get("frame");
@@ -602,7 +602,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    fs::path clip_path = root / "host" / "replay" / (name + ".json");
+    fs::path clip_path = root / "out" / "clips" / (name + ".json");
     std::ofstream clip(clip_path, std::ios::binary);
     std::ostringstream setup;
     write_json(setup, *meta.get("setup"));

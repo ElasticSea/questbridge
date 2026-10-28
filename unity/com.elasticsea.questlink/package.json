@@ -8,7 +8,7 @@
     "url": "https://github.com/ElasticSea"
   },
   "changelogUrl": "https://github.com/ElasticSea/meta-quest-link-for-mac/blob/main/unity/com.elasticsea.questlink/CHANGELOG.md",
-  "documentationUrl": "https://github.com/ElasticSea/meta-quest-link-for-mac/blob/main/TESTERS.md",
+  "documentationUrl": "https://github.com/ElasticSea/meta-quest-link-for-mac/blob/main/docs/getting-started.md",
   "unity": "6000.3",
   "dependencies": {
     "com.unity.inputsystem": "1.19.0",

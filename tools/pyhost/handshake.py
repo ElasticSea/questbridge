@@ -4,7 +4,7 @@ PC-side messages are built from the Cap'n Proto trees Meta's host sent in the
 recorded handshake (tests/fixtures/handshake), with session-specific fields
 replaced. Each step is logged so a run can be compared with Meta's transcript.
 
-Usage: py host/handshake.py [seconds]
+Usage: py tools/pyhost/handshake.py [seconds]
 """
 import collections
 import copy
@@ -18,7 +18,7 @@ import time
 
 from usb_link import XrspLink
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from capnp_codec import decode, encode  # noqa: E402
 from xrsp import encode_message  # noqa: E402
@@ -63,7 +63,7 @@ class Host:
         # Render pose written into each frame: "fixed" = first head pose (panel stays put in
         # the world via headset reprojection), "live" = latest pose, "template" = as recorded
         self.pose_mode = os.environ.get("XRSP_POSE", "fixed")
-        # XRSP_DUMP=8,9,32: append raw Quest->PC messages of these topics to capture/runs/dump.txt
+        # XRSP_DUMP=8,9,32: append raw Quest->PC messages of these topics to out/runs/dump.txt
         self.dump_topics = {int(t) for t in filter(None, os.environ.get("XRSP_DUMP", "").split(","))}
         self.dump = open(os.path.join(ROOT, "capture", "runs", "dump.txt"), "a") if self.dump_topics else None
 

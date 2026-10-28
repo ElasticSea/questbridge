@@ -1,19 +1,19 @@
 # Run the FirstLight player for a bench run without taking mouse or focus: through
 # tools\start_player.ps1 (user's desktop, minimized, not activated, focus guard; on unity_hidden.ps1's
 # hidden desktop it never submits frames), small window, native log on. Blocks until the player
-# exits (run the script in the background). Logs go to capture\runs\firstlight-<stamp>\.
+# exits (run the script in the background). Logs go to out\runs\firstlight-<stamp>\.
 #   .\run-firstlight.ps1                      guided -sequence run, 600 s
 #   .\run-firstlight.ps1 -Seconds 120 -Flags "-hands"
 #   .\run-firstlight.ps1 -Flags "-sequence-audio"   audio part, then hands the session over
-# On exit the native log ends with "resume with XRSP_..." for host\handshake.py XRSP_ATTACH.
-# Stop OVRService first (host\ovr_service.ps1 stop). Don't kill the player mid-handshake: the
+# On exit the native log ends with "resume with XRSP_..." for tools\pyhost\handshake.py XRSP_ATTACH.
+# Stop OVRService first (tools\windows\ovr_service.ps1 stop). Don't kill the player mid-handshake: the
 # headset then sends no new HELLO until it reboots (adb reboot).
 # -NoMinimize: show the small window (still not activated) in case a minimized player stops rendering.
 param([int]$Seconds = 600, [string]$Flags = "-sequence", [switch]$NoMinimize)
 
 $root = Split-Path $PSScriptRoot
 $exe = Join-Path $PSScriptRoot "BridgeTest\Build\FirstLight\FirstLight.exe"
-$dir = Join-Path $root ("capture\runs\firstlight-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$dir = Join-Path $root ("out\runs\firstlight-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force $dir | Out-Null
 
 # Headset media volume (the user can't hear anything at 0)

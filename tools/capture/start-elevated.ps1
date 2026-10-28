@@ -1,13 +1,13 @@
 # Launches USBPcapCMD elevated (one UAC prompt) on the hub the Quest is on.
-# Runs until capture\STOP exists — create it with stop-capture.ps1.
-# USBPcapCMD output goes to pcaps\<name>-<stamp>.log.
+# Runs until tools\capture\STOP exists — create it with stop-capture.ps1.
+# Output goes to out\captures\<name>-<stamp>.pcap (and .log).
 # -Interface \\.\USBPcapN skips auto-detection: start the capture with the Quest unplugged,
 # then plug it in, so USBPcap sees it enumerate (a Quest enumerated before the capture may stay invisible).
 param([string]$Name = "session", [string]$Interface = "")
 
 $here = $PSScriptRoot
 $cmd = 'C:\Program Files\USBPcap\USBPcapCMD.exe'
-$outDir = Join-Path $here "pcaps"
+$outDir = Join-Path (Split-Path (Split-Path $here)) "out\captures"
 $stop = Join-Path $here "STOP"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 Remove-Item $stop -ErrorAction SilentlyContinue
