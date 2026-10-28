@@ -16,6 +16,7 @@ import struct
 import sys
 
 from decode_video import VIDEO_TOPICS, parse_header
+from scrub import Scrubber
 from xrsp import messages
 
 AUDIO_TOPIC = 6
@@ -27,9 +28,11 @@ def main():
     setup, frame, first_video = [], [], None
     pending = {}  # topic -> list of raw msgs for the slice being assembled
     done = set()
+    scrub = Scrubber.from_capture(path, dev)
     for m in messages(path, dev):
         if m.ts < start or not m.to_quest or m.topic == 1:
             continue
+        m = scrub.msg(m)
         if m.topic in VIDEO_TOPICS:
             first_video = first_video or m.ts
             if m.topic in done:

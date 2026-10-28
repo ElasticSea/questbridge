@@ -8,6 +8,7 @@ Writes tests/fixtures/<scenario>/:
   transfers.json  whole USB transfers that hold complete messages + padding
   transcript.json normalized message sequence (no ids/timestamps) for
                   comparing our host's session against Meta's
+Personal identifiers are replaced with equal-length placeholders (scrub.py).
 
 Usage: py extract_fixtures.py <capture.pcap> <device> <scenario> [until-seconds]
 """
@@ -18,6 +19,7 @@ import sys
 from collections import defaultdict
 
 from capnp_codec import allocation_order, decode, strip_offsets
+from scrub import Scrubber
 from xrsp import messages, transfers
 
 CLOCK_TYPES = (0x06, 0x16)
@@ -75,10 +77,12 @@ def main():
     out = os.path.join(os.path.dirname(__file__), "..", "tests", "fixtures", scenario)
     os.makedirs(out, exist_ok=True)
 
+    scrub = Scrubber.from_capture(path, dev)
     control, streams, transcript = [], defaultdict(list), []
     for m in messages(path, dev):
         if m.ts > until:
             break
+        m = scrub.msg(m)
         if m.topic == 1:
             e = control_entry(m)
             control.append(e)
@@ -103,7 +107,7 @@ def main():
         if p.ts > until or len(xfers) >= MAX_TRANSFERS:
             break
         if not p.truncated and len(p.data) <= 4096 and complete_transfer(p.data):
-            xfers.append({"t": round(p.ts, 6), "dir": direction(to_quest), "raw": p.data.hex()})
+            xfers.append({"t": round(p.ts, 6), "dir": direction(to_quest), "raw": scrub(p.data).hex()})
 
     # Collapse repeated clock-sync exchanges in the transcript
     compact = []
