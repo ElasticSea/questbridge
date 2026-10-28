@@ -26,6 +26,13 @@ namespace ElasticSea.QuestLink.BridgeTest
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 72;
+            // Player builds: "-seconds N" quits after N s so the bench gets USB back
+            var seconds = SecondsArg();
+            if (seconds > 0f)
+            {
+                Debug.Log($"[QuestLink] quitting after {seconds} s");
+                Invoke(nameof(Quit), seconds);
+            }
 
             var screen = new GameObject("Screen Camera").AddComponent<Camera>();
             screen.clearFlags = CameraClearFlags.SolidColor;
@@ -80,6 +87,21 @@ namespace ElasticSea.QuestLink.BridgeTest
             }
         }
 
+        static float SecondsArg()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (var i = 0; i + 1 < args.Length; i++)
+                if (args[i] == "-seconds" && float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s))
+                    return s;
+            return 0f;
+        }
+
+        void Quit()
+        {
+            Debug.Log($"[QuestLink] quit: {(rig != null ? rig.State.ToString() : "no rig")}, frame {(rig != null ? rig.FrameIndex : 0)}");
+            Application.Quit();
+        }
+
         // Turn the rig so the current head yaw faces +Z and put the head over the origin.
         void Recentre(QuestLinkPose head)
         {
@@ -100,9 +122,11 @@ namespace ElasticSea.QuestLink.BridgeTest
             floor.name = "Floor Grid";
             floor.transform.rotation = Quaternion.Euler(90, 0, 0);
             floor.transform.localScale = new Vector3(size, size, 1);
-            var mat = new Material(Shader.Find("Unlit/Texture")) { mainTexture = GridTexture() };
+            // Copy of the primitive's default material: Shader.Find'd shaders get stripped from players
+            var renderer = floor.GetComponent<Renderer>();
+            var mat = new Material(renderer.sharedMaterial) { mainTexture = GridTexture() };
             mat.mainTextureScale = new Vector2(size, size);
-            floor.GetComponent<Renderer>().sharedMaterial = mat;
+            renderer.sharedMaterial = mat;
         }
 
         // One 1 m tile: dark grey with a light border line
@@ -151,8 +175,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             board.transform.SetParent(go.transform, false);
             board.transform.localPosition = new Vector3(0f, 0f, 0.02f);
             board.transform.localScale = new Vector3(3.0f, 1.2f, 1f);
-            var mat = new Material(Shader.Find("Unlit/Color")) { color = new Color(0.1f, 0.12f, 0.16f) };
-            board.GetComponent<Renderer>().sharedMaterial = mat;
+            board.GetComponent<Renderer>().material.color = new Color(0.1f, 0.12f, 0.16f);
         }
     }
 }
