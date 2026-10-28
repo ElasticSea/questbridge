@@ -212,24 +212,29 @@ class Host:
                 time.sleep(min(m["t"] - prev_t, 0.5))
             prev_t = m["t"]
             self.send_stream([(m["topic"], m["flags"], bytes.fromhex(m["body"]))])
-        self.log("info", f"sent {len(data['setup'])} setup msgs; streaming frame {data['frame_index']} at 72 Hz", None)
-        frame = [(m["topic"], m["flags"], bytearray.fromhex(m["body"])) for m in data["frame"]]
-        headers = [body for i, (t, fl, body) in enumerate(frame)
-                   if i > 0 and len(frame[i - 1][2]) == 8 and frame[i - 1][0] == t]
-        period, index = 1 / 72, self.frame_start or data["frame_index"]
+        clip = data.get("frames") or [data["frame"]]
+        self.log("info", f"sent {len(data['setup'])} setup msgs; looping {len(clip)} frame(s) at 72 Hz", None)
         # EncodedSlice timing words in the Quest clock: renderPose time (5), pcPresentBegin (9),
         # targetVsync (11), targetDeadline (12), estimatedGpuEnd (13), latency marker (14)
         timing_words = (5, 9, 11, 12, 13, 14)
-        originals = []
-        for body in headers:
-            d = 8 + 8 * ((struct.unpack_from("<Q", body, 0)[0] & 0xFFFFFFFF) >> 2)
-            originals.append((d, {w: struct.unpack_from("<Q", body, d + 8 * w)[0] for w in timing_words}))
+        prepared = []
+        for msgs in clip:
+            frame = [(m["topic"], m["flags"], bytearray.fromhex(m["body"])) for m in msgs]
+            headers = []
+            for i, (t, fl, body) in enumerate(frame):
+                if i > 0 and len(frame[i - 1][2]) == 8 and frame[i - 1][0] == t:
+                    d = 8 + 8 * ((struct.unpack_from("<Q", body, 0)[0] & 0xFFFFFFFF) >> 2)
+                    headers.append((body, d, {w: struct.unpack_from("<Q", body, d + 8 * w)[0]
+                                              for w in timing_words}))
+            prepared.append((frame, headers))
+        period, index = 1 / 72, self.frame_start or data.get("frame_index", 1)
         while self.quest_offset_ns is None:
             time.sleep(0.05)  # need one clock ping to map our clock onto the Quest's
         nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
+            frame, headers = prepared[sent % len(prepared)]
             quest_now = time.perf_counter_ns() + self.quest_offset_ns
-            for body, (d, orig) in zip(headers, originals):
+            for body, d, orig in headers:
                 struct.pack_into("<Q", body, d, index)  # frame.index
                 # Shift all timestamps together so the frame targets a vsync ~20 ms out
                 shift = quest_now + 20_000_000 - orig[11]
