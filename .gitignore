@@ -11,3 +11,7 @@ capture/runs/
 
 # Generated test clips (rebuild with tools/encode_pattern.py)
 host/replay/pattern*.json
+host/replay/qlenc*.json
+
+# Native build output
+native/**/build/
