@@ -4,13 +4,11 @@ using UnityEngine;
 namespace ElasticSea.QuestLink.BridgeTest
 {
     // Editor Play bench scene (EditorPlay.unity): floor, cubes and a board with the round's steps
-    // and yes/no questions (A/X = yes, B/Y = no, or without controllers a raised left/right hand).
-    // Answers go to the Console as "[EditorPlay] ...". Press Play once: after round 1 the board
+    // and yes/no questions (A/X = yes, B/Y = no). Nothing times out: each step waits for A/X, each
+    // question for A/X or B/Y. Answers go to the Console as "[EditorPlay] ...". Press Play once: after round 1 the board
     // stops Play itself and Editor/EditorPlayBench.cs starts it again 3 s later for round 2.
     public class EditorPlayBoard : MonoBehaviour
     {
-        const float AnswerTime = 25f, HoldTime = 1f, LookTime = 20f;
-
         public QuestLinkRig rig;
         public QuestLinkHands hands;
         public float standingHeight = 1.6f;
@@ -50,14 +48,14 @@ namespace ElasticSea.QuestLink.BridgeTest
 
             if (round == 1)
             {
-                yield return Show("UNITY EDITOR PLAY TEST\nRound 1 of 2\nLook around: cubes\nshould stay still.\nHold the controllers up.", LookTime);
+                yield return Step("UNITY EDITOR PLAY TEST\nRound 1 of 2\nLook around: cubes\nshould stay still.\nHold the controllers up.");
                 yield return Ask("still1", "Did the cubes stay still\nas you looked around?");
                 yield return Ask("blocks", "Did a small block follow\neach controller?");
-                yield return Show("Unity now stops Play\nand starts it again.\nKeep the headset on.\nIf Meta's Link screen\nappears, press Launch.", 8f);
+                yield return Step("Unity now stops Play\nand starts it again.\nKeep the headset on.\nIf Meta's Link screen\nappears, press Launch.");
             }
             else
             {
-                yield return Show("Round 2 of 2\nPlay started again.\nLook around.", 8f);
+                yield return Step("Round 2 of 2\nPlay started again.\nLook around.");
                 yield return Ask("still2", "Did the cubes stay still\nas you looked around?");
                 yield return Ask("nolaunch", "Did the picture come back\nWITHOUT pressing Launch?");
                 board.text = "DONE\n\nTake the headset off.";
@@ -108,49 +106,46 @@ namespace ElasticSea.QuestLink.BridgeTest
             rig.transform.SetPositionAndRotation(new Vector3(-p.x, y, -p.z), yaw);
         }
 
-        IEnumerator Show(string text, float seconds)
+        // Waits for A/X, after every button is let go
+        IEnumerator Step(string text)
         {
-            for (var end = Time.realtimeSinceStartup + seconds; Time.realtimeSinceStartup < end;)
+            yield return Press(text + "\n\npress A to continue", false, _ => { });
+        }
+
+        IEnumerator Ask(string key, string question)
+        {
+            var answer = "";
+            yield return Press($"{question}\n\nA = YES    B = NO", true, a => answer = a);
+            Debug.Log($"[EditorPlay] answer {key}={answer}");
+            board.text = $"{question.Replace('\n', ' ')}\n{answer}\n\nlet go";
+            while (Yes() || No())
+                yield return null;
+        }
+
+        // Nothing pressed first, then the first press of A/X (YES) or, if allowed, B/Y (NO)
+        IEnumerator Press(string text, bool allowNo, System.Action<string> done)
+        {
+            board.text = text;
+            var armed = false;
+            while (true)
             {
-                board.text = $"{text}\n({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})";
+                bool yes = Yes(), no = allowNo && No();
+                if (!yes && !no)
+                    armed = true;
+                else if (armed && yes != no)
+                {
+                    done(yes ? "YES" : "NO");
+                    yield break;
+                }
                 yield return null;
             }
         }
 
-        // Nothing pressed or raised first, then one answer held for HoldTime
-        IEnumerator Ask(string key, string question)
-        {
-            var armed = false;
-            var held = 0f;
-            QuestLinkHand? holding = null;
-            for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
-            {
-                var l = Raised(hands.Left) || Pad(QuestLinkHand.Left).primaryButton || Pad(QuestLinkHand.Right).primaryButton;
-                var r = Raised(hands.Right) || Pad(QuestLinkHand.Left).secondaryButton || Pad(QuestLinkHand.Right).secondaryButton;
-                if (!l && !r)
-                    armed = true;
-                QuestLinkHand? now = armed && l != r ? (l ? QuestLinkHand.Left : QuestLinkHand.Right) : (QuestLinkHand?)null;
-                held = now != null && now == holding ? held + Time.unscaledDeltaTime : 0f;
-                holding = now;
-                if (held >= HoldTime)
-                {
-                    var answer = holding == QuestLinkHand.Left ? "YES" : "NO";
-                    Debug.Log($"[EditorPlay] answer {key}={answer}");
-                    yield return Show($"{question.Replace('\n', ' ')}\n{answer}\n\nhands down", 2f);
-                    yield break;
-                }
-                var hint = !armed ? "let go / hands down first" : holding != null ? $"keep it up... {(holding == QuestLinkHand.Left ? "YES" : "NO")}" : "";
-                board.text = $"{question} ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nA/X or LEFT hand up = YES\nB/Y or RIGHT hand up = NO\n{hint}";
-                yield return null;
-            }
-            Debug.Log($"[EditorPlay] answer {key}=none (timeout)");
-        }
+        bool Yes() => Pad(QuestLinkHand.Left).primaryButton || Pad(QuestLinkHand.Right).primaryButton;
+        bool No() => Pad(QuestLinkHand.Left).secondaryButton || Pad(QuestLinkHand.Right).secondaryButton;
 
         QuestLinkControllerState Pad(QuestLinkHand h) =>
             rig.Backend != null && rig.Backend.TryGetController(h, out var s) ? s : default;
-
-        bool Raised(QuestLinkHandState h) =>
-            h.tracked && rig.Head != null && h[QuestLinkHandJoint.Wrist].position.y > rig.Head.localPosition.y;
 
         static int Get(string key, int fallback)
         {
