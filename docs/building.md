@@ -46,12 +46,12 @@ Output lands in `native\build\bin\Release\`: `questbridge.dll`, `qbhost.exe`, `q
 
 ## Updating the Unity package's plugins
 
-The package keeps its native libraries in `unity/com.elasticsea.questbridge/Runtime/Plugins/`, because installs from a git URL can't build anything. After a native change the package needs:
+Releases ship the native libraries as downloads, built by CI from the tagged source (`.github/workflows/release.yml`). In a repository checkout, the install scripts put your own build into the package's `Runtime/Plugins/` (git-ignored). After a native change the package needs:
 
 - **Windows:** close the Unity Editor (Windows locks a loaded DLL), then run `unity\install-native.ps1`. It builds `questbridge.dll` and copies it into the package with its import settings.
 - **macOS:** run `unity/install-native.sh`. It builds `libquestbridge.dylib` with libusb linked statically and installs it the same way.
 
-Commit the updated binaries together with the source change.
+Built libraries are never committed.
 
 ## The qbhost CLI
 

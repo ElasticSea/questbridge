@@ -98,13 +98,13 @@ namespace ElasticSea.QuestBridge.Editor
             const string title = "QuestBridge native library";
             if (e is EntryPointNotFoundException)
                 return Check("native_library", title, CheckStatus.Fail, "older than this package",
-                    "Close Unity, delete the project's Library/PackageCache/com.elasticsea.questbridge* folder and open the project again.");
+                    "Download the native library for this package version from the QuestBridge release page and replace the one in Assets/Plugins.");
             if (platform == RuntimePlatform.OSXEditor)
                 return Check("native_library", title, CheckStatus.Fail, $"libquestbridge.dylib didn't load ({cpu})",
-                    "It needs a Mac with Apple silicon (M1 or newer) and macOS 26 or later. On such a Mac, reinstall the package.");
+                    "It needs a Mac with Apple silicon (M1 or newer). Download libquestbridge.dylib from the QuestBridge release page into Assets/Plugins.");
             if (platform == RuntimePlatform.WindowsEditor)
                 return Check("native_library", title, CheckStatus.Fail, "questbridge.dll didn't load",
-                    "It needs 64-bit Windows 10/11. Reinstall the package; if it persists, install the latest Microsoft Visual C++ Redistributable (x64).");
+                    "It needs 64-bit Windows 10/11. Download questbridge.dll from the QuestBridge release page into Assets/Plugins; if it still fails, install the latest Microsoft Visual C++ Redistributable (x64).");
             return Check("native_library", title, CheckStatus.Fail, $"not available on {platform}",
                 "QuestBridge runs in the Unity Editor on Windows and on macOS with Apple silicon.");
         }

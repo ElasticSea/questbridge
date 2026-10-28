@@ -25,7 +25,12 @@ Press Play in Unity, and your scene runs on a Quest over a USB cable. There's no
    ```
 3. If Unity asks to enable the new Input System and restart, say **Yes**.
 
-The native libraries come with the package, so there's no build step.
+Then download the native library for your computer from the [v0.2.0 release](https://github.com/ElasticSea/questbridge/releases/tag/v0.2.0) and put it in your project's `Assets/Plugins/` folder:
+
+- **Windows:** `questbridge.dll`
+- **Mac:** `libquestbridge.dylib`
+
+The Rig inspector and Check Setup tell you if it's missing.
 
 ## 3. Check Setup
 

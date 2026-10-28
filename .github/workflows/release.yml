@@ -1,0 +1,53 @@
+name: Release
+
+# Builds the native plugins from the tagged source and attaches them to the GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S native -B native/build -A x64
+      - run: cmake --build native/build --config Release --parallel
+      - run: ctest --test-dir native/build -C Release --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: questbridge-windows-x64
+          path: native/build/bin/Release/questbridge.dll
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install libusb pkgconf
+      - run: cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build native/build --parallel
+      # Metal and VideoToolbox tests need a GPU encoder, which hosted runners don't have
+      - run: ctest --test-dir native/build --output-on-failure -E "metal|vt"
+      - name: Check the dylib needs no Homebrew libraries
+        run: "! otool -L native/build/bin/libquestbridge.dylib | grep -q /opt/homebrew"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: questbridge-macos-arm64
+          path: native/build/bin/libquestbridge.dylib
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" questbridge.dll libquestbridge.dylib -R "$GITHUB_REPOSITORY" --clobber

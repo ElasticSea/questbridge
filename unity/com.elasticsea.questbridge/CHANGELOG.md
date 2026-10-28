@@ -7,6 +7,7 @@ First public release, as QuestBridge.
 - macOS: HEVC by default, Metal zero-copy frame submit.
 - Windows: encoder chosen per GPU vendor, OpenH264 software fallback.
 - Recovery inside a running app after disconnects; `QuestBridgeConnectionStatus` events.
+- Native libraries ship as downloads on the GitHub release, built by CI; put them in `Assets/Plugins/`.
 - Apache-2.0 license.
 
 ## [0.1.0] - 2026-10-28

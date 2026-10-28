@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # macOS: build libquestbridge.dylib (Release, arm64, libusb linked statically) and install it as
 # the Unity package's macOS native plugin:
-# com.elasticsea.questbridge/Runtime/Plugins/macOS/libquestbridge.dylib (committed, so UPM git installs
-# get it: copy it to the PC and commit it after a native change that the package needs).
+# com.elasticsea.questbridge/Runtime/Plugins/macOS/libquestbridge.dylib (git-ignored; releases ship it as a download).
 # Usage: unity/install-native.sh [--no-build]
 set -e
 here=$(cd "$(dirname "$0")" && pwd)

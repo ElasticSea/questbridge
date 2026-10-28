@@ -12,3 +12,9 @@ native/**/build/
 tools/capture/CAP_*
 tools/capture/OVR_*
 tools/capture/REPLUG
+
+# Built native plugins (shipped as release downloads, never committed)
+unity/com.elasticsea.questbridge/Runtime/Plugins/
+unity/com.elasticsea.questbridge/Runtime/Plugins.meta
+*.dll
+*.dylib

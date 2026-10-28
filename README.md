@@ -34,9 +34,10 @@ QuestBridge speaks the wired Link protocol (XRSP over USB) itself, written from 
    ```
    https://github.com/ElasticSea/questbridge.git?path=/unity/com.elasticsea.questbridge#v0.2.0
    ```
-3. **GameObject → XR → QuestBridge Rig**, press **Play**, put the headset on and press **Launch**.
+3. Download `questbridge.dll` (Windows) or `libquestbridge.dylib` (Mac) from the [latest release](https://github.com/ElasticSea/questbridge/releases/latest) into your project's `Assets/Plugins/`.
+4. **GameObject → XR → QuestBridge Rig**, press **Play**, put the headset on and press **Launch**.
 
-Already have an XR Origin scene? Tick **QuestBridge** in Project Settings → XR Plug-in Management instead of step 3.
+Already have an XR Origin scene? Tick **QuestBridge** in Project Settings → XR Plug-in Management instead of step 4.
 
 **QuestBridge → Check Setup** tells you what's missing on your machine. The full walkthrough is in [Getting started](docs/getting-started.md).
 

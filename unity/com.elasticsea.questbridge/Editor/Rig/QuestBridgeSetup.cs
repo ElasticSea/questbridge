@@ -25,15 +25,29 @@ namespace ElasticSea.QuestBridge.Editor
             public Action fix;
         }
 
+        // The plugin ships as a release download, so it can live anywhere in the project
+        // (usually Assets/Plugins) or, in a repo checkout, inside the package.
+        public static bool PluginInstalled(bool mac)
+        {
+            string path = mac ? MacPluginPath : WindowsPluginPath;
+            if (AssetImporter.GetAtPath(path) != null)
+                return true;
+            string file = System.IO.Path.GetFileName(path);
+            foreach (var guid in AssetDatabase.FindAssets(System.IO.Path.GetFileNameWithoutExtension(file)))
+                if (AssetDatabase.GUIDToAssetPath(guid).EndsWith("/" + file, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
         public static List<Problem> Check()
         {
             var problems = new List<Problem>();
             if (Application.platform == RuntimePlatform.WindowsEditor)
             {
-                if (AssetImporter.GetAtPath(WindowsPluginPath) == null)
+                if (!PluginInstalled(mac: false))
                     problems.Add(new Problem
                     {
-                        message = "questbridge.dll is missing from the package, so Play uses the mock headset. Install a package version that includes it.",
+                        message = "questbridge.dll isn't in the project, so Play uses the mock headset. Download it from the QuestBridge release page into Assets/Plugins (Getting started, step 2).",
                         type = MessageType.Error,
                     });
                 if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11)

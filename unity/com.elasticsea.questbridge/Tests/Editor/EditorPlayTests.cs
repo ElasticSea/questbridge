@@ -27,7 +27,7 @@ namespace ElasticSea.QuestBridge.Tests
             if (Environment.GetEnvironmentVariable("QB_USB") != "0")
                 Assert.Ignore("QB_USB=0 not set: the native library would open the headset's USB interface");
             var mac = Application.platform == RuntimePlatform.OSXEditor;
-            if (AssetImporter.GetAtPath(mac ? QuestBridgeSetup.MacPluginPath : QuestBridgeSetup.WindowsPluginPath) == null)
+            if (!QuestBridgeSetup.PluginInstalled(mac))
                 Assert.Ignore(mac ? "libquestbridge.dylib not installed (unity/install-native.sh)" : "questbridge.dll not installed (unity\\install-native.ps1)");
             var api = mac ? GraphicsDeviceType.Metal : GraphicsDeviceType.Direct3D11;
             if (SystemInfo.graphicsDeviceType != api)

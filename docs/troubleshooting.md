@@ -12,7 +12,7 @@ Start with **QuestBridge → Check Setup** in Unity (or `qbhost --check` from a 
 | You pressed **No** on the Windows admin prompt | Press **Stop OVRService now** in Check Setup, or restart Unity and press Play again. To never see the prompt, stop "Oculus VR Runtime Service" in `services.msc` yourself, or run `tools\windows\ovr_service.ps1 stop`. |
 | Headset: "Attempting to connect" for more than ~10 s, or no **Launch** button | Stop and Play again. |
 | Headset: no picture after Launch | Quit Link in the headset and press Launch again. |
-| Console: "libquestbridge not found, using the mock backend" | The package is missing its native library. Reinstall the package, and include the version in a bug report. |
+| Console: "libquestbridge not found, using the mock backend" | Download the native library from the release page into `Assets/Plugins/` ([Getting started](getting-started.md), step 2). |
 | Meta's own Link doesn't work after using QuestBridge | Quit Unity. Meta's service starts again by itself. Restarting the PC also restores it. |
 
 The library reconnects on its own after cable glitches, the headset sleeping, or Link being quit in the headset, so you normally don't need to replug. [Connecting](protocol/connecting.md) has the details.
