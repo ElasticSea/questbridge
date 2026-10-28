@@ -40,6 +40,18 @@ namespace ElasticSea.QuestLink.Tests
         }
 
         [Test]
+        public void EyesRenderStraightIntoTheTexture()
+        {
+            // No intermediate target that would reach EyeTexture only after the submit
+            foreach (var cam in new[] { rig.LeftEye, rig.RightEye })
+            {
+                Assert.IsFalse(cam.allowHDR);
+                Assert.IsFalse(cam.allowMSAA);
+                Assert.IsFalse(cam.allowDynamicResolution);
+            }
+        }
+
+        [Test]
         public void LeftEyeLeftHalfRightEyeRightHalf()
         {
             Assert.AreEqual(new Rect(0, 0, 0.5f, 1), rig.LeftEye.rect);

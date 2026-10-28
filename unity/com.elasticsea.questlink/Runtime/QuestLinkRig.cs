@@ -128,6 +128,12 @@ namespace ElasticSea.QuestLink
             if (cameraTemplate != null && cameraTemplate != cam)
                 cam.CopyFrom(cameraTemplate);
             cam.stereoTargetEye = StereoTargetEyeMask.None;
+            // Render straight into EyeTexture. With HDR or camera MSAA the built-in pipeline renders
+            // into an intermediate and copies it to the target only after onPostRender, so the
+            // submit (after the right eye) would carry the previous frame's right half.
+            cam.allowHDR = false;
+            cam.allowMSAA = false;
+            cam.allowDynamicResolution = false;
             cam.targetTexture = EyeTexture;
             cam.rect = QuestLinkMath.EyeViewport(eye);
             cam.nearClipPlane = nearClip;
