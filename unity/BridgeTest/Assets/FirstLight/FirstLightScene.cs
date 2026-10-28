@@ -35,7 +35,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
-        bool sequence, audioOnly, controllersOnly, recovery;
+        bool sequence, audioOnly, controllersOnly, recovery, look;
         AudioBench bench;
         QuestLinkAudio output;
         TextMesh board;
@@ -80,6 +80,9 @@ namespace ElasticSea.QuestLink.BridgeTest
             // "-sequence-recovery": the live recovery check (RecoveryCheck, tools/recovery_check.py)
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-recovery") >= 0)
                 sequence = recovery = true;
+            // "-sequence-look": one question about the picture, then quit (LookCheck, tools/bench_slot.ps1)
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-look") >= 0)
+                { sequence = look = true; audioTest = false; }
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
                 backend = QuestLinkRig.BackendMode.Mock;
 
@@ -124,6 +127,12 @@ namespace ElasticSea.QuestLink.BridgeTest
                 var check = gameObject.AddComponent<RecoveryCheck>();
                 check.rig = rig;
                 check.status = status;
+                check.board = board;
+            }
+            else if (look)
+            {
+                var check = gameObject.AddComponent<LookCheck>();
+                check.rig = rig;
                 check.board = board;
             }
             else if (sequence && bench != null)
