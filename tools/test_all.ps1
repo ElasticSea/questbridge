@@ -1,7 +1,8 @@
 # Run every test suite in the repo and print a pass/fail summary.
 # Usage: tools\test_all.ps1 [-Quick] [-Only py|native|unity] [-UnityTimeout <s>]
 #   -Quick  Python + native only (before each commit). Full run (with Unity) before merging to main.
-# Suites: py (unittest), native (native\build.ps1: Release build incl. encoders, then CTest),
+# Suites: py (unittest), native (native\build.ps1: Release build incl. encoders, then CTest; the full
+#         run adds tools\slice_cap_stress.py: high-entropy clips through qlenc, slices under the cap),
 #         unity (BridgeTest EditMode + PlayMode, SensorProbe compile check; skipped if Unity is missing).
 # Logs: capture\runs\test_all\<stamp>\<step>.log. Exit code 0 only if no step failed.
 # Keep in step with tools/test_all.sh (Mac): same steps, same summary format.
@@ -72,6 +73,17 @@ function Test-Native {
     Add-Result "native" $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
 }
 
+# Full run: high-entropy clips through qlenc on the GPU encoder; every slice must fit one XRSP message.
+function Test-SliceCap {
+    $log = "$logDir\slicecap.log"; $t = Get-Date
+    $code = Invoke-Logged "py" "tools\slice_cap_stress.py" $log
+    $text = Get-Content $log -Raw
+    $detail = if ($text -match "all (\d+) cases under the cap") { "$($Matches[1]) qlenc cases under the cap" }
+              elseif ($text -match "FAILED: (\d+) of (\d+)") { "$($Matches[1]) of $($Matches[2]) cases over the cap" }
+              else { "qlenc did not run (exit $code)" }
+    Add-Result "slicecap" $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
+}
+
 # One Unity test platform: batchmode run, NUnit XML parsed into counts. Exit codes: 0 pass, 2 failures, 3 run error.
 function Test-UnityTests($project, $platform, $assemblies) {
     $name = "unity-$($project.ToLower())-$($platform.ToLower())"
@@ -116,7 +128,11 @@ function Test-Unity {
 $total = Get-Date
 $suites = if ($Only) { @($Only) } elseif ($Quick) { @("py", "native") } else { @("py", "native", "unity") }
 foreach ($s in $suites) {
-    switch ($s) { "py" { Test-Python } "native" { Test-Native } "unity" { Test-Unity } }
+    switch ($s) {
+        "py" { Test-Python }
+        "native" { Test-Native; if (-not $Quick) { Test-SliceCap } }
+        "unity" { Test-Unity }
+    }
 }
 
 $failed = @($results | Where-Object Status -eq "FAIL").Count
