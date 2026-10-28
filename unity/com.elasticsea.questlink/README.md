@@ -73,12 +73,12 @@ Notes for the native side:
 `unity/BridgeTest` references this package locally. From the repo root:
 
 ```
-"C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe" -batchmode -nographics -projectPath unity/BridgeTest -runTests -testPlatform EditMode -testFilter ElasticSea.QuestLink.Tests -testResults results.xml
+powershell -ExecutionPolicy Bypass -File tools\unity_hidden.ps1 -ArgLine "-batchmode -nographics -projectPath unity/BridgeTest -runTests -testPlatform EditMode -testFilter ElasticSea.QuestLink.Tests -testResults results.xml"
 ```
 
-Use `-testPlatform PlayMode` for the smoke test. The tests use the mock backend, so they never open the headset.
+Unity (Editor or player) is only ever started through `tools\unity_hidden.ps1` (hidden desktop, so it can't take focus); `tools\test_all.ps1` does this for every suite. Use `-testPlatform PlayMode` for the smoke test. The tests use the mock backend, so they never open the headset.
 
 ## First live scene
 `unity/BridgeTest` scene `Assets/FirstLight/FirstLight.unity` (`FirstLightScene`): sky colour, 1 m floor grid, cubes 1–3 m away and instructions, on the native backend. The first head pose recentres the rig (instructions straight ahead; floor 1.6 m below the head if the Link origin is at eye level). The Console logs the backend, the first head pose and every 720 frames the state and frame count.
 
-Hands-off player: `Unity.exe -batchmode -nographics -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build` builds `unity/BridgeTest/Build/FirstLight/FirstLight.exe` (git-ignored, questlink.dll included). Run it as `FirstLight.exe -seconds 90 -logFile <player.log>` with `QL_LOG_FILE` set in the environment; it quits after N seconds and so frees USB. Batchmode doesn't render, so that test drives a frame by hand there. EditMode covers projection math against FOV tangents, the RT layout and per-eye viewports, IPD offsets, late-latch/submit pose consistency, coordinate conversion, device registration, XR binding paths, controller state and haptics.
+Hands-off player: `tools\unity_hidden.ps1 -ArgLine "-batchmode -nographics -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build"` builds `unity/BridgeTest/Build/FirstLight/FirstLight.exe` (git-ignored, questlink.dll included). Run it as `tools\unity_hidden.ps1 -Exe unity\BridgeTest\Build\FirstLight\FirstLight.exe -ArgLine "-seconds 90 -logFile <player.log>"` with `QL_LOG_FILE` set in the environment; it quits after N seconds and so frees USB. Batchmode doesn't render, so that test drives a frame by hand there. EditMode covers projection math against FOV tangents, the RT layout and per-eye viewports, IPD offsets, late-latch/submit pose consistency, coordinate conversion, device registration, XR binding paths, controller state and haptics.

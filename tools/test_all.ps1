@@ -31,6 +31,13 @@ function Invoke-Logged($exe, [string]$argLine, $log, [int]$timeoutS = 1800) {
     return $code
 }
 
+# Unity only ever runs through unity_hidden.ps1 (on a hidden desktop, so it can't take the user's
+# focus). Unity writes its own -logFile; returns the exit code (-1 on timeout).
+function Invoke-Unity([string]$argLine, $log, [int]$timeoutS = 1800) {
+    & "$PSScriptRoot\unity_hidden.ps1" -Exe $unityExe -ArgLine $argLine -WorkingDirectory $repo -TimeoutS $timeoutS *> $log
+    return $LASTEXITCODE
+}
+
 # Append Unity's -logFile to the step log. Unity's helper processes can hold the file for a
 # moment after the editor exits, so retry the delete instead of failing the run.
 function Merge-UnityLog($log) {
@@ -81,7 +88,7 @@ function Test-UnityTests($project, $platform, $assemblies) {
         try { [IO.File]::Open("$proj\Temp\UnityLockfile", "Open", "ReadWrite", "None").Close() }
         catch { Add-Result $name "FAIL" 0 "project is open in another Unity Editor; close it" $null; return }
     }
-    $code = Invoke-Logged $unityExe ("-batchmode -nographics -projectPath `"$proj`" -runTests -testPlatform $platform " +
+    $code = Invoke-Unity ("-batchmode -nographics -projectPath `"$proj`" -runTests -testPlatform $platform " +
         "-assemblyNames $assemblies -testResults `"$xml`" -logFile `"$log.unity`"") $log $UnityTimeout
     Merge-UnityLog $log
     $status = "FAIL"
@@ -99,7 +106,7 @@ function Test-UnityTests($project, $platform, $assemblies) {
 function Test-UnityCompile($project) {
     $name = "unity-$($project.ToLower())-compile"
     $log = "$logDir\$name.log"; $t = Get-Date
-    $code = Invoke-Logged $unityExe "-batchmode -nographics -quit -projectPath `"$repo\unity\$project`" -logFile `"$log.unity`"" $log $UnityTimeout
+    $code = Invoke-Unity "-batchmode -nographics -quit -projectPath `"$repo\unity\$project`" -logFile `"$log.unity`"" $log $UnityTimeout
     Merge-UnityLog $log
     $errors = @(Select-String -Path $log -Pattern "error CS\d+" -ErrorAction SilentlyContinue).Count
     $detail = if ($code -eq 0) { "compiled" } elseif ($code -eq -1) { "timed out after ${UnityTimeout}s" } else { "exit $code, $errors compiler errors" }
