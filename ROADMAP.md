@@ -41,9 +41,8 @@
 ## Open / in progress (2026-10-28)
 Verified on hardware: Windows Editor Play mode on Quest 3 (head, hands, controllers + haptics, audio, connect without replug, sleep recovery, OpenH264 picture); Mac → Quest Pro video (H.264 and HEVC clips, 72 fps).
 
-- [ ] Mac Editor → Quest Pro: the headset ends the stream within ~1 s with "buffer too small". Not single-message size or bitrate. Next: compare Mac vs Windows USB bulk-write sizes and headers with `QL_FAKE_QUEST`.
+- [ ] USB write size (first to fix): the host writes a whole frame as one USB bulk transfer; the headset drops writes over ~256 KiB ("buffer too small"). Meta writes one transfer per slice (max ~214 KB). This caused the Mac Editor → Quest Pro drops and the OpenH264 drops on Quest 3. An unbuilt fix (cap each write at 128 KiB / one slice per transfer) is on branch `claude/compassionate-northcutt-c9782b` (8a9747c): build, test, verify on both headsets.
 - [ ] Link quit while streaming: a new HELLO from the headset is ignored, so the host stays "streaming". Restart the handshake on any new HELLO.
-- [ ] Slice budget: OpenH264 (and possibly MF) IDR slices of 100–130 KB trigger "buffer too small" on Quest 3. Lower the per-slice budget and add a hard pre-send check.
 - [ ] MF strips encoder (AMD/Intel path): picture quality is weak on Quest 3.
 - [ ] Passthrough / environment depth: offered by the runtime, but Meta's AR Foundation plugin fails in a Windows player ("instanceProcAddr is null").
 - [ ] Headset media volume can't be read or set over adb; audio checks need an in-headset volume step.
