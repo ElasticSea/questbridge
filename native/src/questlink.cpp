@@ -1,6 +1,7 @@
 // Host API (ql_host_*): one connection, Session + Transport.
 #include "questlink.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -45,6 +46,9 @@ SessionConfig to_session_config(const ql_config& c) {
     s.hello_timeout_ns = int64_t(c.hello_timeout_ms) * 1'000'000;
     s.link_request_timeout_ns = int64_t(c.link_request_timeout_ms) * 1'000'000;
     s.step_timeout_ns = int64_t(c.step_timeout_ms) * 1'000'000;
+    if (c.bye_retry_ms < 0) s.bye_delay_ns = -1;
+    s.bye_retry_ns = c.bye_retry_ms > 0 ? int64_t(c.bye_retry_ms) * 1'000'000 : 0;
+    s.refresh_hz = c.refresh_hz;
     return s;
 }
 
@@ -119,6 +123,7 @@ void ql_config_init(ql_config* cfg) {
     cfg->send_setup = 1;
     cfg->hands = 1;
     cfg->step_timeout_ms = 3000;
+    cfg->bye_retry_ms = 3000;
 }
 
 static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, ql_host** out) {
@@ -235,6 +240,8 @@ ql_status ql_host_get_info(ql_host* host, ql_info* out) {
     for (int t = 0; t < 64; ++t) out->tx_seq[t] = s.stream_seq(uint8_t(t));
     for (auto [t, n] : s.rx_counts())
         if (t < 64) out->rx_counts[t] = n;
+    out->streams = s.streams();
+    out->byes_sent = s.byes_sent();
     return QL_OK;
 }
 
@@ -244,13 +251,32 @@ ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out) {
     const auto& d = host->session->device_info();
     if (!d) return QL_ERR_NO_DATA;
     auto tan_deg = [](float deg) { return float(std::tan(double(deg) * 3.14159265358979323846 / 180.0)); };
+    auto fov = [&](const float* deg) { return ql_fov{tan_deg(deg[0]), tan_deg(deg[1]), tan_deg(deg[2]), tan_deg(deg[3])}; };
+    auto copy = [](char* dst, size_t cap, const std::string& src) {
+        size_t n = std::min(cap - 1, src.size());
+        std::memcpy(dst, src.data(), n);
+        dst[n] = 0;
+    };
     std::memset(out, 0, sizeof *out);
     out->encode_width = d->encode_width;
     out->encode_height = d->encode_height;
     out->refresh_hz = d->refresh_hz;
     out->ipd_m = d->ipd_m;
-    out->fov_left = {tan_deg(d->fov_deg[0]), tan_deg(d->fov_deg[1]), tan_deg(d->fov_deg[2]), tan_deg(d->fov_deg[3])};
-    out->fov_right = {out->fov_left.up, out->fov_left.down, out->fov_left.right, out->fov_left.left};  // mirrored
+    out->fov_left = fov(d->fov_deg[0]);
+    out->fov_right = fov(d->fov_deg[1]);
+    out->panel_width = d->panel_width;
+    out->panel_height = d->panel_height;
+    for (uint32_t hz : d->refresh_rates)
+        if (out->refresh_count < QL_MAX_REFRESH_RATES) out->refresh_rates[out->refresh_count++] = hz;
+    out->stream_refresh_hz = host->session->refresh_hz();
+    for (uint16_t c : d->codecs)
+        if (c < 32) out->codecs |= 1u << c;
+    out->hello_version = d->version;
+    for (uint16_t f : d->features)
+        if (f < 64) out->features |= 1ull << f;
+    copy(out->product, sizeof out->product, d->product);
+    copy(out->manufacturer, sizeof out->manufacturer, d->manufacturer);
+    copy(out->firmware, sizeof out->firmware, d->firmware);
     return QL_OK;
 }
 
@@ -310,6 +336,7 @@ ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uin
             opt.render_pose = Pose{{r.qx, r.qy, r.qz, r.qw}, {r.px, r.py, r.pz}};
         }
         opt.intra = info->is_intra != 0;
+        opt.picture_height = info->picture_height;
         if (info->rectify_mesh_id) opt.rectify_mesh_id = info->rectify_mesh_id;
         if (info->has_fov) {
             auto port = [](const ql_fov& f) { return FovPort{f.left, f.right, f.up, f.down}; };

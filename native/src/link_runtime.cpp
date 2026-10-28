@@ -36,7 +36,8 @@
 
 // Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
-static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 48);
+static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 240 && offsetof(ql_device_info, features) == 104 &&
+              offsetof(ql_device_info, firmware) == 176);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
@@ -166,7 +167,7 @@ public:
         if (!texture || !pose) return QL_ERR_ARGUMENT;
         auto h = host();
         if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) return QL_ERR_NOT_STREAMING;
-        TextureEncoder* enc = encoder();
+        TextureEncoder* enc = encoder(h.get());
         if (!enc) return QL_ERR_UNSUPPORTED;
         int slot = enc->capture(texture);  // copies now, on the caller's render thread
         if (slot < 0) return QL_ERR_NOT_STREAMING;
@@ -227,11 +228,15 @@ private:
 
     static uint64_t id(ql_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
 
-    TextureEncoder* encoder() {
+    // Created on the first frame of the first streaming session, at that session's rate
+    TextureEncoder* encoder(ql_host* h) {
+        ql_device_info dev;
+        uint32_t hz = ql_host_get_device_info(h, &dev) == QL_OK ? dev.stream_refresh_hz : 0;
         std::lock_guard<std::mutex> l(mu_);
         if (!encoder_tried_) {
             encoder_tried_ = true;
             TextureEncoderConfig cfg;
+            if (hz) cfg.fps = int(hz);
             cfg.gop = env_int("QL_GOP", 1);
             cfg.bitrate = uint32_t(env_int("QL_MBPS", 100)) * 1'000'000u;
             std::string err;
@@ -255,7 +260,9 @@ private:
             cfg.hands = env_int("QL_HANDS", 1);
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                // Poll fast: the sooner we hold the interface after enumeration, the sooner the
+                // preluding BYE / HELLO exchange runs
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
             }
             std::shared_ptr<ql_host> h(raw, ql_host_close);
@@ -276,7 +283,7 @@ private:
                 host_.reset();
             }
             h.reset();
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }
 
@@ -299,6 +306,10 @@ private:
                 enc->release(job.slot);
                 continue;
             }
+            // A new streaming session (Link relaunched, same USB link) also needs an IDR
+            ql_info info;
+            bool have_info = ql_host_get_info(h.get(), &info) == QL_OK;
+            if (have_info) gen = (gen << 32) | info.streams;
             EncodedSlices out;
             if (!enc->encode(job.slot, gen != idr_generation, out)) {
                 stderr_log(nullptr, "info", ("encode failed: " + enc->error()).c_str(), -1);
@@ -306,18 +317,20 @@ private:
             }
             idr_generation = gen;
             std::vector<ql_slice> slices;
-            for (const auto& s : out.slices)
-                slices.push_back({out.csd.data(), out.csd.size(), s.data(), s.size()});
+            for (size_t i = 0; i < out.slices.size(); ++i) {
+                const Bytes& csd = i < out.slice_csd.size() ? out.slice_csd[i] : out.csd;
+                slices.push_back({csd.data(), csd.size(), out.slices[i].data(), out.slices[i].size()});
+            }
             ql_frame_info fi{};
             fi.has_render_pose = 1;
             fi.render_pose = job.render_pose;
             fi.is_intra = out.idr ? 1 : 0;
-            // Mesh 1001 + the FOV the eyes were rendered with (the device's) turn on timewarp
+            // Mesh 1001 + the FOV the eyes were rendered with (the device's) turn on timewarp.
+            // The HELLO doesn't name a mesh; 1001 is what Meta's game frames use on Quest 3
             fi.rectify_mesh_id = kRectifyMeshId;
             // Target vsync = now + lead in the Quest clock. 20 ms (qlhost's default) made the
             // headset log "Frame arrived ~7.6 ms before deadline, frame drop", so aim ~4 ms closer
-            ql_info info;
-            if (ql_host_get_info(h.get(), &info) == QL_OK && info.has_clock_offset)
+            if (have_info && info.has_clock_offset)
                 fi.target_vsync_quest_ns = ql_now_ns() + info.quest_clock_offset_ns + vsync_lead_ns_;
             ql_device_info dev;
             if (ql_host_get_device_info(h.get(), &dev) == QL_OK) {

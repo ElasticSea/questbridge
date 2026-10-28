@@ -1,6 +1,7 @@
 // Handshake state machine: replay the Quest's side of Meta's recorded handshake and check
 // that our PC messages are Meta's bytes (mirrors tests/test_handshake.py Transcript).
 #include <cmath>
+#include <stdexcept>
 
 #include "harness.hpp"
 #include "session.hpp"
@@ -170,19 +171,144 @@ TEST(setup_paced_with_capped_gaps) {
     CHECK_EQ(r.s.stream_seq(topic::kInputControl), uint16_t(4));  // Meta's hands off, then our hands on
 }
 
-TEST(step_timeout_fails) {
+TEST(step_timeout_restarts_with_bye) {
     Rig r;
     r.s.start();
     auto hello = entries("quest_to_pc")[0];
     r.s.on_message((*hello)["raw"].as_hex());
     CHECK_EQ(r.s.state(), State::Phase1);
+    r.take_control();
     r.now += 2'000'000'000;
     r.s.tick();
     CHECK_EQ(r.s.state(), State::Phase1);
     r.now += 2'000'000'000;
     r.s.tick();
-    CHECK_EQ(r.s.state(), State::Failed);
-    CHECK_EQ(r.s.error(), std::string("no 0x83 in time"));
+    // A stalled headset step is not fatal: back to WaitHello with a BYE right away
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kBye);
+}
+
+namespace {
+
+// Feed the recorded Quest side up to the first clock ping, then pace the setup to Streaming
+void to_streaming(Rig& r) {
+    for (const auto* e : entries("quest_to_pc")) {
+        Bytes raw = (*e)["raw"].as_hex();
+        if (is_clock(raw)) break;
+        r.now += 1'000'000;
+        r.s.on_message(raw);
+        r.s.tick();
+    }
+    for (int i = 0; i < 200 && r.s.state() == State::Setup; ++i) {
+        r.now += 10'000'000;
+        r.s.tick();
+    }
+    r.s.take_outgoing();
+}
+
+Bytes quest_msg(uint8_t type, int version) {
+    for (const auto* e : entries("quest_to_pc")) {
+        Bytes raw = (*e)["raw"].as_hex();
+        if (raw.size() > 16 && raw[8] == type && (version < 0 || rd16(&raw[0x20]) == version)) return raw;
+    }
+    throw std::runtime_error("no recorded Quest message");
+}
+
+}  // namespace
+
+TEST(preluding_bye_when_no_hello) {
+    Rig r;
+    r.s.start();
+    r.now += 10'000'000;
+    r.s.tick();
+    CHECK(r.take_control().empty());  // Meta waits 50 ms for an INVITE first
+    r.now += 50'000'000;
+    r.s.tick();
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    // All-zero Bye root (version 0, session id 0 = any session), like Meta's preluding BYE
+    Bytes bye = {0x10, 0x01, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x85, 0x8c, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00,
+                 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00};
+    bye.resize(bye.size() + 16, 0);
+    CHECK_EQ(out[0], bye);
+    CHECK_EQ(r.s.byes_sent(), uint32_t(1));
+    r.now += 2'900'000'000;
+    r.s.tick();
+    CHECK(r.take_control().empty());
+    r.now += 200'000'000;
+    r.s.tick();
+    CHECK_EQ(r.take_control().size(), size_t(1));  // retried after 3 s
+
+    // The HELLO that follows starts phase 1 with control seq 0, as Meta's CONFIG
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.state(), State::Phase1);
+    out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0], (*entries("pc_to_quest")[0])["raw"].as_hex());
+}
+
+TEST(bye_disabled) {
+    SessionConfig cfg;
+    cfg.bye_delay_ns = -1;
+    Rig r(cfg);
+    r.s.start();
+    r.now += 10'000'000'000;
+    r.s.tick();
+    CHECK(r.take_control().empty());
+}
+
+TEST(hello_v1_restarts_a_streaming_session) {
+    // Link quit in the headset: xrspd sends a new HELLO v1 right away
+    Rig r;
+    r.s.start();
+    to_streaming(r);
+    REQUIRE(r.s.state() == State::Streaming);
+    CHECK_EQ(r.s.streams(), uint32_t(1));
+    r.s.on_message(quest_msg(control::kHello, 1));
+    CHECK_EQ(r.s.state(), State::Phase1);
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0], (*entries("pc_to_quest")[0])["raw"].as_hex());
+
+    // ... and the user's Launch brings a second stream with fresh numbering
+    to_streaming(r);
+    CHECK_EQ(r.s.state(), State::Streaming);
+    CHECK_EQ(r.s.streams(), uint32_t(2));
+    CHECK_EQ(r.s.stream_seq(31), uint16_t(40));
+    CHECK_EQ(r.s.next_frame_index(), uint64_t(1));
+}
+
+TEST(hello_v3_while_waiting_for_v1) {
+    // A new host while the headset sits in its phase-1 session: Launch sends BYE + HELLO v3
+    Rig r;
+    r.s.start();
+    r.s.on_message(quest_msg(control::kBye, 1));
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    r.s.on_message(quest_msg(control::kHello, 3));
+    CHECK_EQ(r.s.state(), State::Phase2);
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kConfig);
+    CHECK_EQ(rd16(&out[0][4]), uint16_t(0));
+}
+
+TEST(headset_bye_ends_stream) {
+    Rig r;
+    r.s.start();
+    to_streaming(r);
+    REQUIRE(r.s.state() == State::Streaming);
+    r.s.on_message(quest_msg(control::kBye, 1));
+    CHECK_EQ(r.s.state(), State::WaitHello);
+    r.now += 1'000'000'000;
+    r.s.tick();
+    CHECK(r.take_control().empty());  // give its own HELLO a chance first
+    r.now += 2'100'000'000;
+    r.s.tick();
+    auto out = r.take_control();
+    REQUIRE(out.size() == 1);
+    CHECK_EQ(out[0][8], control::kBye);
 }
 
 TEST(attach_continues_numbering) {
@@ -196,24 +322,4 @@ TEST(attach_continues_numbering) {
     CHECK_EQ(r.s.control_seq(), uint16_t(20));
     CHECK_EQ(r.s.stream_seq(12), uint16_t(500));
     CHECK(r.s.take_outgoing().empty());
-}
-
-TEST(device_info_from_hello) {
-    // Golden facts as in tests/test_handshake.py QuestHello
-    Rig r;
-    r.s.start();
-    CHECK(!r.s.device_info());
-    r.s.on_message((*entries("quest_to_pc")[0])["raw"].as_hex());
-    REQUIRE(r.s.device_info());
-    const DeviceInfo& d = *r.s.device_info();
-    CHECK_EQ(d.panel_width, uint32_t(4128));
-    CHECK_EQ(d.panel_height, uint32_t(2208));
-    CHECK_EQ(d.encode_width, uint32_t(4096));
-    CHECK_EQ(d.encode_height, uint32_t(2240));
-    CHECK_EQ(d.refresh_hz, 72.0f);
-    CHECK(std::abs(d.ipd_m - 0.0635f) < 1e-6f);
-    CHECK_EQ(d.fov_deg[0], 44.0f);
-    CHECK_EQ(d.fov_deg[1], 55.0f);
-    CHECK_EQ(d.fov_deg[2], 54.0f);
-    CHECK_EQ(d.fov_deg[3], 40.0f);
 }

@@ -41,6 +41,9 @@ struct FrameParams {
     std::optional<uint32_t> rectify_mesh_id;
     std::optional<std::array<FovPort, 2>> fov;  // left eye, right eye
     bool intra = true;
+    // Picture height (HELLO encode height): the strips split it into equal macroblock rows.
+    // 0 = keep the template's (2240 / 5 slices: 448 px, 28 MB each)
+    uint32_t encode_height = 0;
 };
 
 // Largest XRSP message (header + padded body) the headset accepts with margin: ~128 KiB
@@ -55,6 +58,8 @@ constexpr size_t kRectifyMeshId = 8;    // u32
 constexpr size_t kPose = 12;            // f32 quat xyzw, then f32 translation xyz
 constexpr size_t kSliceIndex = 48;      // u8
 constexpr size_t kSliceFlags = 49;      // bit0 isIntraFrame, bit1 isLastSliceOfAFrame
+constexpr size_t kYOffset = 52;         // u32 yOffsetInPixels
+constexpr size_t kHeightMb = 56;        // u32 heightInMacroBlocks
 constexpr size_t kCsdLength = 60;       // u32
 constexpr size_t kVideoLength = 64;     // u32
 // u64 words in the Quest clock: renderPose time, pcPresentBegin, targetVsync, targetDeadline,

@@ -54,10 +54,14 @@ struct CpuFrame {
 };
 
 // GPU frame. Windows: ID3D11Texture2D* (NV12 or BGRA) on config.gpu_device.
-// macOS: CVPixelBufferRef (BGRA or NV12, IOSurface-backed), full width x height.
+// macOS: CVPixelBufferRef (BGRA or NV12, IOSurface-backed), full width x height; or, for
+// Layout::Strips, `strips` = one IOSurface-backed CVPixelBufferRef per strip (width x
+// height/slices), handed to VideoToolbox as they are (no copy; texture unused).
 struct GpuFrame {
     void* texture = nullptr;
     unsigned subresource = 0;
+    void* const* strips = nullptr;
+    int strip_count = 0;
 };
 
 struct Slice {

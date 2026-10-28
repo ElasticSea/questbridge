@@ -10,7 +10,7 @@
 - [ ] **3. Mac host** — native dylib (libusb, XRSP, handshake, clock sync, pacing, VideoToolbox) with a small C API (`ql_get_pose`, `ql_submit_frame`, …) plus a CLI
 - [~] **4. Unity bridge** — C# package `unity/com.elasticsea.questlink` and native core merged (Windows: D3D11 + NVIDIA MF encoder, `unity\install-native.ps1`); first live scene `unity/BridgeTest` FirstLight ready for the bench. C# two-eye rig → one RenderTexture → Metal/IOSurface → VideoToolbox; poses and input back as Input System XRHMD/XRController devices (TrackedPoseDriver/XRI work unchanged). An XR SDK display provider comes later.
 - [ ] **5. Sensors** — controllers + buttons + haptics, hand-tracking joints, passthrough as a headset-composited layer (alpha blend). Raw camera pixels are APK-only. Eye/face: no Quest 3 hardware.
-- [ ] **6. Supporting work** — FOV/IPD from the HELLO device description, latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
+- [~] **6. Supporting work** — ✓ device description fully decoded; the host takes encode size, FOV, IPD, refresh and strip geometry from the HELLO (`ql_get_device_info`, golden fixtures per headset in `tests/fixtures/devices/`). Open: latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
 
 ## Milestones
 - [x] M0: USB captures + protocol spec (handshake, video slices, pose, audio)
@@ -25,10 +25,11 @@
 - [~] M4: Mac host CLI: libusb transport, handshake, clock sync, VideoToolbox test pattern in the headset — `native/` + `qlhost` build on macOS (arm64, brew libusb), all native tests pass there; libusb backend claims only the XRSP interface, reopens by polling (2026-10-28); first run with a Quest on the Mac pending
 - [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qlhost` pending; macOS build + CTest pass (libusb, 2026-10-28)
 - [~] M6: (Windows done 2026-10-28: FirstLight scene from a Unity player streams via native core + NVIDIA MF encoder, both eyes stable, timewarp OK; Mac/VideoToolbox pending) — Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
+- [~] connect reliability: no replug/reboot needed (preluding BYE 0x85 like Meta's host, HELLO accepted in any state, stalls/BYE restart pairing); `tools/connect_soak.py` 8/8 on the Quest (killed hosts, unanswered HELLO, sleep), procedure in `docs/CONNECTING.md`; Link quit → relaunch verified on the bench (quit drops USB; host recovers in ~3.5 s); physical replug not tried (2026-10-28)
 - [~] audio: game audio → headset (topic 6, 10 ms paced float32 blocks) and headset mic → Unity (`QuestLinkAudio`, `QuestLinkMicrophone`); native + Unity tests pass, FirstLight beep/mic loop awaiting bench (2026-10-28)
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
 - [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); native parse + FK + `ql_get_hands`, hands-on InputControl at stream start, `QuestLinkHands` + `HandJointsVisualizer` + XR Hands provider, mock hands (2026-10-28); live bench check pending
 - [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
-- [ ] M10: standalone macOS player build; latency tuning
+- [~] M10: standalone macOS player build; latency tuning — arm64 `libquestlink.dylib` (static libusb) + Metal frame submit (GPU strip split into IOSurfaces → VT strips, no CPU copy) pass a fake-Quest decode test; FirstLight builds headless as a macOS player and loads the plugin (2026-10-28); headset run + latency pending
 - [ ] later: environment depth / body tracking over Link; XR SDK display provider; raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
 - [ ] M11 (last): public release as **QuestBridge for Mac** once a working Unity sample exists. Apache-2.0, fixes from docs/PUBLIC_RELEASE_AUDIT.md, targeted filter-repo rewrite into a new repo `questbridge-mac` as the very last step

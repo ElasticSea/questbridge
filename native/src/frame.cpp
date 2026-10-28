@@ -1,5 +1,6 @@
 #include "frame.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -64,6 +65,13 @@ void patch_slice_header(Bytes& header, size_t slice, size_t count, const SliceDa
     }
     h[es::kSliceIndex] = uint8_t(slice);
     h[es::kSliceFlags] = uint8_t((h[es::kSliceFlags] & ~3) | (p.intra ? 1 : 0) | (slice + 1 == count ? 2 : 0));
+    if (p.encode_height && count) {
+        // Equal strips of whole macroblock rows; the last one takes the rest
+        uint32_t rows = (p.encode_height + 15) / 16, per = (rows + uint32_t(count) - 1) / uint32_t(count);
+        uint32_t first = std::min(rows, per * uint32_t(slice));
+        wr32(h + es::kYOffset, first * 16);
+        wr32(h + es::kHeightMb, slice + 1 == count ? rows - first : std::min(per, rows - first));
+    }
     wr32(h + es::kCsdLength, uint32_t(s.csd.size()));
     wr32(h + es::kVideoLength, uint32_t(s.video.size()));
     // Shift all timestamps together so the frame targets the requested vsync

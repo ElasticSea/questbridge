@@ -205,19 +205,20 @@ Names in `code` are from the headset's `xrspd`/`xrstreaming` logs; the host stat
 
 | Host state | What happens | Headset side |
 |---|---|---|
-| WAIT_HELLO | Host holds interface 0 open and reads | Link client running → sends HELLO v1 ~1.5 s after USB enumeration (`INVITE`) |
+| WAIT_HELLO | Host holds interface 0 open and reads; sends a preluding BYE if no HELLO within 50 ms, again every 3 s (§4.6) | `xrspd` sends HELLO v1 (`INVITE`) once per pairing attempt: on USB enable, after Link quits, after a BYE (~1.6 s later) |
 | PHASE1 | 3 request/response pairs (§4.2) | after `0x80`: `STATE_HOST_CONNECTED` |
-| WAIT_LINK_REQUEST | Idle; answer nothing | User presses **Enable Link** / Launch → `0x85` (seconds to minutes later) |
-| WAIT_HELLO_V3 | | sends HELLO v3 ~0.5 s after `0x85` |
+| WAIT_LINK_REQUEST | Idle; answer nothing | User presses **Enable Link** / Launch → BYE `0x85` ending the phase-1 session (seconds to minutes later) |
+| WAIT_HELLO_V3 | | `xrstreamingclient` sends HELLO v3 ~0.5 s after the BYE |
 | PHASE2 | Same 3 pairs with v3 bodies (§4.3) | `REASON_HANDSHAKE_SUCCESSFUL` |
 | SETUP | Clock sync starts (§4.4), stream setup (§4.5) | `streaming session starting` → Connected; starts sending pose/audio/telemetry |
 | STREAMING | Video, audio, controls | `first frame received` → `video stream started` |
-| FAILED | | e.g. `buffer too small` → BYE, session over |
+| FAILED | Only our own limits (HELLO / Enable Link timeouts) end a host; stalled steps restart pairing | e.g. `buffer too small` → BYE, session over (host returns to WAIT_HELLO) |
 
 Phase 1 and phase 2 each complete in ~10 ms. Control `seq` restarts at 0 in both directions for
 phase 2 (HELLO v3 and CONFIG v3 both carry seq 0). A host should accept a HELLO of either
-version in WAIT_HELLO and skip phase 1 when the first one is v3 (our hosts do; whether a
-relaunch ever starts at v3 is not recorded).
+version in any state and restart the matching phase: v1 after Link was quit or after a BYE,
+v3 when a new host meets a headset whose phase-1 session an earlier host completed and the
+user presses Launch (BYE + HELLO v3).
 
 ### 4.2 Phase 1 (cable plugged in)
 
@@ -236,7 +237,7 @@ Meta's recorded ones with only the session id replaced.
 | 5 | Q→H | `0x8a` | CONFIRM_ACK [CODE_GENERATION_ACK] | `0x8c` | 2 / 0 | `d0` 1; `d1` session id |
 | 6 | H→Q | `0x87` | START [PAIRING] | `0x8c` | 2 / 0 | `d0` = `0x00010001` (u16 1, u16 1); `d1` session id |
 | 7 | Q→H | `0x80` | READY [PAIRING_ACK] | `0x8c` | 2 / 0 | `d0` 1; `d1` session id |
-| 8 | Q→H | `0x85` | LINK_REQUEST | `0x8c` | 2 / 0 | `d0` 1; `d1` session id. Sent when the user enables Link |
+| 8 | Q→H | `0x85` | LINK_REQUEST [BYE] | `0x8c` | 2 / 0 | `d0` 1; `d1` session id. Sent when the user enables Link; ends the phase-1 session |
 
 Despite the names, no code or pairing secret is exchanged over USB; the messages carry only the
 values above.
@@ -319,25 +320,37 @@ spaced as recorded with gaps capped at 0.5 s, then video. It does not send topic
 frames with `rectifyMeshId` 1001 are reprojected, so mesh 1001 is known to the headset without
 topic 4 (inferred: built in, or the topic-4 values only repeat the headset's defaults).
 
-### 4.6 Host exit, re-attach, replug
+### 4.6 Host exit, re-attach, replug, recovery
 
+- **One HELLO per attempt:** `xrspd` writes HELLO v1 once when it starts a pairing attempt (USB
+  enabled, Link quit, after a BYE) and never repeats it. A HELLO nobody reads is lost and the
+  headset shows "Attempting to connect to PC" indefinitely.
+- **Preluding BYE (host → headset):** what Meta's host does when its USB server starts and no
+  HELLO arrived in the past 50 ms. BYE = type `0x85`, inner flags `0x8c`, an all-zero root of 2
+  data words (version 0, session id 0). Session id 0 matches any session, so the headset ends
+  whatever it has (waiting pairing attempt, phase-1 session, orphaned stream) and sends a fresh
+  HELLO v1 about 1.6 s later (verified). It ignores a BYE that arrives < 1 s after its own HELLO
+  (that HELLO then reaches the host anyway). Our hosts send one 50 ms after opening and repeat it
+  every 3 s while no HELLO comes (`ql_config.bye_retry_ms`).
+- **BYE from the headset:** in WAIT_LINK_REQUEST it is the user's Launch (§4.2 #8). During a
+  stream it means the headset dropped the session (protocol error, Link quit); the host returns
+  to WAIT_HELLO, and the next HELLO starts over with fresh per-topic `seq` and frame index.
 - **Host exit:** the headset session (and its decoders) survive the host process ending. A new
   host can open interface 0 and continue without a handshake (verified, `XRSP_ATTACH`), provided
   it continues every per-topic `seq` (control, each video topic, others it used) and the
   `EncodedSlice` frame index (§6.4), and waits for the next Quest ping (≤ 1 s) for the clock
-  offset.
-- **HELLO timing:** the Quest sends HELLO once per Link start. If no host is reading, it is
-  lost. A host should poll for the interface and open it immediately (our hosts poll every
-  20 ms, as Meta's hotplug watcher does).
-- **Relaunch:** quitting Link in the headset and pressing Launch again produces a new HELLO;
-  no replug is needed while the host keeps the interface open.
-- **Replug after a dropped session:** `xrspd` expects USB back within ~2 s; Windows takes
-  ~3.7 s to re-enumerate after a software restart of the port, so the first replug yields no
-  HELLO and the second one works (observed). Headset-side `svc usb resetUsbGadget` is
-  unreliable (USB stayed off until a physical replug).
-- **Ending:** on a protocol error the headset sends BYE and drops the session (type code not
-  decoded). No graceful host-side shutdown message is known; Meta's PC tears down every topic
-  (`destroying topic N (Name)` in its log).
+  offset. Without that state the preluding BYE ends the old stream and the user presses Launch
+  once more.
+- **Relaunch:** quitting Link in the headset and pressing Launch again produces BYE/HELLO; no
+  replug is needed while a host keeps the interface open.
+- **Replug while a HELLO is unanswered:** the headset's pairing attempt fails (`no device`) but
+  `xrspd` stays in `HOST_CONNECTING`, so the next USB enable starts no new attempt and a BYE has
+  no reader; only a second disconnect resets it (the "second replug works" observation). A host
+  that answers every HELLO at once (or BYEs) keeps that window small. PC-side software replug:
+  `pnputil /restart-device` on the parent hub (admin). Headset-side `svc usb resetUsbGadget`
+  left USB off until a physical replug.
+- **Ending:** on a protocol error the headset sends BYE and drops the session. Meta's PC tears
+  down every topic (`destroying topic N (Name)` in its log); a host-initiated end is the same BYE.
 
 ### 4.7 Session features
 
@@ -781,7 +794,7 @@ values: `tests/test_handshake.py`; field names are ours unless stated).
 | `d6` | u32 5 (v1) / 0 (v3) | slices (v1 only); u16 @+4 (byte 0x34) = slice mode (2 values, `deserializeSliceMode`) |
 | `p0`, `p1` | `"Meta Quest 3"`, `"Oculus VR"` | product, manufacturer |
 | `p2` | `{u32 53822, u32 49}` | unknown |
-| `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 small f32 (≈ ±0.0246, 0.0235, ±0.0031, 0.0430, 0.0460; per-eye offsets, meaning unknown) |
+| `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**, each eye stored in full: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 f32: (∓0.0246, −0, 0.0235, ∓0.0031, 0, 0.0235, 0.0430, 0.0460) left/right; sign flips with the eye, meaning unknown (lens centre / distortion parameters?) |
 | `p5` | list of 5 structs `{u32 Hz; p0 {f64, f64}; p1 {u64}}` | **mode table** (below) |
 | `p6` | null (v1) / struct 3 data + empty u16 list (v3) | `p6.p0` = **supported video codecs** (u16 list, values 0–2, `deserializeVideoCodec`); empty on Quest 3, so it advertises nothing |
 
@@ -800,15 +813,37 @@ and ~2.98; lens distortion / chroma, inferred); `p3.p3` `{f32 0.70, f32 0.705}`;
 three structs `{u32 6416, u32 3432, u32 flags, u32 w, u32 w, u32 h}` with sizes 3616 × 2016,
 4128/3616 × 2880 and 3104/3616 × 3516 (resolution presets, meaning unknown).
 
-What our host uses: encode size, refresh list, IPD and the per-eye FOV (→ `FovPort` tangents,
-§6.5); `ql_device_info` in `native/include/questlink.h`.
+Decoders: `tools/device_info.py` (prints a description from a fixture, a pcap or the hex
+`HELLO <hex>` line our host logs; `--save <name>` writes a scrubbed golden fixture) and
+`parse_device_info` in `native/src/session.cpp`. Both are checked against every
+`tests/fixtures/devices/*.json` (`tests/test_device_info.py`, `native/tests/test_device.cpp`).
+Field names of the decoded form: `version`, `product`, `manufacturer`, `firmware`, `panel`,
+`encode`, `default_refresh_hz`, `ipd_m`, `fov_deg.left/right` (up, down, left, right),
+`slices` (v1), `refresh_rates` (root `p4`, sorted), `modes`, `codecs` (`p6.p0`), `features`
+(root `p6`; session features in v3, phase-1 ids in v1).
+
+What our host derives from it (nothing here is hard-coded for the Quest 3 any more, except
+rectify mesh id 1001, which the HELLO doesn't carry):
+
+| Use | Source |
+|---|---|
+| CONFIG v3 refresh (data word 2, low u32) | `ql_config.refresh_hz` / `XRSP_REFRESH` if the HELLO's refresh list has it, else the description's default refresh (72 → Meta's bytes) |
+| Frame pacing (qlhost replay, texture encoder rate) | the CONFIG v3 refresh |
+| EncodedSlice `yOffsetInPixels` / `heightInMacroBlocks` | encode height split into equal macroblock-row strips (last takes the rest): 2240 / 5 = 448 px, 28 MB = Meta's values. `ql_frame_info.picture_height` overrides it (qlhost takes it from the clip's headers) |
+| Eye render target (Unity) | encode width × height |
+| Per-eye `FovPort` | each eye's own angles (tangents), not a mirror of the left eye |
+| Eye separation | IPD |
+
+C API: `ql_get_device_info` / `ql_host_get_device_info` fill `ql_device_info` (API version 3,
+240 B): encode size, default refresh, IPD, both FOVs, panel size, refresh list, the session's
+`stream_refresh_hz`, codec and feature bitmasks, HELLO version, product, manufacturer, firmware.
 
 ## 9. Open questions
 
 | Area | Question |
 |---|---|
 | Framing | Meaning of the other XRSP flag bits and of the inner flags `0x0c`/`0x8c`/`0x2c`; how a pad > 255 B is encoded; whether the ~128 KiB limit is per message or per topic, and how topic 4's larger segments are carried |
-| Handshake | Unknown words in HELLO/CONFIG/ACK (`d1`, `d2`, `d4`, `p8`–`p11`, CONFIG `d3`/`d4`/`d11`/`p3`); the phase-1 id lists; the BYE message; any host-initiated shutdown |
+| Handshake | Unknown words in HELLO/CONFIG/ACK (`d1`, `d2`, `d4`, `p8`–`p11`, CONFIG `d3`/`d4`/`d11`/`p3`); the phase-1 id lists; BYE `d0` meaning (headset sends 1, Meta's preluding BYE 0); PC→Q `0x8b` after phase 1 |
 | Video | CONFIG `slices` ≠ 5 (fewer strips, single decoder via feature 11); other encode sizes (resolution presets, ROADMAP R2); HEVC (Meta's gatekeepers mention it); 80/90/120 Hz; whether motion vectors across strip edges cause artefacts; alpha encoding for passthrough |
 | Timing | Exact accepted window around `targetVsync` (both too early and too late drop frames); meaning of the topic-34 frame-timing feedback block |
 | Mesh | Topic-4 mesh content and whether hosts can define their own rectify meshes |

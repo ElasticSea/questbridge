@@ -15,6 +15,7 @@ namespace qlcli {
 // csd (if csdLength > 0), video; payload lengths come from the header.
 struct Clip {
     uint64_t frame_index = 1;
+    uint32_t height = 0;  // picture height: the first frame's strips (heightInMacroBlocks x 16)
     std::vector<std::vector<std::pair<ql::Bytes, ql::Bytes>>> frames;  // per frame: (csd, video) per slice
 };
 
@@ -43,6 +44,7 @@ inline Clip load_clip(const std::string& path) {
             ql::Bytes hdr = msgs[i + 1]["body"].as_hex();
             size_t d = 8 + 8 * ((u32_at(hdr, 0)) >> 2);
             uint32_t csd_len = u32_at(hdr, d + 60), video_len = u32_at(hdr, d + 64);
+            if (clip.frames.empty()) clip.height += u32_at(hdr, d + 56) * 16;
             i += 2;
             ql::Bytes csd, video;
             if (csd_len) {

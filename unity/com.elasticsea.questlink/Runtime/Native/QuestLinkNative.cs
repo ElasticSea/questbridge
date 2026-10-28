@@ -43,6 +43,18 @@ namespace ElasticSea.QuestLink.Native
             public float ipd_m;
             public ql_fov fov_left;
             public ql_fov fov_right;
+            // API version 3
+            public uint panel_width;
+            public uint panel_height;
+            public uint refresh_count;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public uint[] refresh_rates;
+            public uint stream_refresh_hz;  // the rate the Link session runs at; 0 before phase 2
+            public uint codecs;             // bit n = video codec n
+            public uint hello_version;
+            public ulong features;          // bit n = session feature n
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string product;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string manufacturer;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string firmware;
         }
 
         // ql_controller.buttons / touches bits.
@@ -117,6 +129,8 @@ namespace ElasticSea.QuestLink.Native
         [DllImport(Library)] public static extern int ql_haptic(IntPtr session, int hand, float amplitude, float duration_s);
         [DllImport(Library)] public static extern int ql_submit_frame_texture(IntPtr session, IntPtr native_texture, ref ql_pose render_pose, ulong frame_index);
         [DllImport(Library)] public static extern IntPtr ql_get_render_event_func();
+        // Monotonic clock; touches nothing else (load checks)
+        [DllImport(Library)] public static extern long ql_now_ns();
 
         // Audio: game audio to the headset, headset microphone back (48 kHz mono int16).
         public const int MicSampleRate = 48000;

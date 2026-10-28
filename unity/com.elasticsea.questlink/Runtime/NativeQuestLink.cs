@@ -87,7 +87,7 @@ namespace ElasticSea.QuestLink
             {
                 encodeWidth = (int)d.encode_width,
                 encodeHeight = (int)d.encode_height,
-                refreshHz = d.refresh_hz,
+                refreshHz = d.stream_refresh_hz != 0 ? d.stream_refresh_hz : d.refresh_hz,
                 ipd = d.ipd_m,
                 leftFov = ToFov(d.fov_left),
                 rightFov = ToFov(d.fov_right),
@@ -236,6 +236,23 @@ namespace ElasticSea.QuestLink
         {
             try { ql_shutdown(); }
             catch (Exception e) when (e is EntryPointNotFoundException || e is DllNotFoundException) { }
+        }
+
+        // True when libquestlink loads and exports the C API; doesn't start the runtime or open USB.
+        public static bool LibraryLoads(out string error)
+        {
+            error = null;
+            try
+            {
+                ql_now_ns();
+                ql_get_render_event_func();
+                return true;
+            }
+            catch (Exception e) when (e is EntryPointNotFoundException || e is DllNotFoundException)
+            {
+                error = e.Message;
+                return false;
+            }
         }
 
         public void Dispose()

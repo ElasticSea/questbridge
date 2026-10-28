@@ -4,8 +4,12 @@
 // transfers to write. Not thread-safe: the C API wraps it in a mutex.
 //
 //   WaitHello --HELLO v1--> Phase1 (CONFIG, CONFIRM, START) --> WaitLinkRequest
-//   --0x85 (user pressed Enable Link)--> WaitHelloV3 --HELLO v3--> Phase2 (same, version 3)
+//   --BYE 0x85 (user pressed Enable Link)--> WaitHelloV3 --HELLO v3--> Phase2 (same, version 3)
 //   --> clock ping --> Setup (recorded stream setup, paced) --> Streaming
+//
+// Recovery (PROTOCOL.md §4.6): in WaitHello we send a "preluding BYE" like Meta's host, so a
+// headset whose INVITE (HELLO) went unanswered restarts and sends a fresh one; a HELLO in any
+// state restarts the handshake; a BYE from the headset mid-session returns to WaitHello.
 #pragma once
 
 #include <array>
@@ -37,7 +41,10 @@ constexpr uint8_t kHeadPose = 34;
 }  // namespace topic
 
 namespace control {
-constexpr uint8_t kReady = 0x80, kHello = 0x81, kConfig = 0x82, kAck = 0x83, kLinkRequest = 0x85,
+// Headset names (xrspd): PAIRING_ACK, INVITE, INVITE_OK, INVITE_ACK, BYE, PAIRING,
+// CODE_GENERATION, CODE_GENERATION_ACK. The headset ends the phase-1 session with BYE when the
+// user presses Enable Link (our "link request").
+constexpr uint8_t kReady = 0x80, kHello = 0x81, kConfig = 0x82, kAck = 0x83, kBye = 0x85, kLinkRequest = kBye,
                   kStart = 0x87, kConfirm = 0x89, kConfirmAck = 0x8A;
 constexpr uint8_t kClockPing = 0x06, kClockPong = 0x16, kClockFlags = 0x80;
 }  // namespace control
@@ -54,13 +61,25 @@ enum class State {
 };
 const char* state_name(State s);
 
-// From the HELLO device description (PROTOCOL_NOTES "Device description")
+// HELLO device description (docs/PROTOCOL.md §8; tools/device_info.py is the same parse)
 struct DeviceInfo {
+    struct Mode {
+        uint32_t hz = 0;
+        double a = 0, b = 0;   // unknown scale factors
+        uint64_t bitrate = 0;  // probably bit/s
+    };
+    uint16_t version = 0;  // HELLO version (1 phase 1, 3 phase 2)
+    std::string product, manufacturer, firmware;
     uint32_t panel_width = 0, panel_height = 0;
     uint32_t encode_width = 0, encode_height = 0;
-    float refresh_hz = 0;
+    float refresh_hz = 0;  // the panel's default rate
     float ipd_m = 0;
-    float fov_deg[4] = {};  // left eye up, down, left, right; the right eye mirrors left/right
+    float fov_deg[2][4] = {};  // per eye (left, right): up, down, left, right
+    uint32_t slices = 0;       // HELLO v1 only (5 on Quest 3); 0 in v3
+    std::vector<uint32_t> refresh_rates;  // HELLO p4, ascending
+    std::vector<Mode> modes;
+    std::vector<uint16_t> codecs;    // video codecs the headset decodes (empty on Quest 3)
+    std::vector<uint16_t> features;  // offered session features (v3; v1 has phase-1 ids here)
 };
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello);
 
@@ -78,6 +97,13 @@ struct SessionConfig {
     int64_t link_request_timeout_ns = 0;  // waiting for the user to press Enable Link
     int64_t hello_v3_timeout_ns = 10'000'000'000;
     int64_t setup_max_gap_ns = 500'000'000;
+    // WaitHello: preluding BYE when no HELLO arrived this long after start (Meta: 50 ms), then
+    // again every bye_retry_ns while none comes (0 = once). bye_delay_ns < 0 = never.
+    int64_t bye_delay_ns = 50'000'000;
+    int64_t bye_retry_ns = 3'000'000'000;
+    // CONFIG v3 refresh: 0 = the device's default rate when the HELLO offers it, else the
+    // recorded 72 Hz; another value must be in the HELLO's refresh list
+    uint32_t refresh_hz = 0;
 };
 
 class Session {
@@ -97,11 +123,14 @@ public:
     State state() const { return state_; }
     const std::string& error() const { return error_; }
     uint64_t session_id() const { return session_id_; }
+    uint32_t streams() const { return streams_; }       // times Streaming was entered
+    uint32_t byes_sent() const { return byes_sent_; }   // preluding BYEs
     uint16_t control_seq() const { return control_seq_; }
     std::optional<int64_t> quest_clock_offset_ns() const { return quest_offset_; }
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
+    uint32_t refresh_hz() const { return refresh_hz_; }  // CONFIG v3's rate; 0 before phase 2
     uint64_t head_pose_count() const { return head_pose_count_; }
     const std::optional<HandsFrame>& hands() const { return hands_; }  // latest topic 8
     uint64_t hands_count() const { return hands_count_; }
@@ -126,6 +155,7 @@ public:
         std::optional<uint32_t> rectify_mesh_id;
         std::optional<std::array<FovPort, 2>> fov;
         bool intra = true;
+        uint32_t picture_height = 0;  // 0 = the HELLO's encode height
     };
     // TooLarge: a slice's csd or video exceeds kMaxStreamMessage; nothing is sent.
     Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
@@ -144,7 +174,10 @@ private:
     void send_raw_control(Bytes body, const std::string& label);
     void on_control(uint8_t type, const capnp::Ptr& tree, int seq);
     void on_clock(uint8_t type, std::span<const uint8_t> body);
+    void send_bye();
+    void wait_hello(int64_t bye_in_ns);
     void begin_phase(uint16_t version);
+    uint32_t pick_refresh() const;
     void advance_phase(uint8_t type);
     void finish_handshake();
     void enter(State s, int64_t timeout_ns);
@@ -163,9 +196,13 @@ private:
     uint64_t session_id_ = 0;
     uint16_t control_seq_ = 0;
     uint32_t clock_count_ = 0;
+    int64_t bye_due_ = 0;  // 0 = none
+    uint32_t byes_sent_ = 0;
+    uint32_t streams_ = 0;
     std::optional<int64_t> quest_offset_;
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
+    uint32_t refresh_hz_ = 0;
     uint64_t head_pose_count_ = 0;
     std::optional<HandsFrame> hands_;
     uint64_t hands_count_ = 0;
