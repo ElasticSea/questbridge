@@ -35,7 +35,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
-        bool sequence, audioOnly, controllersOnly;
+        bool sequence, audioOnly, controllersOnly, recovery;
         AudioBench bench;
         QuestLinkAudio output;
         TextMesh board;
@@ -77,6 +77,9 @@ namespace ElasticSea.QuestLink.BridgeTest
             // "-sequence-controllers": controllers, buttons, analog, motion and haptics; no audio
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-controllers") >= 0)
                 sequence = audioTest = controllersOnly = true;
+            // "-sequence-recovery": the live recovery check (RecoveryCheck, tools/recovery_check.py)
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-recovery") >= 0)
+                sequence = recovery = true;
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
                 backend = QuestLinkRig.BackendMode.Mock;
 
@@ -114,7 +117,16 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
             if (audioTest && rig.Head != null)
                 AudioTest();
-            if (sequence && bench != null)
+            if (recovery)
+            {
+                var status = rigObject.AddComponent<QuestLinkConnectionStatus>();
+                status.showOverlay = false;  // the board shows it
+                var check = gameObject.AddComponent<RecoveryCheck>();
+                check.rig = rig;
+                check.status = status;
+                check.board = board;
+            }
+            else if (sequence && bench != null)
             {
                 var seq = gameObject.AddComponent<BenchSequence>();
                 seq.rig = rig;
