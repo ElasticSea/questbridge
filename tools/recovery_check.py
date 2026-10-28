@@ -1,7 +1,7 @@
 """Recovery live check, PC side: follows the FirstLight player's log during "-sequence-recovery"
 and disturbs the headset over adb when the board announces each drop, then summarises.
 
-Usage: py tools/recovery_check.py --log PLAYER_LOG [--qllog QL_LOG_FILE] [--timeout 150] [--dry-run]
+Usage: py tools/recovery_check.py --log PLAYER_LOG [--qllog QL_LOG_FILE] [--timeout 600] [--dry-run]
 
 The player shows every step in the headset (RecoveryCheck.cs); this script only reacts to its
 "[Recovery] drop N <kind>" lines:
@@ -79,7 +79,7 @@ def main():
     ap.add_argument("--log", required=True, help="the player's -logFile")
     ap.add_argument("--qllog", help="QL_LOG_FILE of the player: its link transitions are summarised")
     ap.add_argument("--serial", default=SERIAL)
-    ap.add_argument("--timeout", type=float, default=150)
+    ap.add_argument("--timeout", type=float, default=600, help="seconds; the user paces the steps")
     ap.add_argument("--dry-run", action="store_true", help="print the adb steps, don't run them")
     a = ap.parse_args()
 

@@ -7,11 +7,12 @@ namespace ElasticSea.QuestLink.BridgeTest
     // "-sequence-recovery": the live recovery check (docs/RECOVERY_LIVE_CHECK.md), about one
     // minute, every step on the board. The player keeps running; tools/recovery_check.py reads
     // the "[Recovery] drop N <kind>" log lines and disturbs the headset over adb (sleep, Link
-    // quit). Each drop must come back to streaming without restarting anything; the user only
-    // presses Launch when the Link dialog shows it. One question at the end (A yes / B no).
+    // quit). Each drop must come back to streaming without restarting anything; the user presses
+    // Launch when the Link dialog shows it. Every step waits for A to continue; the question at
+    // the end waits for A (yes) or B (no), with no timeout.
     public class RecoveryCheck : MonoBehaviour
     {
-        const float LossWait = 20f, BackWait = 60f, AnswerTime = 20f;
+        const float LossWait = 20f, BackWait = 60f;
         static readonly string[] Drops = { "sleep", "linkquit" };
 
         public QuestLinkRig rig;
@@ -26,7 +27,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             while (rig.State != QuestLinkState.Streaming)
                 yield return null;
             Debug.Log("[Recovery] streaming");
-            yield return Show("RECOVERY TEST (1 min)\nKeep the headset on.\nThe picture goes away twice.\nWhen the Link dialog shows\nLaunch, press Launch.", 8f);
+            yield return Continue("RECOVERY TEST (1 min)\nKeep the headset on.\nThe picture goes away twice.\nWhen the Link dialog shows\nLaunch, press Launch.");
             for (var i = 0; i < Drops.Length; i++)
                 yield return Drop(i + 1, Drops[i]);
             yield return Ask("came_back", "Did the picture come back\nevery time?");
@@ -37,20 +38,19 @@ namespace ElasticSea.QuestLink.BridgeTest
         IEnumerator Drop(int n, string kind)
         {
             var hint = kind == "sleep" ? "The screen turns off,\nthen back on by itself." : "Link closes.\nPress Launch when you see it.";
-            yield return Show($"DROP {n} of {Drops.Length}\n{hint}\nStarting in", 4f);
+            yield return Continue($"DROP {n} of {Drops.Length}\n{hint}\nIt starts when you press A.");
             var before = status.Status;
             var start = Time.realtimeSinceStartup;
             Debug.Log($"[Recovery] drop {n} {kind}");
             board.text = $"DROP {n}: now\n{hint}";
             while (status.Status.disconnects == before.disconnects && Time.realtimeSinceStartup - start < LossWait)
                 yield return null;
-            var lost = status.Status.disconnects > before.disconnects;
-            if (!lost)
+            if (status.Status.disconnects == before.disconnects)
             {
                 // Some drops leave the stream up (a short sleep): that's a pass too
                 results.Add($"{kind}=kept");
                 Debug.Log($"[Recovery] back {n} {kind}: stream kept, no loss in {LossWait:F0} s");
-                yield return Show($"DROP {n}: picture stayed.", 3f);
+                yield return Continue($"DROP {n}: picture stayed.");
                 yield break;
             }
             var lostAt = Time.realtimeSinceStartup;
@@ -62,43 +62,65 @@ namespace ElasticSea.QuestLink.BridgeTest
             results.Add($"{kind}={(back ? $"back_{took:F1}s" : "not_back")}");
             Debug.Log($"[Recovery] back {n} {kind}: {(back ? "streaming" : "NOT back")} {took:F1} s after the loss " +
                       $"({s.lastLoss}; connects {s.connects}, disconnects {s.disconnects}, resumes {s.resumes})");
-            yield return Show(back ? $"BACK after {took:F1} s.\nDrop {n} recovered." : $"Drop {n}: no picture\nafter {BackWait:F0} s.", 3f);
+            yield return Continue(back ? $"BACK after {took:F1} s.\nDrop {n} recovered." : $"Drop {n}: no picture\nafter {BackWait:F0} s.");
         }
 
-        IEnumerator Show(string text, float seconds)
+        // A / X and B / Y on either controller
+        void Buttons(out bool a, out bool b)
         {
-            for (var end = Time.realtimeSinceStartup + seconds; Time.realtimeSinceStartup < end;)
+            a = b = false;
+            foreach (var h in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
+                if (rig.Backend != null && rig.Backend.TryGetController(h, out var c))
+                {
+                    a |= c.primaryButton;
+                    b |= c.secondaryButton;
+                }
+        }
+
+        // All buttons up first, so one press answers one step
+        IEnumerator Released()
+        {
+            for (;;)
             {
-                board.text = $"{text}\n({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})";
+                Buttons(out var a, out var b);
+                if (!a && !b)
+                    yield break;
                 yield return null;
             }
         }
 
-        // A = yes, B = no on either controller (X / Y on the left)
+        // Shows text until A is pressed
+        IEnumerator Continue(string text)
+        {
+            board.text = $"{text}\n\nPress A to continue.";
+            yield return Released();
+            for (;;)
+            {
+                Buttons(out var a, out _);
+                if (a)
+                    yield break;
+                yield return null;
+            }
+        }
+
+        // Waits for A (yes) or B (no)
         IEnumerator Ask(string key, string question)
         {
-            for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
+            board.text = $"{question}\nA / X = YES\nB / Y = NO";
+            yield return Released();
+            for (;;)
             {
-                bool yes = false, no = false;
-                foreach (var h in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
-                    if (rig.Backend != null && rig.Backend.TryGetController(h, out var c))
-                    {
-                        yes |= c.primaryButton;
-                        no |= c.secondaryButton;
-                    }
+                Buttons(out var yes, out var no);
                 if (yes != no)
                 {
                     var answer = yes ? "YES" : "NO";
                     results.Add($"{key}={answer}");
                     Debug.Log($"[Recovery] answer {key}={answer}");
-                    yield return Show($"{question.Replace('\n', ' ')}\n{answer}", 2f);
+                    yield return Continue($"{question.Replace('\n', ' ')}\n{answer}");
                     yield break;
                 }
-                board.text = $"{question} ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nA / X = YES\nB / Y = NO";
                 yield return null;
             }
-            results.Add($"{key}=none");
-            Debug.Log($"[Recovery] answer {key}=none (timeout)");
         }
     }
 }
