@@ -9,8 +9,9 @@
 //   XRSP_REPLAY=<clip.json>, XRSP_POSE=fixed|live|template, XRSP_ATTACH=1 with
 //   XRSP_CONTROL_SEQ (16), XRSP_VIDEO_SEQ (0), XRSP_FRAME_START (clip's frame_index),
 //   XRSP_REFRESH (Hz; default = the headset's default rate),
-//   QL_CODEC=h264|hevc|auto (CONFIG codec; default: the clip's, else auto).
+//   QL_CODEC=h264|hevc|auto|<n> (CONFIG codec, n raw; default: the clip's, else auto).
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -208,9 +209,10 @@ int main(int argc, char** argv) {
     cfg.hello_timeout_ms = int(env_num("XRSP_HELLO_WAIT", 300) * 1000);
     cfg.refresh_hz = uint32_t(env_num("XRSP_REFRESH", 0));
     std::string codec = env("QL_CODEC", replay.empty() ? "auto" : clip.hevc ? "hevc" : "h264");
-    cfg.codec = codec == "hevc" || codec == "h265" || codec == "1" ? QL_CODEC_HEVC
-                : codec == "h264" || codec == "avc" || codec == "0" ? QL_CODEC_H264
-                                                                    : QL_CODEC_AUTO;
+    cfg.codec = codec == "hevc" || codec == "h265" ? QL_CODEC_HEVC
+                : codec == "h264" || codec == "avc"  ? QL_CODEC_H264
+                : !codec.empty() && std::isdigit(uint8_t(codec[0])) ? std::atoi(codec.c_str())  // raw CONFIG value
+                                                                     : QL_CODEC_AUTO;
     cfg.link_request_timeout_ms = int(seconds * 1000);
     cfg.bye_retry_ms = int(env_num("XRSP_BYE_RETRY_MS", cfg.bye_retry_ms));  // < 0: never send BYE
     cfg.first_frame_index = uint64_t(env_num("XRSP_FRAME_START", 0));

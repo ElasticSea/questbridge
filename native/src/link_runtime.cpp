@@ -65,13 +65,13 @@ int env_int(const char* name, int fallback) {
     return v && *v ? std::atoi(v) : fallback;
 }
 
-// QL_CODEC: h264 | hevc | auto (or the CONFIG number)
+// QL_CODEC: h264 | hevc | auto, or a raw CONFIG value
 int env_codec() {
     const char* v = std::getenv("QL_CODEC");
     std::string s = v ? v : "";
-    if (s == "h264" || s == "avc" || s == "0") return QL_CODEC_H264;
-    if (s == "hevc" || s == "h265" || s == "1") return QL_CODEC_HEVC;
-    return QL_CODEC_AUTO;
+    if (s == "h264" || s == "avc") return QL_CODEC_H264;
+    if (s == "hevc" || s == "h265") return QL_CODEC_HEVC;
+    return !s.empty() && s[0] >= '0' && s[0] <= '9' ? std::atoi(s.c_str()) : QL_CODEC_AUTO;
 }
 
 // Sleep until a ql_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
