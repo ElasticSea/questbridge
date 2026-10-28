@@ -135,10 +135,22 @@ namespace ElasticSea.QuestLink.BridgeTest
                 board.text = $"CONTROLLER TEST ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nPick up both controllers.\nleft {(l ? "OK" : "--")}   right {(r ? "OK" : "--")}\nNot OK? Press its Meta button\nor pull its trigger.";
                 yield return null;
             }
-            Debug.Log($"[Sequence] controllers connected: left {Pad(QuestLinkHand.Left).connected}, right {Pad(QuestLinkHand.Right).connected}");
+            bool hasL = Pad(QuestLinkHand.Left).connected, hasR = Pad(QuestLinkHand.Right).connected;
+            Debug.Log($"[Sequence] controllers connected: left {hasL}, right {hasR}");
+            answers.Add($"controllers={(hasL ? "L" : "")}{(hasR ? "R" : "")}");
+            // A missing controller (dead battery, asleep) is skipped; the other one answers
+            if (!hasL && !hasR)
+            {
+                yield return Show("No controller detected,\nskipping the controller test.", 4f);
+                yield break;
+            }
+            if (!hasL || !hasR)
+                yield return Show($"{(hasL ? "RIGHT" : "LEFT")} controller not detected,\nskipping it.", 4f);
 
             // Every button once; the list shrinks as they are pressed
-            var pending = new List<string> { "A", "B", "X", "Y", "L-stick", "R-stick", "Menu" };
+            var pending = new List<string>();
+            if (hasR) pending.AddRange(new[] { "A", "B", "R-stick" });
+            if (hasL) pending.AddRange(new[] { "X", "Y", "L-stick", "Menu" });
             for (var end = Time.realtimeSinceStartup + ButtonsTime; Time.realtimeSinceStartup < end && pending.Count > 0;)
             {
                 var l = Pad(QuestLinkHand.Left);
@@ -172,25 +184,33 @@ namespace ElasticSea.QuestLink.BridgeTest
             int frames = 0, tracked = 0;
             var lo = Vector3.one * 1e9f;
             var hi = -lo;
+            var moving = hasR ? QuestLinkHand.Right : QuestLinkHand.Left;
+            var movingName = hasR ? "RIGHT" : "LEFT";
             for (var end = Time.realtimeSinceStartup + MotionTime; Time.realtimeSinceStartup < end;)
             {
                 frames++;
-                var r = Pad(QuestLinkHand.Right);
-                if (r.positionTracked)
+                var c = Pad(moving);
+                if (c.positionTracked)
                 {
                     tracked++;
-                    lo = Vector3.Min(lo, r.pose.position);
-                    hi = Vector3.Max(hi, r.pose.position);
+                    lo = Vector3.Min(lo, c.pose.position);
+                    hi = Vector3.Max(hi, c.pose.position);
                 }
-                var at = r.positionTracked ? r.pose.position.ToString("F2") : "not tracked";
-                board.text = $"MOTION ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nWave the RIGHT controller\nup, down, left, right.\n{at}";
+                var at = c.positionTracked ? c.pose.position.ToString("F2") : "not tracked";
+                board.text = $"MOTION ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nWave the {movingName} controller\nup, down, left, right.\n{at}";
                 yield return null;
             }
-            Debug.Log($"[Sequence] motion: {tracked}/{frames} frames tracked, right span {(tracked > 0 ? (hi - lo).ToString("F2") : "-")}");
+            Debug.Log($"[Sequence] motion: {tracked}/{frames} frames tracked, {movingName.ToLowerInvariant()} span {(tracked > 0 ? (hi - lo).ToString("F2") : "-")}");
 
             foreach (var hand in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
             {
                 var name = hand == QuestLinkHand.Left ? "LEFT" : "RIGHT";
+                if (!(hand == QuestLinkHand.Left ? hasL : hasR))
+                {
+                    answers.Add($"buzz_{name.ToLowerInvariant()}=skipped");
+                    Debug.Log($"[Sequence] haptic {name} skipped (not detected)");
+                    continue;
+                }
                 // Through the Input System, as XRI sends it
                 var device = hand == QuestLinkHand.Left ? QuestLinkInput.LeftController : QuestLinkInput.RightController;
                 Debug.Log($"[Sequence] haptic {name}");
@@ -220,7 +240,8 @@ namespace ElasticSea.QuestLink.BridgeTest
             var armed = false;
             var held = 0f;
             bool? holding = null;
-            var buttons = with == QuestLinkHand.Right ? "RIGHT controller: A = YES, B = NO" : "LEFT controller: X = YES, Y = NO";
+            var buttons = !Pad(with).connected ? "(other controller not detected)"
+                : with == QuestLinkHand.Right ? "RIGHT controller: A = YES, B = NO" : "LEFT controller: X = YES, Y = NO";
             for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
             {
                 var c = Pad(with);
