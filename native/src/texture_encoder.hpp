@@ -1,4 +1,4 @@
-// Graphics texture -> H.264 slices, for ql_submit_frame_texture.
+// Graphics texture -> H.264 / HEVC slices, for ql_submit_frame_texture.
 //
 // capture() runs on the graphics (render) thread and must finish copying before it returns,
 // because the engine reuses the texture next frame. encode() runs on the runtime's encode
@@ -19,10 +19,11 @@ struct TextureEncoderConfig {
     int slices = 5;
     uint32_t bitrate = 100'000'000;
     int gop = 1;  // 1 = all intra (what the headset is proven to play); >1 = IDR every gop frames
+    bool hevc = false;  // the session's CONFIG codec; VideoToolbox only
 };
 
 struct EncodedSlices {
-    Bytes csd;                  // Annex-B SPS + PPS
+    Bytes csd;                  // Annex-B SPS + PPS (HEVC: VPS + SPS + PPS)
     std::vector<Bytes> slices;  // Annex-B slice NALs, in picture order
     std::vector<Bytes> slice_csd;  // per slice when each is its own stream (strips); empty = csd
     bool idr = false;

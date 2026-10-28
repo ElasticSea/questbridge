@@ -36,8 +36,8 @@
 
 // Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
-static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 240 && offsetof(ql_device_info, features) == 104 &&
-              offsetof(ql_device_info, firmware) == 176);
+static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 248 && offsetof(ql_device_info, features) == 104 &&
+              offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
@@ -63,6 +63,15 @@ struct Client {
 int env_int(const char* name, int fallback) {
     const char* v = std::getenv(name);
     return v && *v ? std::atoi(v) : fallback;
+}
+
+// QL_CODEC: h264 | hevc | auto (or the CONFIG number)
+int env_codec() {
+    const char* v = std::getenv("QL_CODEC");
+    std::string s = v ? v : "";
+    if (s == "h264" || s == "avc" || s == "0") return QL_CODEC_H264;
+    if (s == "hevc" || s == "h265" || s == "1") return QL_CODEC_HEVC;
+    return QL_CODEC_AUTO;
 }
 
 // Sleep until a ql_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
@@ -229,15 +238,17 @@ private:
 
     static uint64_t id(ql_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
 
-    // Created on the first frame of the first streaming session, at that session's rate
+    // Created on the first frame of the first streaming session, at that session's rate and codec
     TextureEncoder* encoder(ql_host* h) {
-        ql_device_info dev;
-        uint32_t hz = ql_host_get_device_info(h, &dev) == QL_OK ? dev.stream_refresh_hz : 0;
+        ql_device_info dev{};
+        bool known = ql_host_get_device_info(h, &dev) == QL_OK;
+        uint32_t hz = known ? dev.stream_refresh_hz : 0;
         std::lock_guard<std::mutex> l(mu_);
         if (!encoder_tried_) {
             encoder_tried_ = true;
             TextureEncoderConfig cfg;
             if (hz) cfg.fps = int(hz);
+            cfg.hevc = known && dev.stream_codec == QL_CODEC_HEVC;
             cfg.gop = env_int("QL_GOP", 1);
             cfg.bitrate = uint32_t(env_int("QL_MBPS", 100)) * 1'000'000u;
             std::string err;
@@ -254,6 +265,7 @@ private:
             if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
             cfg.hands = env_int("QL_HANDS", 1);
             cfg.haptics = env_int("QL_HAPTICS", 1);
+            cfg.codec = env_codec();
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
                 // Poll fast: the sooner we hold the interface after enumeration, the sooner the

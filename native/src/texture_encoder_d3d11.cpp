@@ -133,6 +133,7 @@ private:
             ec.bitrate = cfg_.bitrate;
             ec.gop = cfg_.gop;
             ec.gpu_device = device_.Get();
+            ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;  // HEVC: refused below
             std::string err;
             encoder_ = enc::create_encoder(ec, &err);
             if (!encoder_) {

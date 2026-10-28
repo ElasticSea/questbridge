@@ -74,12 +74,13 @@ typedef struct ql_device_info {
     uint32_t refresh_count;
     uint32_t refresh_rates[QL_MAX_REFRESH_RATES]; /* offered rates, Hz, ascending */
     uint32_t stream_refresh_hz;           /* the rate our CONFIG chose; 0 before phase 2 */
-    uint32_t codecs;                      /* bit n: headset lists video codec n (0 AVC, 1 HEVC?); 0 on Quest 3 */
+    uint32_t codecs;                      /* bit n: headset lists video codec n (ql_codec); 0 on Quest 3 */
     uint32_t hello_version;               /* 1 (phase 1) or 3 (Link session) */
     uint64_t features;                    /* bit n: headset offers session feature n (HELLO v3) */
     char product[32];                     /* "Meta Quest 3" */
     char manufacturer[32];                /* "Oculus VR" */
     char firmware[64];                    /* "releases-oculus-14.0-v207" */
+    uint32_t stream_codec;                /* ql_codec our CONFIG chose (with stream_refresh_hz) */
 } ql_device_info;
 
 /* ql_controller.buttons / touches bits */
@@ -168,6 +169,14 @@ typedef enum ql_state {
 /* Log line from the protocol: direction "PC->Q", "Q->PC" or "info"; seq -1 = none. */
 typedef void (*ql_log_fn)(void* user, const char* direction, const char* what, int seq);
 
+/* Video codec (CONFIG v3 u16 @ byte 6; 1 = HEVC is inferred from Meta's host) */
+typedef enum ql_codec {
+    QL_CODEC_AUTO = -1, /* HEVC when the headset lists it and this platform encodes it faster
+                         * (macOS), else H.264. Quest 3 / Pro list nothing: H.264 */
+    QL_CODEC_H264 = 0,
+    QL_CODEC_HEVC = 1
+} ql_codec;
+
 typedef struct ql_config {
     /* Attach to a headset session an earlier host left running (no handshake, no setup);
      * continue its numbering. */
@@ -187,6 +196,7 @@ typedef struct ql_config {
      * sends a new one; repeat every bye_retry_ms (default 3000; 0 = once at open, < 0 = never). */
     int bye_retry_ms;
     uint32_t refresh_hz;         /* Link session rate; 0 = the headset's default (default 0) */
+    int codec;                   /* ql_codec for CONFIG and the encoder (default QL_CODEC_AUTO) */
 } ql_config;
 
 /* Byte transport for ql_host_open_transport (tests, other backends). read returns bytes

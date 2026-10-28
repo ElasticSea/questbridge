@@ -671,6 +671,10 @@ std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string
         if (error) *error = "Media Foundation backend only encodes Layout::Slices";
         return nullptr;
     }
+    if (config.codec != Codec::H264) {
+        if (error) *error = "Media Foundation backend only encodes H.264";
+        return nullptr;
+    }
     auto enc = std::make_unique<MfEncoder>(config);
     if (!enc->init(error)) return nullptr;
     return enc;

@@ -20,7 +20,7 @@ enum class PixelFormat { NV12, BGRA };
 
 enum class Codec {
     H264,  // Constrained Baseline (what Meta's host sends)
-    HEVC,  // Main; VideoToolbox only, headset support untested (CONFIG codec 2)
+    HEVC,  // Main; VideoToolbox only, headset support untested (CONFIG codec 1)
 };
 
 enum class Layout {

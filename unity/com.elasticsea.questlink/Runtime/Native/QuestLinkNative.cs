@@ -55,6 +55,7 @@ namespace ElasticSea.QuestLink.Native
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string product;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string manufacturer;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string firmware;
+            public uint stream_codec;       // the codec the Link session runs (0 H.264, 1 HEVC)
         }
 
         // ql_controller.buttons / touches bits.

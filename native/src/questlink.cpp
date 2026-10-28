@@ -50,6 +50,10 @@ SessionConfig to_session_config(const ql_config& c) {
     if (c.bye_retry_ms < 0) s.bye_delay_ns = -1;
     s.bye_retry_ns = c.bye_retry_ms > 0 ? int64_t(c.bye_retry_ms) * 1'000'000 : 0;
     s.refresh_hz = c.refresh_hz;
+    s.codec = c.codec;
+#ifdef __APPLE__
+    s.prefer_hevc = true;  // VideoToolbox: HEVC strips ~88 fps, H.264 ~62 fps at 4096x2240
+#endif
     return s;
 }
 
@@ -156,6 +160,7 @@ void ql_config_init(ql_config* cfg) {
     cfg->haptics = 1;
     cfg->step_timeout_ms = 3000;
     cfg->bye_retry_ms = 3000;
+    cfg->codec = QL_CODEC_AUTO;
 }
 
 static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, ql_host** out) {
@@ -309,6 +314,7 @@ ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out) {
     copy(out->product, sizeof out->product, d->product);
     copy(out->manufacturer, sizeof out->manufacturer, d->manufacturer);
     copy(out->firmware, sizeof out->firmware, d->firmware);
+    out->stream_codec = host->session->codec();
     return QL_OK;
 }
 
