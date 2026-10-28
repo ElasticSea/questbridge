@@ -12,3 +12,7 @@
 .idea/
 *.slnx
 .vscode/
+
+# Native plugin installed by install-native.ps1
+com.elasticsea.questlink/Runtime/Plugins/
+com.elasticsea.questlink/Runtime/Plugins.meta
