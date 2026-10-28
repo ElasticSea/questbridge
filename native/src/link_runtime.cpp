@@ -266,7 +266,14 @@ private:
             TextureEncoderConfig cfg;
             if (hz) cfg.fps = int(hz);
             cfg.hevc = known && dev.stream_codec == QL_CODEC_HEVC;
+#ifdef __APPLE__
+            // All-intra VideoToolbox runs ~3x over the bitrate (~90 KB per strip per frame) and
+            // the Quest Pro ends the session within seconds ("buffer too small"); P frames are
+            // what played on the Pro from the Mac (gop 72 clip)
+            cfg.gop = env_int("QL_GOP", 72);
+#else
             cfg.gop = env_int("QL_GOP", 1);
+#endif
             cfg.bitrate = uint32_t(env_int("QL_MBPS", 100)) * 1'000'000u;
             std::string err;
             encoder_ = create_texture_encoder(cfg, &err);
@@ -398,6 +405,8 @@ private:
     void encode_loop() {
         uint64_t idr_generation = 0;  // force an IDR on the first frame of each connection
         int stream_frames = 0;        // frames encoded in this stream; the first few are logged
+        uint64_t rate_bytes = 0;      // video bytes since rate_since, logged every 10 s
+        int64_t rate_since = ql_now_ns();
         for (;;) {
             Job job;
             std::shared_ptr<ql_host> h;
@@ -469,6 +478,15 @@ private:
                 fi.has_fov = 1;
                 fi.fov_left = dev.fov_left;
                 fi.fov_right = dev.fov_right;
+            }
+            for (auto& sl : slices) rate_bytes += sl.csd_len + sl.video_len;
+            if (int64_t now = ql_now_ns(); now - rate_since >= 10'000'000'000) {
+                stderr_log(nullptr, "info",
+                           ("video: " + std::to_string(rate_bytes * 8 * 1'000'000'000 / uint64_t(now - rate_since) / 1'000'000) +
+                            " Mbit/s, " + std::to_string(refits_) + " refits so far").c_str(),
+                           -1);
+                rate_bytes = 0;
+                rate_since = now;
             }
             if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT)
                 stderr_log(nullptr, "info",
