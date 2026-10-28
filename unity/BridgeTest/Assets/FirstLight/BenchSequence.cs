@@ -132,7 +132,7 @@ namespace ElasticSea.QuestLink.BridgeTest
                 bool l = Pad(QuestLinkHand.Left).connected, r = Pad(QuestLinkHand.Right).connected;
                 if (l && r)
                     break;
-                board.text = $"CONTROLLER TEST ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nPick up both controllers.\nleft {(l ? "OK" : "--")}   right {(r ? "OK" : "--")}";
+                board.text = $"CONTROLLER TEST ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nPick up both controllers.\nleft {(l ? "OK" : "--")}   right {(r ? "OK" : "--")}\nNot OK? Press its Meta button\nor pull its trigger.";
                 yield return null;
             }
             Debug.Log($"[Sequence] controllers connected: left {Pad(QuestLinkHand.Left).connected}, right {Pad(QuestLinkHand.Right).connected}");
@@ -196,7 +196,9 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[Sequence] haptic {name}");
                 device?.SendImpulse(1f, 1f);
                 yield return Show($"{name} controller\nbuzzes now (1 s)", 2f);
-                yield return AskButtons($"buzz_{name.ToLowerInvariant()}", $"Did the {name}\ncontroller buzz?");
+                // Answered on the other controller: the one under test may be the broken one
+                var other = hand == QuestLinkHand.Left ? QuestLinkHand.Right : QuestLinkHand.Left;
+                yield return AskButtons($"buzz_{name.ToLowerInvariant()}", $"Did the {name}\ncontroller buzz?", other);
             }
         }
 
@@ -211,15 +213,27 @@ namespace ElasticSea.QuestLink.BridgeTest
             max[at + 3] = Mathf.Max(max[at + 3], Mathf.Abs(s.thumbstick.y));
         }
 
-        // A or X = yes, B or Y = no; buttons must be released first
-        IEnumerator AskButtons(string key, string question)
+        // Answer on controller `with` (A/X = yes, B/Y = no; buttons released first) or, without
+        // it, a raised hand held for HoldTime (left = yes, right = no)
+        IEnumerator AskButtons(string key, string question, QuestLinkHand with)
         {
             var armed = false;
+            var held = 0f;
+            bool? holding = null;
+            var buttons = with == QuestLinkHand.Right ? "RIGHT controller: A = YES, B = NO" : "LEFT controller: X = YES, Y = NO";
             for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
             {
-                var l = Pad(QuestLinkHand.Left);
-                var r = Pad(QuestLinkHand.Right);
-                bool yes = l.primaryButton || r.primaryButton, no = l.secondaryButton || r.secondaryButton;
+                var c = Pad(with);
+                bool yes = c.primaryButton, no = c.secondaryButton;
+                bool l = Raised(hands.Left), r = Raised(hands.Right);
+                bool? raise = l != r ? l : (bool?)null;
+                held = raise != null && raise == holding ? held + Time.unscaledDeltaTime : 0f;
+                holding = raise;
+                if (held >= HoldTime)
+                {
+                    yes = raise == true;
+                    no = raise == false;
+                }
                 if (!yes && !no)
                     armed = true;
                 else if (armed && yes != no)
@@ -230,7 +244,7 @@ namespace ElasticSea.QuestLink.BridgeTest
                     yield return Show($"{question.Replace('\n', ' ')}\n{answer}", 1.5f);
                     yield break;
                 }
-                board.text = $"{question} ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nA or X = YES\nB or Y = NO";
+                board.text = $"{question} ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\n{buttons}\nor raise a hand:\nLEFT = YES, RIGHT = NO";
                 yield return null;
             }
             answers.Add($"{key}=none");
