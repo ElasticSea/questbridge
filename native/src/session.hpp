@@ -115,8 +115,8 @@ struct SessionConfig {
     // CONFIG v3 refresh: 0 = the device's default rate when the HELLO offers it, else the
     // recorded 72 Hz; another value must be in the HELLO's refresh list
     uint32_t refresh_hz = 0;
-    // CONFIG v3 codec: -1 = auto (HEVC when prefer_hevc and the HELLO v3 lists it, else H.264);
-    // otherwise sent as is, offered or not
+    // CONFIG v3 codec: -1 = auto (HEVC when prefer_hevc, unless the HELLO v3 lists codecs
+    // without HEVC; else H.264); otherwise sent as is, offered or not
     int codec = -1;
     bool prefer_hevc = false;  // this platform's encoder is faster at HEVC (VideoToolbox)
 };
