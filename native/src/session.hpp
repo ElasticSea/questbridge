@@ -19,6 +19,7 @@
 
 #include "capnp.hpp"
 #include "frame.hpp"
+#include "pose.hpp"
 #include "xrsp.hpp"
 
 namespace ql {
@@ -82,6 +83,8 @@ public:
     uint16_t control_seq() const { return control_seq_; }
     std::optional<int64_t> quest_clock_offset_ns() const { return quest_offset_; }
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
+    const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
+    uint64_t head_pose_count() const { return head_pose_count_; }
 
     // Raw stream send: numbers seq per topic, all messages in one transfer
     void send_stream(std::vector<StreamMessage> msgs);
@@ -125,6 +128,8 @@ private:
     uint16_t control_seq_ = 0;
     uint32_t clock_count_ = 0;
     std::optional<int64_t> quest_offset_;
+    std::optional<HeadPose> head_pose_;
+    uint64_t head_pose_count_ = 0;
     std::map<uint8_t, uint64_t> rx_counts_;
     std::map<uint8_t, uint32_t> stream_seq_;
     uint64_t next_frame_index_ = 1;

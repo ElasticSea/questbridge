@@ -146,6 +146,13 @@ void Session::on_message(std::span<const uint8_t> raw) {
     int seq = rd16(&raw[4]);
     auto body = unpad_body(raw[0], raw.subspan(kHeaderSize));
     ++rx_counts_[t];
+    if (t == topic::kHeadPose) {
+        if (auto p = parse_head_pose(body)) {
+            head_pose_ = *p;
+            ++head_pose_count_;
+        }
+        return;
+    }
     if (t != topic::kControl) return;
     if (body.size() < 8) return;
     uint8_t type = body[0], flags = body[1];
