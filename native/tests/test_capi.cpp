@@ -142,6 +142,21 @@ TEST(capi_attach_pose_and_frame) {
     fi.is_intra = 1;
     fi.has_render_pose = 1;
     fi.render_pose = p.pose;
+    fi.rectify_mesh_id = 1001;
+    fi.has_fov = 1;
+    fi.fov_left = {0.9657f, 1.4281f, 1.3764f, 0.8391f};  // up, down, left, right
+    fi.fov_right = {0.9657f, 1.4281f, 0.8391f, 1.3764f};
+
+    // A slice over the message cap: nothing sent, error set
+    std::vector<uint8_t> huge(130 * 1024, 0);
+    ql_slice over[5];
+    for (auto& s : over) s = slices[0];
+    over[3].video = huge.data();
+    over[3].video_len = huge.size();
+    CHECK_EQ(ql_host_submit_frame_slices(h, over, 5, &fi), QL_ERR_ARGUMENT);
+    CHECK(usb.written.empty());
+    CHECK(std::string(ql_host_get_error(h)).find("frame dropped") != std::string::npos);
+
     REQUIRE(ql_host_submit_frame_slices(h, slices, 5, &fi) == QL_OK);
     REQUIRE(usb.written.size() == 1);
     const Bytes& x = usb.written[0];
@@ -155,6 +170,19 @@ TEST(capi_attach_pose_and_frame) {
     float q3;
     std::memcpy(&q3, hdr + 8 + 12 + 12, 4);
     CHECK_EQ(q3, p.pose.qw);
+    // Timewarp fields: mesh 1001; FovPorts stored as left, right, up, down
+    CHECK_EQ(rd32(hdr + 8 + 8), uint32_t(1001));
+    float fov[8];
+    for (size_t eye = 0; eye < 2; ++eye) {
+        const uint8_t* ptr = hdr + 8 + 8 * (18 + eye);
+        std::memcpy(&fov[4 * eye], ptr + 8 + 8 * (int32_t(rd32(ptr)) >> 2), 16);
+    }
+    CHECK_EQ(fov[0], 1.3764f);
+    CHECK_EQ(fov[1], 0.8391f);
+    CHECK_EQ(fov[2], 0.9657f);
+    CHECK_EQ(fov[3], 1.4281f);
+    CHECK_EQ(fov[4], 0.8391f);
+    CHECK_EQ(fov[5], 1.3764f);
 
     ql_info info;
     ql_host_get_info(h, &info);

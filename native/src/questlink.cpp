@@ -254,6 +254,11 @@ ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uin
             opt.render_pose = Pose{{r.qx, r.qy, r.qz, r.qw}, {r.px, r.py, r.pz}};
         }
         opt.intra = info->is_intra != 0;
+        if (info->rectify_mesh_id) opt.rectify_mesh_id = info->rectify_mesh_id;
+        if (info->has_fov) {
+            auto port = [](const ql_fov& f) { return FovPort{f.left, f.right, f.up, f.down}; };
+            opt.fov = std::array<FovPort, 2>{port(info->fov_left), port(info->fov_right)};
+        }
     }
     std::unique_lock<std::mutex> lock(host->mu);
     if (host->broken) return QL_ERR_TRANSPORT;
@@ -270,6 +275,9 @@ ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uin
             return host->session->state() == State::Failed ? QL_ERR_FAILED : QL_ERR_NOT_STREAMING;
         case Session::Submit::NoClock: return QL_ERR_NO_CLOCK;
         case Session::Submit::BadSlices: return QL_ERR_ARGUMENT;
+        case Session::Submit::TooLarge:
+            host->error = "slice larger than one XRSP message (" + std::to_string(kMaxStreamMessage) + " B); frame dropped";
+            return QL_ERR_ARGUMENT;
     }
     return QL_ERR_INTERNAL;
 }

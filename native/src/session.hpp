@@ -103,14 +103,17 @@ public:
 
     // One video frame as a single transfer. Needs the Streaming state and a clock offset
     // (at least one Quest clock ping), like the replay loop in handshake.py.
-    enum class Submit { Ok, NotStreaming, NoClock, BadSlices };
+    enum class Submit { Ok, NotStreaming, NoClock, BadSlices, TooLarge };
     struct FrameOptions {
         uint64_t index = 0;                 // 0 = next index (session-wide, increasing)
         int64_t target_vsync_quest_ns = 0;  // 0 = now (Quest clock) + vsync_lead_ns
         int64_t vsync_lead_ns = 20'000'000;
         std::optional<Pose> render_pose;
+        std::optional<uint32_t> rectify_mesh_id;
+        std::optional<std::array<FovPort, 2>> fov;
         bool intra = true;
     };
+    // TooLarge: a slice's csd or video exceeds kMaxStreamMessage; nothing is sent.
     Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
     uint64_t next_frame_index() const { return next_frame_index_; }
 

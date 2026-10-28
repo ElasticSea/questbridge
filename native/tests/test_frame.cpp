@@ -99,6 +99,55 @@ TEST(frame_header_fields) {
     }
 }
 
+// FovPort struct behind the pointer at data word kFovWord + eye (header = one capnp segment)
+std::array<float, 4> fov_of(const Bytes& h, size_t eye) {
+    size_t ptr = 8 + 8 * (es::kFovWord + eye);
+    size_t t = ptr + 8 + 8 * size_t(int32_t(rd32(&h[ptr])) >> 2);
+    std::array<float, 4> f;
+    std::memcpy(f.data(), &h[t], sizeof f);
+    return f;
+}
+
+TEST(frame_timewarp_fields) {
+    const auto& r = recorded();
+    // Meta's loading-screen template: mesh 0 and zero FovPorts (no reprojection) unless set
+    auto plain = build_frame(slices_of(r), FrameParams{});
+    CHECK_EQ(rd32(&plain[1].body[8 + es::kRectifyMeshId]), uint32_t(0));
+    CHECK(fov_of(plain[1].body, 0) == (std::array<float, 4>{0, 0, 0, 0}));
+
+    FrameParams p;
+    p.rectify_mesh_id = 1001;
+    p.fov = std::array<FovPort, 2>{FovPort{1.3764f, 0.8391f, 0.9657f, 1.4281f}, FovPort{0.8391f, 1.3764f, 0.9657f, 1.4281f}};
+    auto out = build_frame(slices_of(r), p);
+    for (size_t i = 0; i < 5; ++i) {
+        const Bytes& h = out[i * 4 + 1].body;
+        CHECK_EQ(rd32(&h[8 + es::kRectifyMeshId]), uint32_t(1001));
+        CHECK(fov_of(h, 0) == (std::array<float, 4>{1.3764f, 0.8391f, 0.9657f, 1.4281f}));
+        CHECK(fov_of(h, 1) == (std::array<float, 4>{0.8391f, 1.3764f, 0.9657f, 1.4281f}));
+        // Everything else as without them
+        Bytes a = h, b = plain[i * 4 + 1].body;
+        for (Bytes* x : {&a, &b}) {
+            wr32(&(*x)[8 + es::kRectifyMeshId], 0);
+            for (size_t eye = 0; eye < 2; ++eye) {
+                size_t ptr = 8 + 8 * (es::kFovWord + eye);
+                std::memset(&(*x)[ptr + 8 + 8 * size_t(int32_t(rd32(&(*x)[ptr])) >> 2)], 0, 16);
+            }
+        }
+        CHECK_EQ(a, b);
+    }
+}
+
+TEST(message_cap) {
+    Bytes big(kMaxStreamMessage - kHeaderSize - 4), bigger(big.size() + 1), csd(16);
+    std::vector<SliceData> ok = {{csd, big}}, too_big = {{csd, bigger}}, csd_too_big = {{bigger, csd}};
+    CHECK(fits_message_cap(ok));
+    CHECK(!fits_message_cap(too_big));
+    CHECK(!fits_message_cap(csd_too_big));
+    // The whole message including padding stays within the cap
+    auto out = build_frame(ok, FrameParams{});
+    CHECK(out.back().body.size() + kHeaderSize <= kMaxStreamMessage);
+}
+
 TEST(submit_frame_needs_clock_and_numbers_seq) {
     int64_t now = 5'000'000'000;
     SessionConfig cfg;
@@ -138,4 +187,10 @@ TEST(submit_frame_needs_clock_and_numbers_seq) {
     CHECK_EQ(s.next_frame_index(), uint64_t(4));
     std::vector<SliceData> none;
     CHECK(s.submit_frame(none, {}) == Session::Submit::BadSlices);
+    // Oversize slice: rejected, nothing sent, numbering unchanged
+    Bytes huge(kMaxStreamMessage);
+    sl[2].video = huge;
+    CHECK(s.submit_frame(sl, {}) == Session::Submit::TooLarge);
+    CHECK(s.take_outgoing().empty());
+    CHECK_EQ(s.next_frame_index(), uint64_t(4));
 }

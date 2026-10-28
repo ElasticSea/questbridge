@@ -33,6 +33,9 @@ namespace {
 
 using namespace ql;
 
+// rectifyMeshId of Meta's game frames; 0 (its loading screen) disables reprojection
+constexpr uint32_t kRectifyMeshId = 1001;
+
 struct Job {
     int slot;
     ql_pose render_pose;
@@ -48,11 +51,20 @@ int env_int(const char* name, int fallback) {
     return v && *v ? std::atoi(v) : fallback;
 }
 
+// stderr, or the file QL_LOG_FILE names (the Unity Editor on Windows drops plugin stderr)
 void stderr_log(void*, const char* dir, const char* what, int seq) {
+    static std::FILE* out = [] {
+        const char* path = std::getenv("QL_LOG_FILE");
+        std::FILE* f = path && *path ? std::fopen(path, "a") : nullptr;
+        return f ? f : stderr;
+    }();
+    static std::mutex mu;
+    std::lock_guard<std::mutex> l(mu);
     if (seq >= 0)
-        std::fprintf(stderr, "[questlink] %-6s %s seq=%d\n", dir, what, seq);
+        std::fprintf(out, "[questlink] %-6s %s seq=%d\n", dir, what, seq);
     else
-        std::fprintf(stderr, "[questlink] %-6s %s\n", dir, what);
+        std::fprintf(out, "[questlink] %-6s %s\n", dir, what);
+    std::fflush(out);
 }
 
 class Runtime {
@@ -127,6 +139,7 @@ private:
     std::unique_ptr<TextureEncoder> encoder_;
     bool encoder_tried_ = false;
     std::thread io_, encode_;
+    uint64_t dropped_ = 0;  // encode thread only
 
     Runtime() {
         io_ = std::thread([this] { io_loop(); });
@@ -211,7 +224,17 @@ private:
             fi.has_render_pose = 1;
             fi.render_pose = job.render_pose;
             fi.is_intra = out.idr ? 1 : 0;
-            ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi);
+            // Mesh 1001 + the FOV the eyes were rendered with (the device's) turn on timewarp
+            fi.rectify_mesh_id = kRectifyMeshId;
+            ql_device_info dev;
+            if (ql_host_get_device_info(h.get(), &dev) == QL_OK) {
+                fi.has_fov = 1;
+                fi.fov_left = dev.fov_left;
+                fi.fov_right = dev.fov_right;
+            }
+            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT &&
+                dropped_++ % 72 == 0)
+                stderr_log(nullptr, "info", ql_host_get_error(h.get()), -1);
         }
     }
 };
