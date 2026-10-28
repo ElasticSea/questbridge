@@ -47,7 +47,8 @@ static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) 
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
 static_assert(sizeof(void*) != 8 || (sizeof(ql_frame_submit) == 64 && offsetof(ql_frame_submit, frame_index) == 56));
-static_assert(sizeof(ql_link_status) == 32 && offsetof(ql_link_status, state_since_ns) == 24);
+static_assert(sizeof(ql_link_status) == 192 && offsetof(ql_link_status, state_since_ns) == 24 &&
+              offsetof(ql_link_status, encoder) == 32);
 
 namespace {
 
@@ -538,6 +539,9 @@ int ql_get_link_status(ql_session* session, ql_link_status* out) {
     auto& rt = Runtime::get();
     if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
     *out = rt.link();
+    std::string enc = encoder_info();
+    std::memset(out->encoder, 0, sizeof out->encoder);
+    std::strncpy(out->encoder, enc.c_str(), sizeof out->encoder - 1);
     return QL_OK;
 }
 

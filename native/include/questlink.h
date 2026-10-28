@@ -161,6 +161,7 @@ typedef struct ql_link_status {
     uint32_t resumes;       /* streams that continued after a USB error without a new handshake */
     uint32_t reserved;
     int64_t state_since_ns; /* ql_now_ns() when state last changed */
+    char encoder[160];      /* API version 5: video encoder backend, as ql_info.encoder */
 } ql_link_status;
 
 /* Runtime-wide link status (the same for every session). */

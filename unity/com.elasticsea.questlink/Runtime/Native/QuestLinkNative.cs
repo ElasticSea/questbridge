@@ -131,6 +131,8 @@ namespace ElasticSea.QuestLink.Native
             public uint resumes;
             public uint reserved;
             public long state_since_ns;
+            // API version 5
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 160)] public string encoder;
         }
 
         [DllImport(Library)] public static extern IntPtr ql_open();

@@ -32,6 +32,7 @@ public:
     }
     void release(int) override {}
     std::string error() const override { return ""; }
+    std::string name() const override { return "fake: test encoder"; }
 
 private:
     std::mutex mu_;
@@ -164,6 +165,9 @@ TEST(runtime_unity_flow) {
     CHECK_EQ(frames[2].qw, 0.75f);
     CHECK(frames[0].intra);         // first frame of the connection forced to IDR
     CHECK(!frames[1].intra);
+    ql_link_status link{};
+    CHECK_EQ(ql_get_link_status(s2, &link), int(QL_OK));
+    CHECK_EQ(std::string(link.encoder), std::string("fake: test encoder"));  // backend reported once encoding
 
     // Audio: a 10 ms block every 10 ms while streaming (silence so far), game audio when queued
     REQUIRE(wait_for([] { return audio_blocks(false) >= 5; }));

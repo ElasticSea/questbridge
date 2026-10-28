@@ -98,6 +98,7 @@ namespace ElasticSea.QuestLink
                 connects = (int)s.connects,
                 disconnects = (int)s.disconnects,
                 resumes = (int)s.resumes,
+                encoder = s.encoder ?? "",
             };
             return true;
         }

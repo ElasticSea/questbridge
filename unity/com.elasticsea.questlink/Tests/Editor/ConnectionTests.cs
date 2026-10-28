@@ -28,8 +28,9 @@ namespace ElasticSea.QuestLink.Tests
         [Test]
         public void NativeStatusLayoutMatchesTheHeader()
         {
-            Assert.AreEqual(32, Marshal.SizeOf<QuestLinkNative.ql_link_status>());
+            Assert.AreEqual(192, Marshal.SizeOf<QuestLinkNative.ql_link_status>());
             Assert.AreEqual(24, Marshal.OffsetOf<QuestLinkNative.ql_link_status>("state_since_ns").ToInt32());
+            Assert.AreEqual(32, Marshal.OffsetOf<QuestLinkNative.ql_link_status>("encoder").ToInt32());
             Assert.AreEqual(4, (int)QuestLinkLinkState.Resuming);
             Assert.AreEqual(4, (int)QuestLinkLossReason.Silence);
         }
