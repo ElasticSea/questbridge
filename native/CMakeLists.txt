@@ -26,6 +26,7 @@ add_library(questlink_core STATIC
   src/capnp.cpp
   src/frame.cpp
   src/pose.cpp
+  src/hands.cpp
   src/session.cpp
   src/templates_data.cpp
 )
