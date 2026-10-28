@@ -9,6 +9,7 @@ Usage: py host/handshake.py [seconds]
 import collections
 import copy
 import json
+import math
 import os
 import struct
 import sys
@@ -27,6 +28,9 @@ HELLO, CONFIG, ACK, CONFIRM, CONFIRM_ACK, START, READY, LINK_REQUEST = 0x81, 0x8
 CLOCK_PING, CLOCK_PONG = 0x06, 0x16
 TOPIC_HEAD_POSE, HEAD_POSE_SEGMENT = 34, 272
 TOPIC_INPUT_CONTROL = 28
+# Per-eye FovPort tangents (left, right, up, down) from the HELLO device description: up 44, down 55,
+# outer 54, inner 40 degrees. Meta's recorded loading-screen frame has them all zero.
+FOV_TANGENTS = tuple(tuple(math.tan(math.radians(a)) for a in eye) for eye in ((54, 40, 44, 55), (40, 54, 44, 55)))
 
 
 def load_templates():
@@ -242,12 +246,13 @@ class Host:
                 time.sleep(min(m["t"] - prev_t, 0.5))
             prev_t = m["t"]
             self.send_stream([(m["topic"], m["flags"], bytes.fromhex(m["body"]))])
-        if os.environ.get("XRSP_HANDS"):
-            # InputControl (topic 28): root with 1 data word, byte0 = type (1 hands), byte1 = enabled
-            on = int(os.environ["XRSP_HANDS"])
+        if os.environ.get("XRSP_INPUT_CONTROL"):
+            # InputControl (topic 28): root with 1 data word, given as 16 hex chars.
+            # Meta sends 0100000000000000 at session start (hands off).
+            word = bytes.fromhex(os.environ["XRSP_INPUT_CONTROL"])
             self.send_stream([(TOPIC_INPUT_CONTROL, 0x10, bytes.fromhex("0000000002000000")),
-                              (TOPIC_INPUT_CONTROL, 0x10, struct.pack("<QBB6x", 1 << 32, 1, on))])
-            self.log("info", f"sent InputControl hands={on}", None)
+                              (TOPIC_INPUT_CONTROL, 0x10, struct.pack("<Q", 1 << 32) + word)])
+            self.log("info", f"sent InputControl {word.hex()}", None)
         clip = data.get("frames") or [data["frame"]]
         self.log("info", f"sent {len(data['setup'])} setup msgs; looping {len(clip)} frame(s) at 72 Hz", None)
         # EncodedSlice timing words in the Quest clock: renderPose time (5), pcPresentBegin (9),
@@ -279,6 +284,11 @@ class Host:
                 if pose and self.pose_mode != "template":
                     # renderPose: orientation xyzw at data u32 slots 3..6, translation at 7..9
                     struct.pack_into("<4f3f", body, d + 12, *pose[0], *pose[1])
+                if os.environ.get("XRSP_FOV"):
+                    for eye in range(2):  # FovPort struct pointers at data word 18 + eye
+                        p = d + 8 * (18 + eye)
+                        target = p + 8 + 8 * ((struct.unpack_from("<Q", body, p)[0] & 0xFFFFFFFF) >> 2)
+                        struct.pack_into("<4f", body, target, *FOV_TANGENTS[eye])
                 struct.pack_into("<Q", body, d, index)  # frame.index
                 # Shift all timestamps together so the frame targets a vsync ~20 ms out
                 shift = quest_now + 20_000_000 - orig[11]
