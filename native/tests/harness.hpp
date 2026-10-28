@@ -51,6 +51,8 @@ std::string show(const T& v) {
         return hex(v) + " (" + std::to_string(v.size()) + " B)";
     } else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
         return std::to_string(+v);
+    } else if constexpr (std::is_enum_v<T>) {
+        return std::to_string(int64_t(v));
     } else {
         std::ostringstream ss;
         ss << v;

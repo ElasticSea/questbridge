@@ -17,6 +17,8 @@ add_library(questlink_core STATIC
   src/xrsp.cpp
   src/json.cpp
   src/capnp.cpp
+  src/session.cpp
+  src/templates_data.cpp
 )
 target_include_directories(questlink_core PUBLIC include src)
 

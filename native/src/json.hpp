@@ -31,6 +31,7 @@ public:
     // Arrays
     size_t size() const;
     const Value& operator[](size_t i) const;
+    const Value& operator[](int i) const { return (*this)[size_t(i)]; }
     const std::vector<Value>& items() const;
 
     // Objects
