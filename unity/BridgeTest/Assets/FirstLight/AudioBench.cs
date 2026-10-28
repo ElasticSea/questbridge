@@ -7,6 +7,7 @@ namespace ElasticSea.QuestLink.BridgeTest
     //   4-8 s  "say something": records the headset mic (level bar shows it arriving)
     //   8-12 s plays the recording back through the game audio
     // The Console / player log gets one line per loop with mic and send counts.
+    // With "once" it waits for Begin(), runs a single loop, then sets Done.
     public class AudioBench : MonoBehaviour
     {
         const float Loop = 12f, RecordStart = 4f, PlayStart = 8f, BeepEvery = 2f;
@@ -15,6 +16,9 @@ namespace ElasticSea.QuestLink.BridgeTest
         public QuestLinkAudio output;
         public QuestLinkMicrophone mic;
         public TextMesh label;
+        public bool once;
+
+        public bool Done { get; private set; }
 
         AudioSource source;
         AudioClip beep;
@@ -23,20 +27,33 @@ namespace ElasticSea.QuestLink.BridgeTest
         int lastBeep = -1, lastLoop = -1;
         bool played;
         float peak;
-        float start;
+        float start = -1f;
 
         void Start()
         {
             source = gameObject.AddComponent<AudioSource>();
             source.spatialBlend = 0f;
             beep = Beep();
-            start = Time.realtimeSinceStartup;
+            if (!once)
+                Begin();
         }
+
+        public void Begin() => start = Time.realtimeSinceStartup;
 
         void Update()
         {
+            if (start < 0f || Done)
+                return;
             var t = Time.realtimeSinceStartup - start;
             var loop = (int)(t / Loop);
+            if (once && loop > 0)
+            {
+                NewLoop(loop);
+                Done = true;
+                if (label != null)
+                    label.text = "";
+                return;
+            }
             var phase = t - loop * Loop;
             if (loop != lastLoop)
                 NewLoop(loop);
