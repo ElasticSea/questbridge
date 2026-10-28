@@ -18,7 +18,7 @@ Layouts (encoder gate experiments):
 Writes host/replay/<name>.json with "frames": [[{topic, flags, body}, ...], ...]
 and the setup messages copied from the Meta replay file.
 
-Usage: py encode_pattern.py [frames] [name] [crf] [layout]
+Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source]
 """
 import json
 import os
@@ -35,8 +35,19 @@ MB_COLS, MB_TOTAL = WIDTH // 16, WIDTH // 16 * HEIGHT // 16
 TEMPLATE = os.path.join(ROOT, "host", "replay", "meta-idr.json")
 
 
-def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None):
-    vf = f"testsrc2=size={WIDTH}x{HEIGHT}:rate=72,format=yuv420p"
+def source(src):
+    """lavfi source: "testsrc2" (moving, differs per eye) or "grid:<colour>" (static, same image in both eyes)."""
+    if src == "testsrc2":
+        return f"testsrc2=size={WIDTH}x{HEIGHT}:rate=72,format=yuv420p"
+    eye, c = WIDTH // 2, src.split(":")[1]
+    return (f"color=c={c}:s={eye}x{HEIGHT}:r=72,drawgrid=w=128:h=128:t=6:c=white,"
+            f"drawbox=x={eye // 2 - 20}:y={HEIGHT // 2 - 160}:w=40:h=320:c=black:t=fill,"
+            f"drawbox=x={eye // 2 - 160}:y={HEIGHT // 2 - 20}:w=320:h=40:c=black:t=fill,"
+            "split[l][r];[l][r]hstack,format=yuv420p")
+
+
+def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2"):
+    vf = source(src)
     if crop_y is not None:
         vf += f",crop={WIDTH}:{height}:0:{crop_y}"
     subprocess.run([
@@ -109,7 +120,7 @@ def es_pictures(path):
         return pictures_of(split_nals(f.read()))
 
 
-def build(count, name, crf, layout):
+def build(count, name, crf, layout, src):
     """-> per frame a list of slices (csd, nal, yOffset px, heightInMacroBlocks)."""
     es = os.path.join(ROOT, "capture", "runs", f"{name}.h264")
     os.makedirs(os.path.dirname(es), exist_ok=True)
@@ -118,7 +129,7 @@ def build(count, name, crf, layout):
         streams = []
         for i in range(SLICES):
             part = es.replace(".h264", f"-{i}.h264")
-            encode(count, crf, part, "slices=1:threads=1", h, i * h)
+            encode(count, crf, part, "slices=1:threads=1", h, i * h, src)
             streams.append(es_pictures(part))
         return [[(csd(sps, pps), nals[0], i * h, h // 16) for i, (sps, pps, nals) in enumerate(pics)]
                 for pics in zip(*streams)]
@@ -126,7 +137,7 @@ def build(count, name, crf, layout):
     if params is None:
         kind, n = layout.split(":")
         params = {"mbs": "slice-max-mbs", "bytes": "slice-max-size"}[kind] + f"={n}:threads=1"  # sliced threads would force >= threads slices
-    encode(count, crf, es, params)
+    encode(count, crf, es, params, src=src)
     out = []
     for sps, pps, nals in es_pictures(es):
         starts = [first_mb(n) for n in nals] + [MB_TOTAL]
@@ -141,7 +152,10 @@ def main():
     name = sys.argv[2] if len(sys.argv) > 2 else "pattern"
     crf = int(sys.argv[3]) if len(sys.argv) > 3 else 28
     layout = sys.argv[4] if len(sys.argv) > 4 else "equal5"
-    pictures = build(count, name, crf, layout)
+    # Split each payload over XRSP messages of at most this many bytes (0 = one message each)
+    chunk = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+    src = sys.argv[6] if len(sys.argv) > 6 else "testsrc2"
+    pictures = build(count, name, crf, layout, src)
 
     with open(TEMPLATE, encoding="utf-8") as f:
         meta = json.load(f)
@@ -166,17 +180,20 @@ def main():
             frame.append({**seg_table, "topic": topic})
             frame.append({"topic": topic, "flags": 0x10, "body": bytes(hdr).hex()})
             for payload in (c, video):
-                flags, body = pad4(payload)
-                frame.append({"topic": topic, "flags": flags, "body": body.hex()})
+                step = chunk or len(payload) or 1
+                for o in range(0, max(1, len(payload)), step):
+                    flags, body = pad4(payload[o:o + step])
+                    frame.append({"topic": topic, "flags": flags, "body": body.hex()})
         out_frames.append(frame)
 
     dest = os.path.join(ROOT, "host", "replay", f"{name}.json")
     with open(dest, "w", encoding="utf-8") as f:
-        json.dump({"source": f"testsrc2 x264 crf{crf} {layout}", "frame_index": 1, "setup": meta["setup"],
+        json.dump({"source": f"{src} x264 crf{crf} {layout}", "frame_index": 1, "setup": meta["setup"],
                    "frames": out_frames}, f)
     sizes = [sum(len(bytes.fromhex(m["body"])) for m in fr) for fr in out_frames]
     print(f"{name}: {len(out_frames)} frames, avg {sum(sizes) // max(1, len(sizes))} B/frame, "
           f"{sum(sizes) * 72 / max(1, len(sizes)) / 1e6 * 8:.0f} Mbit/s at 72 Hz -> {os.path.relpath(dest, ROOT)}")
+    print(f"largest message {max(len(m['body']) // 2 for fr in out_frames for m in fr)} B")
     print(f"slice layouts (first MB row, rows), {len(layouts)} distinct:", sorted(layouts)[:3])
 
 
