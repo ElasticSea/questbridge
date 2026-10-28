@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! Security problems go through SECURITY.md instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Computer
+      options: [macOS (Apple silicon), Windows 10/11]
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset and firmware
+      placeholder: Quest 3, v78
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: QuestBridge version, Unity version, GPU
+      placeholder: 0.2.0, Unity 6000.3.11f1, Apple M3 / NVIDIA RTX 4070
+  - type: textarea
+    id: setup
+    attributes:
+      label: Check Setup report
+      description: QuestBridge → Check Setup → Copy report (or `qbhost --check`).
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Native log
+      description: Set QB_LOG=1 and QB_LOG_FILE=<folder>/questbridge.log before starting Unity Hub, reproduce, and attach the file. Please remove anything you consider private.
