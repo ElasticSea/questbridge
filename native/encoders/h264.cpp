@@ -210,6 +210,12 @@ bool set_fixed_frame_rate(Bytes& nal) {
     return true;
 }
 
+bool set_constrained_baseline(Bytes& nal) {
+    if (nal.size() < 4 || nal_type(nal) != kSps || nal[1] != 66) return false;
+    nal[2] |= 0xC0;  // constraint_set0_flag, constraint_set1_flag: never forms an emulation sequence
+    return true;
+}
+
 bool add_vui(Bytes& nal, int fps) {
     Sps sps;
     if (!parse_sps(nal, sps) || sps.vui_flag_bit < 0) return false;
@@ -253,7 +259,7 @@ bool parse_pps(std::span<const uint8_t> nal, Pps& out) {
     out.pic_init_qp = 26 + b.se();
     b.se();                          // pic_init_qs_minus26
     b.se();                          // chroma_qp_index_offset
-    b.u(1);                          // deblocking_filter_control_present_flag
+    out.deblocking_control = b.u(1);
     b.u(1);                          // constrained_intra_pred_flag
     out.redundant_pic_cnt = b.u(1);
     return b.ok();
@@ -292,6 +298,7 @@ bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out, const Sp
     out.first_mb = int(b.ue());
     out.slice_type = int(b.ue() % 5);
     out.qp = -1;
+    out.deblock_idc = -1;
     if (!sps || !pps || !b.ok()) return b.ok();
     // 7.3.3, frame_mbs_only (Baseline): up to slice_qp_delta
     const bool idr = nal_type(nal) == kIdr, ref = nal.size() && (nal[0] >> 5) & 3;
@@ -328,6 +335,9 @@ bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out, const Sp
     if (pps->cabac && !intra) b.ue();  // cabac_init_idc
     int qp = pps->pic_init_qp + b.se();
     if (b.ok()) out.qp = qp;
+    if (out.slice_type == 3 || out.slice_type == 4) return b.ok();  // SP/SI: sp_for_switch_flag, slice_qs_delta
+    int idc = pps->deblocking_control ? int(b.ue()) : 0;
+    if (b.ok()) out.deblock_idc = idc;
     return b.ok();
 }
 
