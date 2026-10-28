@@ -1,7 +1,9 @@
 # Launches USBPcapCMD elevated (one UAC prompt) on the hub the Quest is on.
 # Runs until capture\STOP exists — create it with stop-capture.ps1.
 # USBPcapCMD output goes to pcaps\<name>-<stamp>.log.
-param([string]$Name = "session")
+# -Interface \\.\USBPcapN skips auto-detection: start the capture with the Quest unplugged,
+# then plug it in, so USBPcap sees it enumerate (a Quest enumerated before the capture may stay invisible).
+param([string]$Name = "session", [string]$Interface = "")
 
 $here = $PSScriptRoot
 $cmd = 'C:\Program Files\USBPcap\USBPcapCMD.exe'
@@ -11,9 +13,9 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 Remove-Item $stop -ErrorAction SilentlyContinue
 
 # Find the USBPcap filter whose device tree contains the Quest (output must go via cmd redirection)
-$iface = $null
+$iface = if ($Interface) { $Interface } else { $null }
 $tmp = Join-Path $env:TEMP "usbpcap_cfg.txt"
-foreach ($n in 1..16) {
+foreach ($n in $(if ($iface) { @() } else { 1..16 })) {
     $candidate = "\\.\USBPcap$n"
     cmd /c "`"$cmd`" --extcap-interface $candidate --extcap-config > `"$tmp`" 2>&1"
     if ((Get-Content $tmp -Raw -ErrorAction SilentlyContinue) -match 'Reality Labs|Oculus|Quest') { $iface = $candidate; break }
