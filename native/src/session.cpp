@@ -27,6 +27,14 @@ const templates::Control& control_template(uint8_t type, uint16_t version) {
 
 }  // namespace
 
+uint32_t default_bitrate(const DeviceInfo& d, uint32_t hz) {
+    constexpr uint64_t kVerified = 100'000'000;
+    if (d.product == "Meta Quest 3") return uint32_t(kVerified);
+    for (const auto& m : d.modes)
+        if (m.hz == hz && m.bitrate) return uint32_t(std::min(kVerified, m.bitrate * 7 / 10));
+    return uint32_t(kVerified);
+}
+
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
     // HELLO root p3 -> p0: display struct (layout: docs/PROTOCOL.md §8)
     const capnp::Node* desc = hello ? hello->child(3) : nullptr;

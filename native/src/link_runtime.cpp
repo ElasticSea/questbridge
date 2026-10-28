@@ -45,7 +45,8 @@
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
 static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 256 && offsetof(ql_device_info, features) == 104 &&
               offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240 &&
-              offsetof(ql_device_info, max_slice_bytes) == 244 && offsetof(ql_device_info, max_message_bytes) == 248);
+              offsetof(ql_device_info, max_slice_bytes) == 244 && offsetof(ql_device_info, max_message_bytes) == 248 &&
+              offsetof(ql_device_info, default_bitrate) == 252);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
@@ -281,7 +282,9 @@ private:
 #else
             cfg.gop = env_int("QL_GOP", 1);
 #endif
-            cfg.bitrate = uint32_t(env_int("QL_MBPS", 100)) * 1'000'000u;
+            // QL_MBPS overrides the headset's default (ql_device_info.default_bitrate)
+            cfg.bitrate = known && dev.default_bitrate ? dev.default_bitrate : 100'000'000u;
+            if (int mbps = env_int("QL_MBPS", 0); mbps > 0) cfg.bitrate = uint32_t(mbps) * 1'000'000u;
             std::string err;
             encoder_ = create_texture_encoder(cfg, &err);
             if (!encoder_) stderr_log(nullptr, "info", ("no texture encoder: " + err).c_str(), -1);

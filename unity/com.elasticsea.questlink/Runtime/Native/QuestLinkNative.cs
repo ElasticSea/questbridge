@@ -58,6 +58,7 @@ namespace ElasticSea.QuestLink.Native
             public uint stream_codec;       // the codec the Link session runs (0 H.264, 1 HEVC)
             public uint max_slice_bytes;    // API 6: largest slice we send this headset
             public uint max_message_bytes;  // API 6: largest XRSP message on any topic
+            public uint default_bitrate;    // API 6: our default video bit/s for this headset
         }
 
         // ql_controller.buttons / touches bits.

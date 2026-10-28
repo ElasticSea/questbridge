@@ -390,6 +390,7 @@ ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out) {
     out->stream_codec = host->session->codec();
     out->max_slice_bytes = uint32_t(host->session->cap().slice);
     out->max_message_bytes = uint32_t(host->session->cap().message);
+    out->default_bitrate = default_bitrate(*d, out->stream_refresh_hz ? out->stream_refresh_hz : uint32_t(d->refresh_hz + 0.5f));
     return QL_OK;
 }
 

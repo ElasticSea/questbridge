@@ -84,6 +84,7 @@ typedef struct ql_device_info {
     /* API version 6 */
     uint32_t max_slice_bytes;   /* largest slice NAL / csd we send this headset (Quest 3 120,000; others 100,000) */
     uint32_t max_message_bytes; /* largest XRSP message on any topic (Quest 3 120 KiB; others 100 KiB) */
+    uint32_t default_bitrate;   /* bit/s at stream_refresh_hz: Quest 3 100M; others 70% of the HELLO mode's, at most 100M */
 } ql_device_info;
 
 /* ql_controller.buttons / touches bits */

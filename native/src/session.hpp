@@ -98,6 +98,10 @@ struct DeviceInfo {
     std::vector<uint16_t> features;  // offered session features (v3; v1 has phase-1 ids here)
 };
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello);
+// Our default video bitrate for a headset at a stream rate: the Quest 3's verified 100 Mbit/s;
+// others 70% of what their HELLO mode advertises for that rate (the Quest Pro advertises
+// ~124 Mbit/s at 72 Hz and ended sessions at ~330), at most 100 Mbit/s
+uint32_t default_bitrate(const DeviceInfo& d, uint32_t hz);
 
 struct SessionConfig {
     // Attach to a headset session an earlier host left running: skip handshake and setup,
