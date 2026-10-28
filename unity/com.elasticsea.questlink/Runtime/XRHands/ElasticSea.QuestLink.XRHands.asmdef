@@ -1,0 +1,25 @@
+{
+    "name": "ElasticSea.QuestLink.XRHands",
+    "rootNamespace": "ElasticSea.QuestLink.XRHands",
+    "references": [
+        "ElasticSea.QuestLink",
+        "Unity.XR.Hands"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "QUESTLINK_XR_HANDS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.hands",
+            "expression": "1.3.0",
+            "define": "QUESTLINK_XR_HANDS"
+        }
+    ],
+    "noEngineReferences": false
+}
