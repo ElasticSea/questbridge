@@ -31,6 +31,16 @@ function Invoke-Logged($exe, [string]$argLine, $log, [int]$timeoutS = 1800) {
     return $code
 }
 
+# Append Unity's -logFile to the step log. Unity's helper processes can hold the file for a
+# moment after the editor exits, so retry the delete instead of failing the run.
+function Merge-UnityLog($log) {
+    if (-not (Test-Path "$log.unity")) { return }
+    Get-Content "$log.unity" | Add-Content $log
+    for ($i = 0; $i -lt 20; $i++) {
+        try { Remove-Item "$log.unity" -ErrorAction Stop; return } catch { Start-Sleep -Milliseconds 500 }
+    }
+}
+
 function Add-Result($name, $status, $seconds, $detail, $log) {
     $script:results += [pscustomobject]@{ Step = $name; Status = $status; Seconds = [math]::Round($seconds, 1); Detail = $detail; Log = $log }
     $color = @{ PASS = "Green"; FAIL = "Red"; SKIP = "Yellow" }[$status]
@@ -73,7 +83,7 @@ function Test-UnityTests($project, $platform, $assemblies) {
     }
     $code = Invoke-Logged $unityExe ("-batchmode -nographics -projectPath `"$proj`" -runTests -testPlatform $platform " +
         "-assemblyNames $assemblies -testResults `"$xml`" -logFile `"$log.unity`"") $log $UnityTimeout
-    if (Test-Path "$log.unity") { Get-Content "$log.unity" | Add-Content $log; Remove-Item "$log.unity" }
+    Merge-UnityLog $log
     $status = "FAIL"
     if (Test-Path $xml) {
         $run = ([xml](Get-Content $xml -Raw)).'test-run'
@@ -90,7 +100,7 @@ function Test-UnityCompile($project) {
     $name = "unity-$($project.ToLower())-compile"
     $log = "$logDir\$name.log"; $t = Get-Date
     $code = Invoke-Logged $unityExe "-batchmode -nographics -quit -projectPath `"$repo\unity\$project`" -logFile `"$log.unity`"" $log $UnityTimeout
-    if (Test-Path "$log.unity") { Get-Content "$log.unity" | Add-Content $log; Remove-Item "$log.unity" }
+    Merge-UnityLog $log
     $errors = @(Select-String -Path $log -Pattern "error CS\d+" -ErrorAction SilentlyContinue).Count
     $detail = if ($code -eq 0) { "compiled" } elseif ($code -eq -1) { "timed out after ${UnityTimeout}s" } else { "exit $code, $errors compiler errors" }
     Add-Result $name $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
