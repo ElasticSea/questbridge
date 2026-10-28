@@ -25,6 +25,7 @@ from xrsp import encode_message  # noqa: E402
 TOPIC_CONTROL = 1
 HELLO, CONFIG, ACK, CONFIRM, CONFIRM_ACK, START, READY, LINK_REQUEST = 0x81, 0x82, 0x83, 0x89, 0x8A, 0x87, 0x80, 0x85
 CLOCK_PING, CLOCK_PONG = 0x06, 0x16
+TOPIC_HEAD_POSE, HEAD_POSE_SEGMENT = 34, 272
 
 
 def load_templates():
@@ -53,6 +54,10 @@ class Host:
         self.quest_offset_ns = None
         self.frame_start = None
         self.skip_setup = False
+        self.head_pose = None  # (quat xyzw, position, sample ns) from topic 34
+        # Render pose written into each frame: "fixed" = first head pose (panel stays put in
+        # the world via headset reprojection), "live" = latest pose, "template" = as recorded
+        self.pose_mode = os.environ.get("XRSP_POSE", "fixed")
 
     # --- sending -------------------------------------------------------------
     def send_control(self, typ, version, patch=None):
@@ -197,6 +202,11 @@ class Host:
                     self.log("Q->PC", f"control 0x{msg[8]:02x}", struct.unpack_from("<H", msg, 4)[0])
                 else:
                     self.rx_counts[topic] += 1
+                    if topic == TOPIC_HEAD_POSE and len(msg) == 8 + HEAD_POSE_SEGMENT:
+                        # Capnp segment of a head pose: quat xyzw @0xe8, position @0xf8, sample ns @0x108
+                        self.head_pose = (struct.unpack_from("<4f", msg, 8 + 0xE8),
+                                          struct.unpack_from("<3f", msg, 8 + 0xF8),
+                                          struct.unpack_from("<Q", msg, 8 + 0x108)[0])
             if time.time() - last >= 2:
                 self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())), None)
                 self.rx_counts.clear()
@@ -230,11 +240,19 @@ class Host:
         period, index = 1 / 72, self.frame_start or data.get("frame_index", 1)
         while self.quest_offset_ns is None:
             time.sleep(0.05)  # need one clock ping to map our clock onto the Quest's
+        if self.pose_mode != "template":
+            while self.head_pose is None:
+                time.sleep(0.01)
+        fixed_pose = self.head_pose
         nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
             frame, headers = prepared[sent % len(prepared)]
             quest_now = time.perf_counter_ns() + self.quest_offset_ns
+            pose = fixed_pose if self.pose_mode == "fixed" else self.head_pose
             for body, d, orig in headers:
+                if pose and self.pose_mode != "template":
+                    # renderPose: orientation xyzw at data u32 slots 3..6, translation at 7..9
+                    struct.pack_into("<4f3f", body, d + 12, *pose[0], *pose[1])
                 struct.pack_into("<Q", body, d, index)  # frame.index
                 # Shift all timestamps together so the frame targets a vsync ~20 ms out
                 shift = quest_now + 20_000_000 - orig[11]
