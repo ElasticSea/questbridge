@@ -27,6 +27,10 @@ USB on macOS (`src/transport_libusb.cpp`): picks a VID `0x2833` device from `kQu
 ## Run (bench)
 macOS: no OVRService to stop. Plug the Quest in, then `XRSP_REPLAY=host/replay/meta-idr.json QL_LOG=1 native/build/bin/qlhost 30` and select Link in the headset (the Quest only sends HELLO after that).
 
-Windows: same as the Python host: stop OVRService first, then e.g. `set XRSP_REPLAY=host\replay\meta-idr.json` and `native\build\bin\Release\qlhost.exe 30`. At the end it prints the `XRSP_ATTACH` values for a follow-up run.
+Setup check: `qlhost --check [--no-claim]` (`ql_check_setup`, wording in `src/setup_check.cpp`, platform facts in `src/setup_probe.cpp`); exit 1 if a check failed.
+
+OVRService (Windows, `src/ovr_service*.cpp`): when opening the Quest fails while OVRService runs and a Quest is on USB, the library starts one elevated PowerShell (`runas`, hidden: one UAC prompt per process) that stops it, waits for this process to exit and starts it again. `QL_OVR_STOP=0` turns this off; `ql_stop_ovr_service` asks right away.
+
+Windows: same as the Python host: stop OVRService first (or let the library do it), then e.g. `set XRSP_REPLAY=host\replay\meta-idr.json` and `native\build\bin\Release\qlhost.exe 30`. At the end it prints the `XRSP_ATTACH` values for a follow-up run.
 
 Differences from `handshake.py`: a handshake timeout exits with code 1 instead of reopening the device; replay uses the embedded EncodedSlice headers (identical to the ones in Meta's and `encode_pattern.py`'s clips); while listening without a clip it logs per-topic counts every 2 s instead of every message.

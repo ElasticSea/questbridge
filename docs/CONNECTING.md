@@ -6,7 +6,9 @@ One procedure, no replugs. Why it works: `docs/PROTOCOL.md` §4.6.
 
 1. Plug the Quest in (any time, before or after the app starts). Leave it plugged in.
 2. On Windows, Meta's OVRService must not hold the XRSP interface: `host\ovr_service.ps1 stop`
-   (once per boot; `start` restores Meta Link).
+   (once per boot; `start` restores Meta Link). The library does this itself when it finds the
+   Quest busy: one UAC prompt per process, service restarted when the process exits
+   (`QL_OVR_STOP=0` turns it off).
 3. Start the host (`qlhost.exe`, the Unity player, or the Editor in Play mode). Within ~2 s the
    headset's Link dialog shows **Launch** (phase 1 done; log: `phase 1 done`).
 4. In the headset press **Launch**. Streaming starts (log: `sent 48 setup msgs`).
