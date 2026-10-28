@@ -25,6 +25,9 @@ struct Sps {
     int height_mbs = 0;
     int log2_max_frame_num = 0;
     int max_num_ref_frames = 0;
+    int poc_type = 0;
+    int log2_max_poc_lsb = 0;
+    bool delta_pic_order_always_zero = false;
     int vui_flag_bit = -1;          // RBSP bit offset of vui_parameters_present_flag
     int fixed_frame_rate_bit = -1;  // RBSP bit offset of vui fixed_frame_rate_flag; -1 = no timing info
 };
@@ -40,12 +43,29 @@ bool set_fixed_frame_rate(Bytes& sps_nal);
 // max_num_ref_frames, so the decoder outputs each picture at once. False if it already has VUI.
 bool add_vui(Bytes& sps_nal, int fps);
 
+// The PPS fields a slice header depends on (7.3.2.2), single slice group only.
+struct Pps {
+    int pic_init_qp = 26;
+    bool cabac = false;
+    bool bottom_field_pic_order = false;
+    bool weighted_pred = false;
+    bool redundant_pic_cnt = false;
+};
+
+bool parse_pps(std::span<const uint8_t> nal, Pps& out);
+
 struct SliceHeader {
     int first_mb = 0;
     int slice_type = 0;  // 0 P, 1 B, 2 I (mod 5)
+    int qp = -1;         // SliceQP_Y; -1 without SPS/PPS or for headers not handled (B, weighted pred)
 };
 
-bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out);
+// With sps and pps also reads the slice QP.
+bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out, const Sps* sps = nullptr,
+                        const Pps* pps = nullptr);
+
+// Parse the SPS and PPS out of an Annex-B csd. False if either is missing.
+bool parse_csd(std::span<const uint8_t> csd, Sps& sps, Pps& pps);
 
 // Append 00 00 00 01 + nal.
 void append_annexb(Bytes& out, std::span<const uint8_t> nal);
