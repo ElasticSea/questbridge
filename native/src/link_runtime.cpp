@@ -300,8 +300,10 @@ private:
             }
             idr_generation = gen;
             std::vector<ql_slice> slices;
-            for (const auto& s : out.slices)
-                slices.push_back({out.csd.data(), out.csd.size(), s.data(), s.size()});
+            for (size_t i = 0; i < out.slices.size(); ++i) {
+                const Bytes& csd = i < out.slice_csd.size() ? out.slice_csd[i] : out.csd;
+                slices.push_back({csd.data(), csd.size(), out.slices[i].data(), out.slices[i].size()});
+            }
             ql_frame_info fi{};
             fi.has_render_pose = 1;
             fi.render_pose = job.render_pose;
