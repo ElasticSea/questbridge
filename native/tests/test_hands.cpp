@@ -168,7 +168,7 @@ TEST(session_hands_and_input_control) {
     Bytes on = input_control_hands(true);
     // Python host (XRSP_INPUT_CONTROL=0100010000000000): struct pointer, then {type 1, value 1}
     CHECK_EQ(on, Bytes({0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0}));
-    CHECK_EQ(input_control_hands(false)[10], uint8_t(0));
+    CHECK_EQ(uint8_t(input_control_hands(false)[10]), uint8_t(0));
 
     CHECK(!s.hands());
     for (const auto& r : raws("topic9_first_chunks")) s.on_message(r);
