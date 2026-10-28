@@ -2,8 +2,10 @@
 // and write an Annex-B .h264 plus a host/replay/<name>.json clip (same format as
 // tools/encode_pattern.py, so `XRSP_REPLAY=... py host/handshake.py` streams it unchanged).
 //
-// Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] [--input nv12|bgra|d3d11]
-//              [--software] [--slices 5] [--csd every|idr] [--root REPO]
+// Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
+//              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--no-low-latency]
+//              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
+// Strips (VideoToolbox): one .h264 per strip, capture/runs/<name>-<i>.h264.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -21,6 +23,9 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <wrl/client.h>
+#endif
+#ifdef __APPLE__
+#include <CoreVideo/CoreVideo.h>
 #endif
 
 #include "../encoder.hpp"
@@ -252,8 +257,14 @@ double percentile(std::vector<double> v, double q) {
 int main(int argc, char** argv) {
     int frames = 144, gop = 72, slices = 5;
     double mbps = 100;
-    bool vbr = false, software = false, csd_every = true;
+    bool vbr = false, software = false, csd_every = true, low_latency = true;
     std::string name = "qlenc", input = "nv12", root_arg;
+#ifdef __APPLE__
+    std::string layout_arg = "strips";  // VideoToolbox has no slice-count control
+#else
+    std::string layout_arg = "slices";
+#endif
+    size_t max_slice_bytes = 120'000;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -264,12 +275,16 @@ int main(int argc, char** argv) {
         else if (a == "--gop") gop = std::stoi(next());
         else if (a == "--input") input = next();
         else if (a == "--software") software = true;
+        else if (a == "--no-low-latency") low_latency = false;
         else if (a == "--slices") slices = std::stoi(next());
+        else if (a == "--layout") layout_arg = next();
+        else if (a == "--max-slice-bytes") max_slice_bytes = std::stoul(next());
         else if (a == "--csd") csd_every = next() != "idr";
         else if (a == "--root") root_arg = next();
         else {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
-                            "[--input nv12|bgra|d3d11] [--software] [--slices 5] [--csd every|idr] [--root REPO]\n");
+                            "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--no-low-latency] [--slices 5] "
+                            "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO]\n");
             return 2;
         }
     }
@@ -285,6 +300,10 @@ int main(int argc, char** argv) {
     cfg.cbr = !vbr;
     cfg.gop = gop;
     cfg.hardware = !software;
+    cfg.layout = layout_arg == "strips" ? ql::enc::Layout::Strips : ql::enc::Layout::Slices;
+    cfg.max_slice_bytes = max_slice_bytes;
+    cfg.low_latency_rc = low_latency;
+    const bool strips = cfg.layout == ql::enc::Layout::Strips;
     const int W = cfg.width, H = cfg.height;
 
 #ifdef _WIN32
@@ -312,6 +331,20 @@ int main(int argc, char** argv) {
         cfg.gpu_device = device.Get();
     }
 #endif
+#ifdef __APPLE__
+    CVPixelBufferRef pixbuf = nullptr;  // IOSurface-backed BGRA, like a Metal render target
+    if (input == "cvpixelbuffer") {
+        CFDictionaryRef empty = CFDictionaryCreate(nullptr, nullptr, nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                                   &kCFTypeDictionaryValueCallBacks);
+        const void* k[1] = {kCVPixelBufferIOSurfacePropertiesKey};
+        const void* v[1] = {empty};
+        CFDictionaryRef attrs = CFDictionaryCreate(nullptr, k, v, 1, &kCFTypeDictionaryKeyCallBacks,
+                                                   &kCFTypeDictionaryValueCallBacks);
+        CVPixelBufferCreate(nullptr, W, H, kCVPixelFormatType_32BGRA, attrs, &pixbuf);
+        CFRelease(attrs);
+        CFRelease(empty);
+    }
+#endif
 
     std::string err;
     auto enc = ql::enc::create_encoder(cfg, &err);
@@ -319,16 +352,20 @@ int main(int argc, char** argv) {
         fprintf(stderr, "encoder: %s\n", err.c_str());
         return 1;
     }
-    printf("encoder: %s\ninput: %s, %dx%d @ %d fps, %.0f Mbit/s %s, gop %d\n", enc->name().c_str(),
-           input.c_str(), W, H, cfg.fps, mbps, vbr ? "VBR" : "CBR", gop);
+    printf("encoder: %s\ninput: %s, %dx%d @ %d fps, %.0f Mbit/s %s, gop %d, %s\n", enc->name().c_str(),
+           input.c_str(), W, H, cfg.fps, mbps, vbr ? "VBR" : "CBR", gop, strips ? "strips" : "slices");
 
     const int height_mbs = H / 16, width_mbs = W / 16;
     std::vector<int> expected;
-    for (int s = 0; s < slices; s++) expected.push_back(s * (height_mbs / slices) * width_mbs);
+    for (int s = 0; s < slices; s++) expected.push_back(strips ? 0 : s * (height_mbs / slices) * width_mbs);
 
+    // Slices: one stream. Strips: one stream per strip (each has its own SPS/PPS).
     fs::path es_path = root / "capture" / "runs" / (name + ".h264");
     fs::create_directories(es_path.parent_path());
-    std::ofstream es(es_path, std::ios::binary);
+    std::vector<std::ofstream> es;
+    for (int i = 0; i < (strips ? slices : 1); i++)
+        es.emplace_back(strips ? es_path.parent_path() / (name + "-" + std::to_string(i) + ".h264") : es_path,
+                        std::ios::binary);
 
     std::vector<ql::enc::EncodedFrame> encoded;
     std::vector<double> ms, call_ms;  // encoder submit->output; whole encode() call
@@ -354,6 +391,18 @@ int main(int argc, char** argv) {
             gf.texture = tex.Get();
             ok = enc->encode(gf, ts, false, out);
 #endif
+#ifdef __APPLE__
+        } else if (input == "cvpixelbuffer") {
+            CVPixelBufferLockBaseAddress(pixbuf, 0);
+            auto* d = static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(pixbuf));
+            size_t stride = CVPixelBufferGetBytesPerRow(pixbuf);
+            for (int y = 0; y < H; y++) memcpy(d + stride * size_t(y), &bgra[size_t(y) * W * 4], size_t(W) * 4);
+            CVPixelBufferUnlockBaseAddress(pixbuf, 0);
+            t0 = std::chrono::steady_clock::now();  // the fill stands in for rendering, not timed
+            ql::enc::GpuFrame gf;
+            gf.texture = pixbuf;
+            ok = enc->encode(gf, ts, false, out);
+#endif
         } else {
             ql::enc::CpuFrame cf;
             cf.plane[0] = nv12.data();
@@ -373,11 +422,19 @@ int main(int argc, char** argv) {
         std::string layout;
         for (auto& s : out.slices) layout += (layout.empty() ? "" : "/") + std::to_string(s.first_mb);
         layouts[layout]++;
-        if (out.idr || csd_every) es.write(reinterpret_cast<const char*>(out.csd.data()), out.csd.size());
-        for (auto& s : out.slices) es.write(reinterpret_cast<const char*>(s.nal.data()), s.nal.size());
+        if (strips) {
+            for (auto& s : out.slices) {
+                auto& o = es[std::min(size_t(s.index), es.size() - 1)];
+                if (out.idr || csd_every) o.write(reinterpret_cast<const char*>(s.csd.data()), s.csd.size());
+                o.write(reinterpret_cast<const char*>(s.nal.data()), s.nal.size());
+            }
+        } else {
+            if (out.idr || csd_every) es[0].write(reinterpret_cast<const char*>(out.csd.data()), out.csd.size());
+            for (auto& s : out.slices) es[0].write(reinterpret_cast<const char*>(s.nal.data()), s.nal.size());
+        }
         encoded.push_back(std::move(out));
     }
-    es.close();
+    es.clear();
 
     // SPS summary
     ql::enc::h264::Sps sps;
@@ -392,10 +449,15 @@ int main(int argc, char** argv) {
     printf("slice layouts (first_mb_in_slice): want %s\n", want.c_str());
     for (auto& [l, n] : layouts) printf("  %4d frames: %s%s\n", n, l.c_str(), l == want ? "  OK" : "");
 
-    size_t total = 0;
-    int idrs = 0;
+    size_t total = 0, largest = 0, largest_idr = 0;
+    int idrs = 0, over = 0;
     for (auto& e : encoded) {
-        for (auto& s : e.slices) total += s.nal.size();
+        for (auto& s : e.slices) {
+            total += s.nal.size();
+            size_t& big = e.idr ? largest_idr : largest;
+            big = std::max(big, s.nal.size());
+            over += s.nal.size() > max_slice_bytes;
+        }
         idrs += e.idr;
     }
     printf("frames %zu (IDR %d), avg %zu B/frame = %.1f Mbit/s at %d Hz\n", encoded.size(), idrs,
@@ -406,10 +468,11 @@ int main(int argc, char** argv) {
         printf("%s ms/frame: mean %.2f, p50 %.2f, p95 %.2f, max %.2f\n", label, v.empty() ? 0 : sum / v.size(),
                percentile(v, 0.5), percentile(v, 0.95), v.empty() ? 0 : *std::max_element(v.begin(), v.end()));
     };
+    printf("largest slice NAL: P %zu B, IDR %zu B; over %zu B: %d\n", largest, largest_idr, max_slice_bytes, over);
     printf("first frame (warm-up): %.2f ms\n", encoded[0].encode_ms);
     stats("encoder submit->output", ms);
     stats("encode() call incl. copy/convert", call_ms);
-    printf("wrote %s\n", es_path.string().c_str());
+    printf("wrote %s%s\n", es_path.string().c_str(), strips ? " (one file per strip: -0..-N)" : "");
 
     if (!layout_ok || slices != 5) {
         printf("replay clip skipped: needs exactly the 5-slice layout\n");
@@ -436,6 +499,7 @@ int main(int argc, char** argv) {
     std::ostringstream setup;
     write_json(setup, *meta.get("setup"));
     clip << "{\"source\": \"qlenc " << enc->name() << " " << mbps << " Mbit/s gop " << gop
+         << (strips ? " strips" : "")
          << "\", \"frame_index\": 1, \"setup\": " << setup.str() << ", \"frames\": [";
     for (size_t f = 0; f < encoded.size(); f++) {
         const auto& e = encoded[f];
@@ -449,10 +513,11 @@ int main(int argc, char** argv) {
             size_t d = 8 + 8 * (ptr >> 2);
             hdr[d + 48] = uint8_t(i);                                         // slice.index
             hdr[d + 49] = uint8_t((e.idr ? 1 : 0) | (i == 4 ? 2 : 0));        // isIntraFrame, isLastSliceOfAFrame
-            put_u32(hdr, d + 60, with_csd ? uint32_t(e.csd.size()) : 0);      // csdLength
+            const Bytes& csd = e.slices[i].csd.empty() ? e.csd : e.slices[i].csd;
+            put_u32(hdr, d + 60, with_csd ? uint32_t(csd.size()) : 0);        // csdLength
             put_u32(hdr, d + 64, uint32_t(e.slices[i].nal.size()));           // videoLength
             clip << (i ? ", " : "") << st.seg_table_json << ", " << message_json({topic, 0x10, hdr});
-            if (with_csd) clip << ", " << message_json(padded(topic, e.csd));
+            if (with_csd) clip << ", " << message_json(padded(topic, csd));
             clip << ", " << message_json(padded(topic, e.slices[i].nal));
         }
         clip << ']';
