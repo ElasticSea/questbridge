@@ -194,3 +194,170 @@ accept a table inline at the start of a body (`segments()` in `tools/decode_pose
 | Topics 8/9 Hands/Skeleton | packed little-endian C structs (§7.3) |
 | Topic 31 RuntimeIPC | Meta's RIPC "Reflect V2" serialization inside a small Cap'n Proto envelope (§7.8) |
 | Video csd / slice data (topics 10–14) | Annex-B H.264 (§6) |
+
+## 4. Session lifecycle
+
+### 4.1 States
+
+Names in `code` are from the headset's `xrspd`/`xrstreaming` logs; the host states are ours
+(`ql_state` in `native/include/questlink.h`).
+
+| Host state | What happens | Headset side |
+|---|---|---|
+| WAIT_HELLO | Host holds interface 0 open and reads | Link client running → sends HELLO v1 ~1.5 s after USB enumeration (`INVITE`) |
+| PHASE1 | 3 request/response pairs (§4.2) | after `0x80`: `STATE_HOST_CONNECTED` |
+| WAIT_LINK_REQUEST | Idle; answer nothing | User presses **Enable Link** / Launch → `0x85` (seconds to minutes later) |
+| WAIT_HELLO_V3 | | sends HELLO v3 ~0.5 s after `0x85` |
+| PHASE2 | Same 3 pairs with v3 bodies (§4.3) | `REASON_HANDSHAKE_SUCCESSFUL` |
+| SETUP | Clock sync starts (§4.4), stream setup (§4.5) | `streaming session starting` → Connected; starts sending pose/audio/telemetry |
+| STREAMING | Video, audio, controls | `first frame received` → `video stream started` |
+| FAILED | | e.g. `buffer too small` → BYE, session over |
+
+Phase 1 and phase 2 each complete in ~10 ms. Control `seq` restarts at 0 in both directions for
+phase 2 (HELLO v3 and CONFIG v3 both carry seq 0). A host should accept a HELLO of either
+version in WAIT_HELLO and skip phase 1 when the first one is v3 (our hosts do; whether a
+relaunch ever starts at v3 is not recorded).
+
+### 4.2 Phase 1 (cable plugged in)
+
+Bracketed names are the headset's (`xrspd`); the others are ours (`host/handshake.py`,
+`native/src/session.hpp`). "Session id" is the random u64 from HELLO v1 `d6`. Field notation:
+`dN` = data word N, `pN` = pointer N of the root struct. All verified against the recording
+(`tests/test_handshake.py`, `capture/handshake-decoded.txt`); the host-built messages are
+Meta's recorded ones with only the session id replaced.
+
+| # | Dir | Type | Name | Inner flags | Root (data/ptrs) | Content |
+|---|---|---|---|---|---|---|
+| 1 | Q→H | `0x81` | HELLO [INVITE] | `0x0c` | 7 / 13 | §8 |
+| 2 | H→Q | `0x82` | CONFIG [OK] | `0x8c` | 15 / 4 | `d0` u16 1; `d10` = session id; `p0` empty data; `p1` u16 list `[1,3,2,4,8]`; `p2` struct `{u32 0xffffffff}`; `p3` null |
+| 3 | Q→H | `0x83` | ACK [INVITE_ACK] | `0x8c` | 2 / 2 | `d0` 1; `d1` session id; `p0` null; `p1` u16 list `[1,2,0,4,8]` |
+| 4 | H→Q | `0x89` | CONFIRM [CODE_GENERATION] | `0x0c` | 2 / 1 | `d0` 1; `d1` session id; `p0` null |
+| 5 | Q→H | `0x8a` | CONFIRM_ACK [CODE_GENERATION_ACK] | `0x8c` | 2 / 0 | `d0` 1; `d1` session id |
+| 6 | H→Q | `0x87` | START [PAIRING] | `0x8c` | 2 / 0 | `d0` = `0x00010001` (u16 1, u16 1); `d1` session id |
+| 7 | Q→H | `0x80` | READY [PAIRING_ACK] | `0x8c` | 2 / 0 | `d0` 1; `d1` session id |
+| 8 | Q→H | `0x85` | LINK_REQUEST | `0x8c` | 2 / 0 | `d0` 1; `d1` session id. Sent when the user enables Link |
+
+Despite the names, no code or pairing secret is exchanged over USB; the messages carry only the
+values above.
+
+### 4.3 Phase 2 (Link session)
+
+| # | Dir | Type | Inner flags | Content |
+|---|---|---|---|---|
+| 9 | Q→H | `0x81` HELLO v3 | `0x0c` | `d0` u16 3; no session id (`d6` = 0); session UUID in `p7`; refresh list; feature list (§8) |
+| 10 | H→Q | `0x82` CONFIG v3 | `0x2c` | below |
+| 11 | Q→H | `0x83` ACK v3 | `0x0c` | `d0` u16 3, u16 1; `d1` 0; `p0` selected mode `{u32 Hz = 72; p0 {f64 0.65, f64 0.60}; p1 {u64 123,875,920}}` (the 72 Hz entry of the mode table, §8; the u64 is probably bit/s); `p1` u16 list `[1,2]` |
+| 12 | H→Q | `0x89` v3 | `0x0c` | `d0` 3; `d1` 0; `p0` null |
+| 13 | Q→H | `0x8a` v3 | `0x8c` | `d0` 3; `d1` 0 |
+| 14 | H→Q | `0x87` v3 | `0x8c` | `d0` 3; `d1` 0 |
+| 15 | Q→H | `0x80` v3 | `0x8c` | `d0` 3; `d1` 0 |
+
+CONFIG v3 (root 15 data / 4 ptrs):
+
+| Field | Value (Meta) | Meaning |
+|---|---|---|
+| `d0` | u16 3, u16 1, u32 15 | version 3; other halves unknown |
+| `d1` u32 | 5 | **slices per frame** (the headset logs `5 strips`; only 5 tested end to end) |
+| `d2` u32 | 72 | **refresh rate, Hz** (one of HELLO's refresh list) |
+| `d3` | 1 | unknown |
+| `d4` | `0x00010001` | unknown |
+| `d11` | u32 @+4 = 1 | unknown |
+| `p0` | null | (empty data in v1) |
+| `p1` u16 list | `[1,3,2,19,7,14,15]` | **selected session features** (§4.7) |
+| `p2` text | `"USB3"` | transport |
+| `p3` u16 list | `[0,2]` | unknown |
+
+Our hosts send Meta's recorded v3 messages unchanged (optionally overriding `d1` and appending
+features for experiments: `XRSP_SLICES`, `XRSP_FEATURES_ADD`).
+
+### 4.4 Clock sync
+
+Right after phase 2 the host sends the first ping; both sides then ping each other and answer
+the other's pings (NTP style). Topic 1, inner flags `0x80`, inner size 2, body = 4 × u64
+(layout from the recording; our host's use of it is verified on the bench):
+
+| Message | Type | u64[0] | u64[1] | u64[2] | u64[3] |
+|---|---|---|---|---|---|
+| Ping | `0x06` | 0 | 0 | sender transmit time | sender's current offset estimate (other clock − own clock; 0 until known) |
+| Pong | `0x16` | ping's transmit time (echo) | receive time of the ping | pong transmit time | sender's offset estimate |
+
+- Times are in the **sender's own clock**: the PC uses QPC in ns (our host: its monotonic ns),
+  the Quest its own monotonic ns (~days since boot). Offsets are two's complement (the Quest's
+  estimate is negative because its clock is ahead).
+- Inner counter: pings are numbered 1, 2, 3… per sender; a pong carries the counter of the ping
+  it answers. (Our host numbers its pongs with its own counter; the headset accepts that.)
+- Pattern in Meta's session: a burst of ~30 exchanges in the first 0.2 s, another burst ~2 s
+  later, then the Quest pings once per second. The headset logs every update as
+  `receive ping/pong ... new clock offset=... (rtt, dispersion, jitter)`.
+- **What a host needs:** `quest_offset = ping.u64[2] − local receive time` from any Quest ping
+  (error ≈ one-way USB latency, ~1 ms; good enough for video, §6.4). Answer every Quest ping
+  with a pong.
+
+### 4.5 Stream setup
+
+After the handshake Meta's PC sends, in this order (times from the end of phase 2; observed):
+
+| t | Topic | Dir | Content |
+|---|---|---|---|
+| +0.08 s | 1 | ↔ | clock-sync burst |
+| +0.08 s | 26 AudioControl | ↔ | one message each way (§7.4) |
+| +0.08 s | 31 RuntimeIPC | ↔ | RIPC transport handshake and initial state (§7.8) |
+| +0.08 s | 2 Command | H→Q | four commands: type 12 = 2, 15 = 1, 17 = 0, 19 = 2 (§7.6) |
+| +0.4 s | 34, 35 | Q→H | head pose stream starts |
+| +2.07 s | 28 InputControl | H→Q | `{type 1, value 0}` = hands off (§7.3) |
+| +2.1 s | 4 Mesh | H→Q | one message: `{u32 1001, u32 4096, u32 2240, u32 3648, u32 1968, …}` (§6.5) |
+| +2.1 s | 10–14 | H→Q | video starts |
+| +2.37 s | 7 Haptic | H→Q | one message (§7.7) |
+
+The Quest's mic audio (6) and telemetry (33) begin right after the handshake, about 1.5 s before
+the PC's audio.
+
+**What our host sends** (verified sufficient): Meta's 48 recorded setup messages on topics 26,
+31, 2 and 28 (`host/replay/meta-idr.json` `setup`, embedded in `native/src/templates_data.cpp`),
+spaced as recorded with gaps capped at 0.5 s, then video. It does not send topics 4 or 7, yet
+frames with `rectifyMeshId` 1001 are reprojected, so mesh 1001 is known to the headset without
+topic 4 (inferred: built in, or the topic-4 values only repeat the headset's defaults).
+
+### 4.6 Host exit, re-attach, replug
+
+- **Host exit:** the headset session (and its decoders) survive the host process ending. A new
+  host can open interface 0 and continue without a handshake (verified, `XRSP_ATTACH`), provided
+  it continues every per-topic `seq` (control, each video topic, others it used) and the
+  `EncodedSlice` frame index (§6.4), and waits for the next Quest ping (≤ 1 s) for the clock
+  offset.
+- **HELLO timing:** the Quest sends HELLO once per Link start. If no host is reading, it is
+  lost. A host should poll for the interface and open it immediately (our hosts poll every
+  20 ms, as Meta's hotplug watcher does).
+- **Relaunch:** quitting Link in the headset and pressing Launch again produces a new HELLO;
+  no replug is needed while the host keeps the interface open.
+- **Replug after a dropped session:** `xrspd` expects USB back within ~2 s; Windows takes
+  ~3.7 s to re-enumerate after a software restart of the port, so the first replug yields no
+  HELLO and the second one works (observed). Headset-side `svc usb resetUsbGadget` is
+  unreliable (USB stayed off until a physical replug).
+- **Ending:** on a protocol error the headset sends BYE and drops the session (type code not
+  decoded). No graceful host-side shutdown message is known; Meta's PC tears down every topic
+  (`destroying topic N (Name)` in its log).
+
+### 4.7 Session features
+
+HELLO v3 `p6` lists the features the headset offers; CONFIG v3 `p1` the ones the host selects.
+Wire id = Meta's internal `XrsSessionFeature` value − 1; both sides share the same serializer
+(inferred from the binaries, high confidence; `FEATURES` in `tools/xrsp.py`).
+
+| Wire | Meaning | Quest 3 offers | Meta selects |
+|---|---|---|---|
+| 1, 2, 3 | base protocol (always pushed by the PC) | 1 | 1, 2, 3 |
+| 5 | unreliable tracking | ✓ | – |
+| 6 | Opus audio (else raw PCM, §7.4) | ✓ | – |
+| 7, 19 | protocol features, on whenever the headset offers them (names not recovered) | ✓ | ✓ |
+| 8 | OAF interface | | |
+| 9 | HMD pose frequency | ✓ | – |
+| 10 / 11 / 12 | disable HMD mic / single decoder / ML super-resolution | | |
+| 13 | protocol feature behind a PC-side check (probably a gatekeeper) | ✓ | – |
+| 14 / 15 | RuntimeIPC raw messages / RIPC transport handshake (topic 31) | ✓ | ✓ |
+| 18 | mobile PTW | | |
+| 20 | PCA streaming: passthrough camera images to the PC on topic 32 (§7.9) | ✓ | – |
+
+The phase-1 lists (`[0,4,1,2,3,8]` offered, `[1,3,2,4,8]` / `[1,2,0,4,8]` exchanged) probably
+use a different id space; unknown. None of the features turns on hands or controllers; those
+are runtime controls (§7.3).
