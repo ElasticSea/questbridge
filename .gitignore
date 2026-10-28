@@ -5,3 +5,6 @@ capture/pcaps/
 capture/STOP
 __pycache__/
 *.pyc
+
+# Local run logs
+capture/runs/
