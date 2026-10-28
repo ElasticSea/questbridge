@@ -163,6 +163,10 @@ public:
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
+    // This headset's message / slice size cap (the conservative one before its HELLO)
+    MessageCap cap() const { return device_info_ ? message_cap(device_info_->product) : kConservativeCap; }
+    // Messages send_stream refused for being over cap() (never expected: callers check first)
+    uint64_t dropped_messages() const { return dropped_messages_; }
     uint32_t refresh_hz() const { return refresh_hz_; }  // CONFIG v3's rate; 0 before phase 2
     uint16_t codec() const { return codec_; }             // CONFIG v3's codec (codec::k*)
     uint64_t head_pose_count() const { return head_pose_count_; }
@@ -195,7 +199,7 @@ public:
         bool intra = true;
         uint32_t picture_height = 0;  // 0 = the HELLO's encode height
     };
-    // TooLarge: a slice's csd or video exceeds kMaxStreamMessage; nothing is sent.
+    // TooLarge: a slice's csd or video exceeds cap().message; nothing is sent.
     Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
     uint64_t next_frame_index() const { return next_frame_index_; }
 
@@ -253,6 +257,7 @@ private:
     std::optional<int64_t> quest_offset_;
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
+    uint64_t dropped_messages_ = 0;
     uint32_t refresh_hz_ = 0;
     uint16_t codec_ = codec::kH264;
     uint64_t head_pose_count_ = 0;

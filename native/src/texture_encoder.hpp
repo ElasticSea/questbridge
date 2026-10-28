@@ -20,6 +20,7 @@ struct TextureEncoderConfig {
     uint32_t bitrate = 100'000'000;
     int gop = 1;  // 1 = all intra (what the headset is proven to play); >1 = IDR every gop frames
     bool hevc = false;  // the session's CONFIG codec; VideoToolbox only
+    size_t max_slice_bytes = 100'000;  // the headset's slice cap (ql_device_info.max_slice_bytes)
 };
 
 struct EncodedSlices {

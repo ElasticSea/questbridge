@@ -277,6 +277,7 @@ private:
             ec.layout = enc::Layout::Strips;
             ec.bitrate = cfg_.bitrate;
             ec.gop = cfg_.gop;
+            ec.max_slice_bytes = cfg_.max_slice_bytes;
             ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;
             std::string err;
             encoder_ = enc::create_encoder(ec, &err);

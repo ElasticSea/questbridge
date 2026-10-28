@@ -137,19 +137,27 @@ TEST(frame_timewarp_fields) {
     }
 }
 
-TEST(message_cap) {
-    // At or under the largest message seen working on every headset (Quest Pro HEVC: 106,340 B;
-    // 115,332 B ended the session), with room for the encoders' 100,000 B slice cap
-    CHECK(kMaxStreamMessage <= 106'340);
-    CHECK(100'000 + kHeaderSize + 4 <= kMaxStreamMessage);
-    Bytes big(kMaxStreamMessage - kHeaderSize - 4), bigger(big.size() + 1), csd(16);
-    std::vector<SliceData> ok = {{csd, big}}, too_big = {{csd, bigger}}, csd_too_big = {{bigger, csd}};
-    CHECK(fits_message_cap(ok));
-    CHECK(!fits_message_cap(too_big));
-    CHECK(!fits_message_cap(csd_too_big));
-    // The whole message including padding stays within the cap
-    auto out = build_frame(ok, FrameParams{});
-    CHECK(out.back().body.size() + kHeaderSize <= kMaxStreamMessage);
+TEST(message_cap_per_headset) {
+    // Per headset, at or under the largest message seen working on it: Quest 3 128,480 B
+    // (148,544 B failed), Quest Pro 106,340 B (115,332 B failed); unknown ones get the Pro's
+    CHECK_EQ(message_cap("Meta Quest 3").slice, size_t(120'000));
+    CHECK(message_cap("Meta Quest 3").message <= 128'480);
+    CHECK_EQ(message_cap("Meta Quest Pro").slice, size_t(100'000));
+    CHECK(message_cap("Meta Quest Pro").message <= 106'340);
+    CHECK_EQ(message_cap("").message, message_cap("Meta Quest Pro").message);
+    CHECK_EQ(message_cap("Meta Quest 3S").message, message_cap("Meta Quest Pro").message);
+    for (const char* product : {"Meta Quest 3", "Meta Quest Pro"}) {
+        const MessageCap cap = message_cap(product);
+        // A slice at the slice cap fits, one byte over the message cap doesn't
+        Bytes big(cap.slice), bigger(cap.message - kHeaderSize - 3), csd(16);
+        std::vector<SliceData> ok = {{csd, big}}, too_big = {{csd, bigger}}, csd_too_big = {{bigger, csd}};
+        CHECK(fits_message_cap(ok, cap.message));
+        CHECK(!fits_message_cap(too_big, cap.message));
+        CHECK(!fits_message_cap(csd_too_big, cap.message));
+        // The whole message including padding stays within the cap
+        auto out = build_frame(ok, FrameParams{});
+        CHECK(out.back().body.size() + kHeaderSize <= cap.message);
+    }
 }
 
 TEST(submit_frame_needs_clock_and_numbers_seq) {
@@ -192,9 +200,14 @@ TEST(submit_frame_needs_clock_and_numbers_seq) {
     std::vector<SliceData> none;
     CHECK(s.submit_frame(none, {}) == Session::Submit::BadSlices);
     // Oversize slice: rejected, nothing sent, numbering unchanged
-    Bytes huge(kMaxStreamMessage);
+    Bytes huge(s.cap().message);
     sl[2].video = huge;
     CHECK(s.submit_frame(sl, {}) == Session::Submit::TooLarge);
     CHECK(s.take_outgoing().empty());
     CHECK_EQ(s.next_frame_index(), uint64_t(4));
+    // A slice at the cap goes out whole: send_stream never drops video
+    sl[2].video = Bytes(s.cap().slice);
+    CHECK(s.submit_frame(sl, {}) == Session::Submit::Ok);
+    CHECK_EQ(s.take_outgoing().size(), size_t(1));
+    CHECK_EQ(s.dropped_messages(), uint64_t(0));
 }

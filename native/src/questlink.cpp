@@ -388,6 +388,8 @@ ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out) {
     copy(out->manufacturer, sizeof out->manufacturer, d->manufacturer);
     copy(out->firmware, sizeof out->firmware, d->firmware);
     out->stream_codec = host->session->codec();
+    out->max_slice_bytes = uint32_t(host->session->cap().slice);
+    out->max_message_bytes = uint32_t(host->session->cap().message);
     return QL_OK;
 }
 
@@ -490,7 +492,7 @@ ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uin
         case Session::Submit::NoClock: return QL_ERR_NO_CLOCK;
         case Session::Submit::BadSlices: return QL_ERR_ARGUMENT;
         case Session::Submit::TooLarge:
-            host->error = "slice larger than one XRSP message (" + std::to_string(kMaxStreamMessage) + " B); frame dropped";
+            host->error = "slice larger than one XRSP message (" + std::to_string(host->session->cap().message) + " B); frame dropped";
             return QL_ERR_ARGUMENT;
     }
     return QL_ERR_INTERNAL;

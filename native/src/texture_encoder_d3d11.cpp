@@ -137,6 +137,7 @@ private:
             ec.slices = cfg_.slices;
             ec.bitrate = cfg_.bitrate;
             ec.gop = cfg_.gop;
+            ec.max_slice_bytes = cfg_.max_slice_bytes;
             ec.gpu_device = device_.Get();
             ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;  // HEVC: refused below
             // Backend and layout per machine (GPU vendor, probe frame); QL_ENCODER forces one:

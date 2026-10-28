@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-#define QL_API_VERSION 5 /* 4: recovery (ql_config, ql_info losses/resumes); 5: ql_info.encoder */
+#define QL_API_VERSION 6 /* 4: recovery (ql_config, ql_info losses/resumes); 5: ql_info.encoder; 6: ql_device_info caps */
 
 typedef enum ql_status {
     QL_OK = 0,
@@ -81,6 +81,9 @@ typedef struct ql_device_info {
     char manufacturer[32];                /* "Oculus VR" */
     char firmware[64];                    /* "releases-oculus-14.0-v207" */
     uint32_t stream_codec;                /* ql_codec our CONFIG chose (with stream_refresh_hz) */
+    /* API version 6 */
+    uint32_t max_slice_bytes;   /* largest slice NAL / csd we send this headset (Quest 3 120,000; others 100,000) */
+    uint32_t max_message_bytes; /* largest XRSP message on any topic (Quest 3 120 KiB; others 100 KiB) */
 } ql_device_info;
 
 /* ql_controller.buttons / touches bits */

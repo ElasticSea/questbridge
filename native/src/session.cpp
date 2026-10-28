@@ -237,9 +237,10 @@ void Session::send_raw_control(Bytes body, const std::string& label) {
 void Session::send_stream(std::vector<StreamMessage> msgs) {
     // A message over the headset's limit would end the session: drop the batch instead
     for (auto& m : msgs)
-        if (kHeaderSize + m.body.size() > kMaxStreamMessage) {
+        if (kHeaderSize + m.body.size() > cap().message) {
+            ++dropped_messages_;
             log("info", "dropped a topic " + std::to_string(m.topic) + " message of " + std::to_string(kHeaderSize + m.body.size()) +
-                            " B (over " + std::to_string(kMaxStreamMessage) + " B)");
+                            " B (over " + std::to_string(cap().message) + " B)");
             return;
         }
     std::vector<Bytes> raw;
@@ -260,7 +261,7 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     if (state_ != State::Streaming) return Submit::NotStreaming;
     if (!quest_offset_) return Submit::NoClock;  // need one clock ping to map our clock onto the Quest's
     if (slices.empty() || slices.size() > templates::slice_headers().size()) return Submit::BadSlices;
-    if (!fits_message_cap(slices)) return Submit::TooLarge;
+    if (!fits_message_cap(slices, cap().message)) return Submit::TooLarge;
     FrameParams p;
     p.index = opt.index ? opt.index : next_frame_index_;
     p.target_vsync_quest_ns = opt.target_vsync_quest_ns ? opt.target_vsync_quest_ns

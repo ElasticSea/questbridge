@@ -33,10 +33,14 @@ size_t struct_target(const Bytes& seg, size_t ptr) {
 
 }  // namespace
 
-bool fits_message_cap(std::span<const SliceData> slices) {
+MessageCap message_cap(const std::string& product) {
+    return product == "Meta Quest 3" ? kQuest3Cap : kConservativeCap;
+}
+
+bool fits_message_cap(std::span<const SliceData> slices, size_t max_message) {
     // Header plus at most 4 bytes of padding (video bodies pad to 4)
     for (const auto& s : slices)
-        if (s.csd.size() + kHeaderSize + 4 > kMaxStreamMessage || s.video.size() + kHeaderSize + 4 > kMaxStreamMessage)
+        if (s.csd.size() + kHeaderSize + 4 > max_message || s.video.size() + kHeaderSize + 4 > max_message)
             return false;
     return true;
 }
