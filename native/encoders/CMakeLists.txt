@@ -24,4 +24,8 @@ elseif(APPLE)
 endif()
 
 add_executable(qlenc qlenc/qlenc.cpp)
+if(APPLE)
+  add_executable(vtprobe vt/vtprobe.cpp)
+  target_link_libraries(vtprobe PRIVATE questlink_encoders)
+endif()
 target_link_libraries(qlenc PRIVATE questlink_encoders)

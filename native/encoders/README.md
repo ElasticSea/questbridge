@@ -54,7 +54,7 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
 - **Speed (the blocker): one hardware encode engine, ~570 Mpx/s for H.264.** 5 strips, encode()
   per frame: NV12 16.5–17.5 ms, BGRA 18–19.5 ms, CVPixelBuffer BGRA 18.9 ms (locked row copy
   ~1.2 ms; VTPixelTransferSession crops cost ~12 ms). One 4096x2240 session: 15 ms. Pipelined
-  (frames in flight, `vtprobe`): 62 fps max at 4096x2240; two processes split it (31 + 31 fps).
+  (frames in flight, `vt/vtprobe.cpp`): 62 fps max at 4096x2240; two processes split it (31 + 31 fps).
   `PrioritizeEncodingSpeedOverQuality`, Quality 0, Constrained High: no gain. **72 Hz at
   4096x2240 is out of reach with H.264**; 3840x1920 as strips reaches ~74 fps, 1920x1088 217 fps.
   **HEVC is faster:** 4096x2240 72.8 fps (1 session), 5 strips 87.6 fps.
