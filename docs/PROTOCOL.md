@@ -395,3 +395,126 @@ of the Link home environment (counts include segment-table messages) unless note
 Both binaries also hold a newer static table (`… 33 Logging, 35 UnreliablePose, 36 Pose2,
 37 DeviceInput, 38 FrameFeedback`) that is not used with this firmware/runtime pair; the log and
 captures agree on the ids above. Expect renumbering with future firmware.
+
+## 6. Video (topics 10–25)
+
+### 6.1 Picture and codec
+
+| Property | Value | Status |
+|---|---|---|
+| Codec | H.264, **Constrained Baseline** (profile 66, constraint flags `0xc0`), level 6.0, Annex-B | verified |
+| Encoded size | 4096 × 2240 (HELLO device description, §8) | verified |
+| Eye layout | side by side: **left half = left eye**, right half = right eye, 2048 × 2240 each | verified |
+| Rate | the CONFIG refresh rate (72 Hz tested) | verified |
+| Bitrate | Meta's selected mode: ~124 Mbit/s at 72 Hz | observed |
+| Strips | CONFIG `slices` (5): strip *i* goes on topic `10 + i`, 448 px (28 MB rows) tall | verified |
+
+At stream start the headset logs `Creating VideoReceiver: 1 temporal layers, 5 strips,
+robustnessMode 0, with alpha, decoder per strip`: **each strip topic feeds its own decoder.**
+So two equivalent encodings work (both verified at 72 fps, 0 glitches):
+
+1. **Meta's:** one 4096 × 2240 picture in 5 slices (`first_mb_in_slice` 0 / 7168 / 14336 /
+   21504 / 28672), the same SPS/PPS copied to every strip.
+2. **Independent strips:** five 4096 × 448 streams, each with its own SPS/PPS and
+   `first_mb_in_slice` 0. This fits encoders without slice-count control (one VideoToolbox
+   session per strip).
+
+Meta's stream (NVENC-like, from `tools/h264_fields.py`): `log2_max_frame_num` 8, POC type 2,
+`max_num_ref_frames` 3, VUI timing 1000/144000 fixed, full-range BT.709, `nal_ref_idc` 3 on IDR
+and P, slice_type 2/0, **`disable_deblocking_filter_idc` 2**. Low-latency SPS (no reordering,
+`max_dec_frame_buffering` 1) is what our encoders use.
+
+### 6.2 Messages per strip
+
+For every frame, each strip topic carries, in seq order (verified: `tools/decode_video.py`,
+`native/src/frame.cpp`, `native/tests/test_frame.cpp`):
+
+| # | Flags | Body |
+|---|---|---|
+| 1 | `0x10` | Cap'n Proto segment table, 8 B: `00000000 19000000` (one segment of 25 words) |
+| 2 | `0x10` | `EncodedSlice` segment, 200 B (§6.3) |
+| 3 | `0x10`/`0x18` | csd: Annex-B SPS + PPS, `csdLength` bytes, padded to 4 B. **Only when `csdLength` > 0** |
+| 4 | `0x10`/`0x18` | slice data: Annex-B NAL unit(s), exactly `videoLength` bytes after unpadding, padded to 4 B |
+
+- Messages 3 and 4 must each fit one XRSP message (≤ ~128 KiB, §2.5); they cannot be split.
+  A high-quality IDR strip can exceed this; our hosts drop such frames before sending.
+- A frame = one message group on each of the `slices` topics with the same `frame.index`. Our
+  host sends all of them in one USB transfer.
+- Meta sends csd with intra frames; sending it on every frame (repeat headers) also works.
+
+### 6.3 `EncodedSlice` (schema `video.capnp`, recovered from Meta's binaries)
+
+Root struct: 18 data words, 2 pointers, followed by two `FovPort` structs (2 data words each)
+= 200 B segment. Offsets below are from the start of the **data section** (segment offset + 8).
+
+| Off | Type | Schema field | Use |
+|---|---|---|---|
+| 0 | u64 | `frame.index` | Frame counter, must increase over the whole headset session |
+| 8 | u32 | `frame.rectifyMeshId` | **1001** for game frames (enables reprojection), 0 for Meta's loading screen (§6.5) |
+| 12 | 4 × f32 | `frame.renderPose.orientation` x, y, z, w | Head pose the frame was rendered with |
+| 28 | 3 × f32 | `frame.renderPose.translation` x, y, z | metres |
+| 40 | i64 | `frame.renderPose.timeInNanoseconds` | Quest clock |
+| 48 | u8 | `slice.index` | 0 … slices−1 (= topic − 10) |
+| 49 | bits | bit 0 `frame.isIntraFrame`, bit 1 `slice.isLastSliceOfAFrame` | intra: frame is IDR; last: only on the last strip |
+| 50 | u16 | `frame.envBlendMode` | 0 invalid, 1 opaque (Meta's frames), 2 additive, 3 alphaBlend (§7.9) |
+| 52 | u32 | `slice.yOffsetInPixels` | 448 × index |
+| 56 | u32 | `slice.heightInMacroBlocks` | 28 |
+| 60 | u32 | `slice.csdLength` | bytes of message 3, 0 = no csd message |
+| 64 | u32 | `slice.videoLength` | bytes of message 4 |
+| 68 | – | – | unused (0) |
+| 72 | i64 | `frame.metrics.pcPresentBeginNanosecondsSinceEpoch` | Quest clock |
+| 80 | u64 | `slice.metrics.pcPresentToTransmissionBeginDurationNanoseconds` | duration (Meta: 3–7 ms, growing per strip) |
+| 88 | i64 | `frame.metrics.targetVsyncNanosecondsSinceEpoch` | **Quest clock**, see §6.4 |
+| 96 | i64 | `frame.metrics.targetDeadlineNanosecondsSinceEpoch` | Quest clock |
+| 104 | i64 | `frame.metrics.estimatedGpuEndNanosecondsSinceEpoch` | Quest clock |
+| 112 | i64 | `frame.metrics.pcAppLatencyMarkerSensorNanosecondsSinceEpoch` | Quest clock |
+| 120 | u64 | `frame.pcPresentIndex` | 0 in Meta's recorded frame |
+| 128 | u64 | `frame.apertureId` | 0 |
+| 136 | u64 | `frame.passthroughLayerId` | 0 |
+| 144 | ptr | `frame.renderFovPort0` | left eye `FovPort` |
+| 152 | ptr | `frame.renderFovPort1` | right eye `FovPort` |
+
+`FovPort`: `f32 leftTan, rightTan, upTan, downTan` (positive tangents of the half-angles). Meta's
+game frames on Quest 3: left eye (1.3764, 0.8391, 0.9657, 1.4281), right eye (0.8391, 1.3764,
+0.9657, 1.4281), i.e. tan of 54° / 40° / 44° / 55° from the HELLO FOV (§8), mirrored per eye.
+
+Despite the `SinceEpoch` names, all absolute times are in the **Quest clock** (§4.4). Our host
+builds headers from Meta's recorded one and patches: index, pose, mesh id, FovPorts, slice
+index/bits, lengths, and shifts all non-zero timing words together so that `targetVsync` hits
+its target (`patch_slice_header` in `native/src/frame.cpp`).
+
+### 6.4 Timing and ordering requirements
+
+All verified on the bench by breaking them:
+
+| Requirement | Failure when violated (headset log) |
+|---|---|
+| Timing words (40, 72, 88–112) in the Quest clock and near now | stale: `Frame arrived N ms after deadline, frame drop` |
+| `targetVsync` not too far ahead either | `Frame arrived ~7.6 ms before deadline, frame drop to prevent submit offset` (seen at send time + 20 ms with a fast sender; Deadline 6.5 ms). Our runtime targets send time + 16 ms (`QL_VSYNC_LEAD_MS`); + 20 ms works for slower senders |
+| `frame.index` increases across the whole headset session (also across host restarts) | `timed out waiting for new decode frame index`, nothing shown |
+| Per-topic `seq` continues across host restarts | same as above |
+| All `slices` strips of every frame sent (CONFIG `slices` = 5) | 1–4 strips per frame: nothing shown, **no error**; recovers once full frames arrive again |
+| Every message ≤ ~128 KiB, unsplit | `buffer too small`, BYE, session over |
+| No deblocking across strip edges (`disable_deblocking_filter_idc` 1 or 2) when using one picture with P frames | idc 0 (deblock across slices): decode collapses to ~1 fps and the decoders wedge until a new Link session; the host's writes time out |
+
+Intra-only and IDR + P (GOP 72) both work with the deblocking rule above. Motion vectors can
+still cross strip edges (with x264 too); no visible problem so far but unverified.
+
+### 6.5 Timewarp, rectify mesh and FOV
+
+- The headset reprojects each frame from its `renderPose` to the current head pose **only when
+  `rectifyMeshId` = 1001 and both `FovPort`s are filled in** (verified: a fixed renderPose then
+  stays world-locked). With mesh 0 (Meta's loading-screen frame, which also has zero FOV and an
+  identity pose) the image is shown head-locked, unreprojected.
+- Each eye must be rendered through its own asymmetric projection (the FovPort values). The
+  optical centre lies at x = L/(L+R) × 2048 = 1272 px in the left half and 776 px in the right
+  half, y = U/(U+D) × 2240 = 904 px. Identical images in both halves give double vision.
+- `renderPose` uses the topic-34 head pose convention (right-handed, +Y up, −Z forward, metres;
+  inferred from the native API's convention and the matching quaternions).
+- Topic 4 Mesh (sent once by Meta, not needed by our host): a **3-segment** Cap'n Proto message.
+  Segment table `02000000 06000000 06420000 01300000` (segments of 6, 16,902 and 12,289 words).
+  Root (3 data / 2 ptrs): u32 1001, u32 4096, u32 2240, u32 3648, u32 1968; both pointers are
+  far pointers into segments 1 and 2. Inferred: the rectify mesh with id 1001 (encode size
+  4096 × 2240, 3648 × 1968 maybe the per-frame render target). The two large segments (~132 and
+  ~96 KiB) were lost to capture truncation; how they are carried within the ~128 KiB message
+  limit is unknown.
