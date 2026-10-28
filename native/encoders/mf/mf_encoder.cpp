@@ -618,6 +618,10 @@ private:
 }  // namespace
 
 std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string* error) {
+    if (config.layout != Layout::Slices) {
+        if (error) *error = "Media Foundation backend only encodes Layout::Slices";
+        return nullptr;
+    }
     auto enc = std::make_unique<MfEncoder>(config);
     if (!enc->init(error)) return nullptr;
     return enc;
