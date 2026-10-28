@@ -120,6 +120,13 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
             if (audioTest && rig.Head != null)
                 AudioTest();
+            var snapshotAt = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-snapshot");
+            if (snapshotAt >= 0 && snapshotAt + 1 < System.Environment.GetCommandLineArgs().Length)
+            {
+                var snap = gameObject.AddComponent<SnapshotCheck>();
+                snap.rig = rig;
+                snap.path = System.Environment.GetCommandLineArgs()[snapshotAt + 1];
+            }
             if (recovery)
             {
                 var status = rigObject.AddComponent<QuestLinkConnectionStatus>();
