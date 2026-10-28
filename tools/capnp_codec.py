@@ -129,12 +129,57 @@ class _Writer:
             self.ptr(base + i, c)
 
 
-def encode(tree, seg_words=None):
+def encode(tree, seg_words=None, order=None):
+    """Serialize a tree. Objects are placed back to back in `order` (a list of
+    node paths, see walk()); unlisted objects follow depth-first. Nodes that
+    still carry "o" offsets keep them when no order is given."""
+    if order is not None:
+        tree = layout(tree, order)
     if seg_words is None:
         seg_words = 1 + _total(tree)
     w = _Writer(seg_words)
     w.ptr(0, tree)
     return struct.pack("<II", 0, seg_words) + bytes(w.seg)
+
+
+def walk(node, path="r"):
+    """Yield (path, node) for every pointer target, depth-first."""
+    if node is None:
+        return
+    yield path, node
+    for k in ("p", "lp"):
+        for i, c in enumerate(node.get(k, [])):
+            yield from walk(c, f"{path}.{k}{i}")
+    for j, s in enumerate(node.get("lc", [])):
+        for i, c in enumerate(s["p"]):
+            yield from walk(c, f"{path}.lc{j}.p{i}")
+
+
+def allocation_order(tree):
+    """Paths sorted by their recorded offsets: the order Meta's builder allocated them.
+    Zeroed holes (objects Meta overwrote, which Cap'n Proto zero-fills) appear as "gap:N"."""
+    order, at = [], 1
+    for p, n in sorted(walk(tree), key=lambda pn: pn[1]["o"]):
+        if n["o"] > at:
+            order.append(f"gap:{n['o'] - at}")
+        order.append(p)
+        at = max(at, n["o"] + _size_words(n))
+    return order
+
+
+def layout(tree, order):
+    """Return a copy of tree with "o" offsets assigned by sequential allocation."""
+    tree = strip_offsets(tree)
+    nodes = dict(walk(tree))
+    listed = set(order)
+    at = 1
+    for p in list(order) + [p for p in nodes if p not in listed]:
+        if p.startswith("gap:"):
+            at += int(p[4:])
+        elif p in nodes:
+            nodes[p]["o"] = at
+            at += _size_words(nodes[p])
+    return tree
 
 
 def strip_offsets(node):
