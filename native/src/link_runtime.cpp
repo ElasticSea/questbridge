@@ -180,6 +180,7 @@ private:
     audio::PlaybackBuffer playback_;
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
+    uint64_t refits_ = 0;   // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
 
     Runtime() {
@@ -260,6 +261,12 @@ private:
                 continue;
             }
             idr_generation = gen;
+            if (out.refits)
+                stderr_log(nullptr, "info",
+                           ("slice cap: frame re-encoded as IDR (" + std::to_string(++refits_) + " so far), largest slice " +
+                            std::to_string(out.first_try_bytes) + " B -> " + std::to_string(out.largest) + " B at QP " +
+                            std::to_string(out.qp)).c_str(),
+                           -1);
             std::vector<ql_slice> slices;
             for (const auto& s : out.slices)
                 slices.push_back({out.csd.data(), out.csd.size(), s.data(), s.size()});
@@ -280,9 +287,9 @@ private:
                 fi.fov_left = dev.fov_left;
                 fi.fov_right = dev.fov_right;
             }
-            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT &&
-                dropped_++ % 72 == 0)
-                stderr_log(nullptr, "info", ql_host_get_error(h.get()), -1);
+            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT)
+                stderr_log(nullptr, "info",
+                           (std::string(ql_host_get_error(h.get())) + " (" + std::to_string(++dropped_) + " so far)").c_str(), -1);
         }
     }
 
