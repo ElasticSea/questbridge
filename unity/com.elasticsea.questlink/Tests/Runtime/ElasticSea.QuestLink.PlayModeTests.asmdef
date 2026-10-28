@@ -3,6 +3,8 @@
     "rootNamespace": "ElasticSea.QuestLink.Tests",
     "references": [
         "ElasticSea.QuestLink",
+        "ElasticSea.QuestLink.XRHands",
+        "Unity.XR.Hands",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
@@ -17,6 +19,12 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.hands",
+            "expression": "1.3.0",
+            "define": "QUESTLINK_XR_HANDS"
+        }
+    ],
     "noEngineReferences": false
 }
