@@ -6,8 +6,8 @@ using UnityEngine.InputSystem.XR;
 
 namespace ElasticSea.QuestLink.BridgeTest.Editor
 {
-    // Regenerates the package's drop-in "QuestLink Rig" prefab: rig + hands, Head with the
-    // AudioListener and QuestLinkAudio, two controllers on stock TrackedPoseDrivers.
+    // Regenerates the package's drop-in "QuestLink Rig" prefab: rig + hands + link status banner,
+    // Head with the AudioListener and QuestLinkAudio, two controllers on stock TrackedPoseDrivers.
     // tools\unity_hidden.ps1 -ArgLine "-batchmode -nographics -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildRigPrefab.Build -logFile prefab.log"
     public static class BuildRigPrefab
     {
@@ -23,6 +23,7 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
                 root.AddComponent<QuestLinkRig>();
                 root.AddComponent<QuestLinkHands>();
                 root.AddComponent<HandJointsVisualizer>();
+                root.AddComponent<QuestLinkConnectionStatus>();
 
                 var head = new GameObject("Head");
                 head.transform.SetParent(root.transform, false);
