@@ -9,6 +9,7 @@ namespace ElasticSea.QuestLink.BridgeTest
     // Link origin is at eye level, the floor drops below the head.
     public class FirstLightScene : MonoBehaviour
     {
+        const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
         const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nThen take the headset off.";
 
         public QuestLinkRig.BackendMode backend = QuestLinkRig.BackendMode.Native;
@@ -19,6 +20,10 @@ namespace ElasticSea.QuestLink.BridgeTest
         QuestLinkRig rig;
         bool recentred;
         int submitted;
+        QuestLinkState lastState = QuestLinkState.Idle;
+        float connectingSince = -1f;
+        bool staleLogged;
+        GUIStyle statusStyle;
 
         void Awake()
         {
@@ -74,8 +79,46 @@ namespace ElasticSea.QuestLink.BridgeTest
                 eye.clearFlags = CameraClearFlags.SolidColor;
                 eye.backgroundColor = sky;
             }
-            if (!recentred && rig.Backend.TryGetHeadPose(out var head))
+            var hasPose = rig.Backend.TryGetHeadPose(out var head);
+            if (!recentred && hasPose)
                 Recentre(head);
+            TrackState(hasPose);
+        }
+
+        // Log every state change; poses while still Connecting mean the headset kept an old
+        // session (our runtime waits for a fresh HELLO), which only Quit Link + Launch fixes.
+        void TrackState(bool hasPose)
+        {
+            var state = rig.State;
+            if (state != lastState)
+            {
+                Debug.Log($"[QuestLink] state {lastState} -> {state} at {Time.realtimeSinceStartup:F1} s");
+                lastState = state;
+                connectingSince = state == QuestLinkState.Connecting ? Time.realtimeSinceStartup : -1f;
+                staleLogged = false;
+            }
+            if (!staleLogged && Stale(hasPose))
+            {
+                staleLogged = true;
+                Debug.Log($"[QuestLink] {StaleHint}");
+            }
+        }
+
+        bool Stale(bool hasPose) =>
+            hasPose && rig.State == QuestLinkState.Connecting && connectingSince >= 0f &&
+            Time.realtimeSinceStartup - connectingSince > 5f;
+
+        // PC window only: the headset shows our frames only once Streaming
+        void OnGUI()
+        {
+            if (rig == null || rig.Backend == null)
+                return;
+            GUI.depth = -10; // above the rig's mirror
+            statusStyle ??= new GUIStyle(GUI.skin.label) { fontSize = 22, wordWrap = true, normal = { textColor = Color.yellow } };
+            var text = $"QuestLink: {rig.State}, frame {rig.FrameIndex}";
+            if (staleLogged && rig.State == QuestLinkState.Connecting)
+                text += "\n" + StaleHint;
+            GUI.Label(new Rect(16, 12, Screen.width - 32, 120), text, statusStyle);
         }
 
         void LateUpdate()
