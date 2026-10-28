@@ -8,7 +8,7 @@
 - [~] **1. USB transport** — WinUSB on the Windows bench works; macOS via libusb still to do
 - [~] **2. Link protocol** — handshake, video (H.264 slices), head pose, audio decoded; encoder format gate (which slice layouts the headset accepts); controllers, hands, passthrough being researched
 - [ ] **3. Mac host** — native dylib (libusb, XRSP, handshake, clock sync, pacing, VideoToolbox) with a small C API (`ql_get_pose`, `ql_submit_frame`, …) plus a CLI
-- [ ] **4. Unity bridge** — C# two-eye rig → one RenderTexture → Metal/IOSurface → VideoToolbox; poses and input back as Input System XRHMD/XRController devices (TrackedPoseDriver/XRI work unchanged). An XR SDK display provider comes later.
+- [~] **4. Unity bridge** — C# package `unity/com.elasticsea.questlink` done against an assumed C API (mock backend, tests pass); native hookup pending. C# two-eye rig → one RenderTexture → Metal/IOSurface → VideoToolbox; poses and input back as Input System XRHMD/XRController devices (TrackedPoseDriver/XRI work unchanged). An XR SDK display provider comes later.
 - [ ] **5. Sensors** — controllers + buttons + haptics, hand-tracking joints, passthrough as a headset-composited layer (alpha blend). Raw camera pixels are APK-only. Eye/face: no Quest 3 hardware.
 - [ ] **6. Supporting work** — FOV/IPD from the HELLO device description, latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
 
