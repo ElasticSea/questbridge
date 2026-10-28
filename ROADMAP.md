@@ -13,7 +13,7 @@
 ## Milestones
 - [x] M0: USB captures from Windows Link session + protocol spec (handshake, video H.264 slices, pose, audio decoded)
 - [~] M1: Link handshake + session from our host — done on Windows (2026-10-28); still to run on a Mac
-- [ ] M2: Test pattern on Quest + pose round-trip
+- [~] M2: Video into the headset — replayed Meta frame shows at 72 fps (2026-10-28); next: our own encoded test pattern
 - [ ] M3: Native Metal VR demo
 - [ ] M4: OpenXR runtime
 - [ ] M5: Wine/GPTK bridge for real PC VR games
