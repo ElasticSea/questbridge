@@ -2,7 +2,9 @@
 # Usage: tools\test_all.ps1 [-Quick] [-Only py|native|unity] [-UnityTimeout <s>]
 #   -Quick  Python + native only (before each commit). Full run (with Unity) before merging to main.
 # Suites: py (unittest), native (native\build.ps1: Release build incl. encoders, then CTest),
-#         unity (BridgeTest EditMode + PlayMode, SensorProbe compile check; skipped if Unity is missing).
+#         unity (BridgeTest EditMode + PlayMode in batchmode, PlayMode again in a minimized
+#         non-batchmode Editor, SensorProbe compile check; skipped if Unity is missing). Unity runs
+#         with QL_USB=0 (questlink.dll never opens the headset) and a D3D11 device (Editor Play tests).
 # Logs: capture\runs\test_all\<stamp>\<step>.log. Exit code 0 only if no step failed.
 # Keep in step with tools/test_all.sh (Mac): same steps, same summary format.
 param(
@@ -79,16 +81,17 @@ function Test-Native {
     Add-Result "native" $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
 }
 
-# One Unity test platform: batchmode run, NUnit XML parsed into counts. Exit codes: 0 pass, 2 failures, 3 run error.
-function Test-UnityTests($project, $platform, $assemblies) {
-    $name = "unity-$($project.ToLower())-$($platform.ToLower())"
+# One Unity test platform, NUnit XML parsed into counts. Exit codes: 0 pass, 2 failures, 3 run error.
+# -Window: a real Editor (still on the hidden desktop), so cameras render as in Play mode.
+function Test-UnityTests($project, $platform, $assemblies, [switch]$Window) {
+    $name = "unity-$($project.ToLower())-$($platform.ToLower())" + $(if ($Window) { "-window" } else { "" })
     $log = "$logDir\$name.log"; $xml = "$logDir\$name.xml"; $t = Get-Date
     $proj = "$repo\unity\$project"
     if (Test-Path "$proj\Temp\UnityLockfile") {
         try { [IO.File]::Open("$proj\Temp\UnityLockfile", "Open", "ReadWrite", "None").Close() }
         catch { Add-Result $name "FAIL" 0 "project is open in another Unity Editor; close it" $null; return }
     }
-    $code = Invoke-Unity ("-batchmode -nographics -projectPath `"$proj`" -runTests -testPlatform $platform " +
+    $code = Invoke-Unity ($(if ($Window) { "" } else { "-batchmode " }) + "-projectPath `"$proj`" -runTests -testPlatform $platform " +
         "-assemblyNames $assemblies -testResults `"$xml`" -logFile `"$log.unity`"") $log $UnityTimeout
     Merge-UnityLog $log
     $status = "FAIL"
@@ -115,8 +118,10 @@ function Test-UnityCompile($project) {
 
 function Test-Unity {
     if (-not (Test-Path $unityExe)) { Add-Result "unity" "SKIP" 0 "Unity 6000.3.11f1 not installed at $unityExe" $null; return }
+    $env:QL_USB = "0"
     Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestLink.Tests"
     Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests"
+    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests" -Window
     Test-UnityCompile "SensorProbe"
 }
 
