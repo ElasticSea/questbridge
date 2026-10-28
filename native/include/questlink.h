@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-#define QL_API_VERSION 3
+#define QL_API_VERSION 4
 
 typedef enum ql_status {
     QL_OK = 0,
@@ -132,6 +132,39 @@ QL_API void ql_close(ql_session* session);
 QL_API void ql_shutdown(void);
 /* 0 idle (no headset), 1 connecting (USB open, handshake or setup running), 2 streaming. */
 QL_API int ql_poll(ql_session* session);
+
+/* API version 4: recovery. The runtime recovers from every disconnect by itself (USB error or
+ * unplug, Link quit, headset BYE, a new HELLO, silence): it reopens USB and either resumes the
+ * stream with the same numbering (USB back within QL_RESUME_MS, default 500, and the headset
+ * still streaming) or runs a new handshake; the user then presses Launch again. */
+typedef enum ql_link_state {
+    QL_LINK_NO_DEVICE = 0,   /* XRSP interface not open: unplugged, asleep, Link quit, or held by another program */
+    QL_LINK_CONNECTING = 1,  /* handshake or stream setup running */
+    QL_LINK_WAIT_LAUNCH = 2, /* phase 1 done: the user presses Launch in the headset */
+    QL_LINK_STREAMING = 3,
+    QL_LINK_RESUMING = 4     /* USB reopened right after an error; continuing if the headset still streams */
+} ql_link_state;
+
+typedef enum ql_loss {
+    QL_LOSS_NONE = 0,
+    QL_LOSS_USB = 1,         /* USB read/write failed: cable, Link quit, headset reboot */
+    QL_LOSS_HEADSET_BYE = 2, /* the headset ended the stream */
+    QL_LOSS_NEW_HELLO = 3,   /* the headset restarted the handshake */
+    QL_LOSS_SILENCE = 4      /* nothing from the headset for QL_SILENCE_MS (default 3000) */
+} ql_loss;
+
+typedef struct ql_link_status {
+    int32_t state;          /* ql_link_state */
+    int32_t last_loss;      /* ql_loss of the latest disconnect */
+    uint32_t connects;      /* times streaming started or resumed */
+    uint32_t disconnects;   /* streams lost; reconnecting = disconnects > 0 and state != STREAMING */
+    uint32_t resumes;       /* streams that continued after a USB error without a new handshake */
+    uint32_t reserved;
+    int64_t state_since_ns; /* ql_now_ns() when state last changed */
+} ql_link_status;
+
+/* Runtime-wide link status (the same for every session). */
+QL_API int ql_get_link_status(ql_session* session, ql_link_status* out);
 /* Nonzero until the HELLO arrived. */
 QL_API int ql_get_device_info(ql_session* session, ql_device_info* out);
 /* Newest head pose; nonzero until one arrived. */
@@ -197,6 +230,9 @@ typedef struct ql_config {
     int bye_retry_ms;
     uint32_t refresh_hz;         /* Link session rate; 0 = the headset's default (default 0) */
     int codec;                   /* ql_codec for CONFIG and the encoder (default QL_CODEC_AUTO) */
+    /* API version 4 */
+    int silence_timeout_ms;      /* setup/streaming: no Quest message this long ends the stream (default 3000; 0 = never) */
+    int resume_timeout_ms;       /* ql_host_reopen: no Quest message this long means the stream is gone (default 1000) */
 } ql_config;
 
 /* Byte transport for ql_host_open_transport (tests, other backends). read returns bytes
@@ -254,6 +290,11 @@ typedef struct ql_info {
     uint16_t tx_seq[64];    /* next seq per PC->Q stream topic, 0 = not used yet */
     uint32_t streams;       /* streaming sessions started on this host (a new one needs an IDR) */
     uint32_t byes_sent;     /* BYEs sent while waiting for HELLO */
+    /* API version 4 */
+    uint32_t losses;        /* streams ended by the headset (BYE, new HELLO) or by silence */
+    int32_t last_loss;      /* ql_loss */
+    uint32_t resumes;       /* ql_host_reopen()s the headset confirmed */
+    int32_t resuming;       /* 1 after ql_host_reopen until the headset's first message */
 } ql_info;
 
 QL_API void ql_config_init(ql_config* cfg);
@@ -264,6 +305,11 @@ QL_API ql_status ql_host_open(const ql_config* cfg, ql_host** out);
 /* Same over a caller-provided transport (copied; close is called by ql_host_close). */
 QL_API ql_status ql_host_open_transport(const ql_config* cfg, const ql_transport* transport, ql_host** out);
 QL_API void ql_host_close(ql_host* host);
+/* After QL_ERR_TRANSPORT: close the broken transport, open a new one (transport NULL = USB) and
+ * continue the same session. A stream keeps its frame index and per-topic seq while the headset
+ * still has it (any message within resume_timeout_ms; ql_info.resuming until then), otherwise
+ * the host sends a BYE and starts over. QL_ERR_NO_DEVICE: not back yet, call again. */
+QL_API ql_status ql_host_reopen(ql_host* host, const ql_transport* transport);
 
 /* Read once (up to timeout_ms) and process everything received: handshake, clock sync,
  * poses, stream setup pacing. Call in a loop on one thread. Returns QL_OK, QL_ERR_TRANSPORT

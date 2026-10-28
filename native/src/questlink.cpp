@@ -18,6 +18,7 @@ using namespace ql;
 
 constexpr int kWriteTimeoutMs = 1000;
 static_assert(int(State::Streaming) == QL_STATE_STREAMING && int(State::Failed) == QL_STATE_FAILED);
+static_assert(int(Loss::Silence) == QL_LOSS_SILENCE);
 
 // Adapts a caller-provided ql_transport
 class CallbackTransport final : public Transport {
@@ -54,6 +55,8 @@ SessionConfig to_session_config(const ql_config& c) {
 #ifdef __APPLE__
     s.prefer_hevc = true;  // VideoToolbox: HEVC strips ~88 fps, H.264 ~62 fps at 4096x2240
 #endif
+    s.silence_timeout_ns = int64_t(c.silence_timeout_ms) * 1'000'000;
+    s.resume_timeout_ns = int64_t(c.resume_timeout_ms) * 1'000'000;
     return s;
 }
 
@@ -109,6 +112,23 @@ void to_ql_hand(int hand, const HandRecord& r, const HandSkeleton* headset, ql_h
     }
 }
 
+// Open USB; nullptr with the status to return when the Quest isn't there
+std::unique_ptr<Transport> open_logged(const ql_config* cfg, ql_status& st) {
+    OpenError err;
+    std::string detail;
+    auto t = open_usb(err, detail);
+    {
+        // Callers retry every few ms while waiting for the Quest: log each new reason once
+        static std::mutex mu;
+        static std::string last;
+        std::lock_guard<std::mutex> l(mu);
+        if (detail != last && !detail.empty() && cfg && cfg->log) cfg->log(cfg->log_user, "usb", detail.c_str(), -1);
+        last = detail;
+    }
+    st = t ? QL_OK : err == OpenError::Busy || err == OpenError::NotFound ? QL_ERR_NO_DEVICE : QL_ERR_UNSUPPORTED;
+    return t;
+}
+
 }  // namespace
 
 struct ql_host {
@@ -130,6 +150,7 @@ struct ql_host {
         }
         std::lock_guard<std::mutex> send(send_mu);
         lock.unlock();
+        if (!transport) return QL_ERR_TRANSPORT;  // being reopened
         for (const auto& msgs : out) {
             Bytes data = pack_transfer(msgs);
             if (!transport->write(data.data(), data.size(), kWriteTimeoutMs)) {
@@ -161,6 +182,8 @@ void ql_config_init(ql_config* cfg) {
     cfg->step_timeout_ms = 3000;
     cfg->bye_retry_ms = 3000;
     cfg->codec = QL_CODEC_AUTO;
+    cfg->silence_timeout_ms = 3000;
+    cfg->resume_timeout_ms = 1000;
 }
 
 static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, ql_host** out) {
@@ -190,18 +213,9 @@ static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, q
 ql_status ql_host_open(const ql_config* cfg, ql_host** out) {
     if (!out) return QL_ERR_ARGUMENT;
     *out = nullptr;
-    OpenError err;
-    std::string detail;
-    auto t = open_usb(err, detail);
-    {
-        // Callers retry every few ms while waiting for the Quest: log each new reason once
-        static std::mutex mu;
-        static std::string last;
-        std::lock_guard<std::mutex> l(mu);
-        if (detail != last && !detail.empty() && cfg && cfg->log) cfg->log(cfg->log_user, "usb", detail.c_str(), -1);
-        last = detail;
-    }
-    if (!t) return err == OpenError::Busy || err == OpenError::NotFound ? QL_ERR_NO_DEVICE : QL_ERR_UNSUPPORTED;
+    ql_status st;
+    auto t = open_logged(cfg, st);
+    if (!t) return st;
     return open_with(cfg, std::move(t), out);
 }
 
@@ -213,11 +227,44 @@ ql_status ql_host_open_transport(const ql_config* cfg, const ql_transport* trans
 
 void ql_host_close(ql_host* host) { delete host; }
 
+ql_status ql_host_reopen(ql_host* host, const ql_transport* transport) {
+    if (!host || (transport && (!transport->read || !transport->write))) return QL_ERR_ARGUMENT;
+    {
+        // Close the old one first: the XRSP interface opens only once
+        std::lock_guard<std::mutex> send(host->send_mu);
+        std::lock_guard<std::mutex> lock(host->mu);
+        host->broken = true;
+        host->transport.reset();
+    }
+    std::unique_ptr<Transport> t;
+    if (transport) {
+        t = std::make_unique<CallbackTransport>(*transport);
+    } else {
+        ql_status st;
+        t = open_logged(nullptr, st);
+        if (!t) return st;
+    }
+    try {
+        std::unique_lock<std::mutex> lock(host->mu);
+        {
+            std::lock_guard<std::mutex> send(host->send_mu);
+            host->transport = std::move(t);
+        }
+        host->rx = Reassembler();
+        host->broken = false;
+        host->error.clear();
+        host->session->resume();
+        return host->flush(lock);
+    } catch (...) {
+        return QL_ERR_INTERNAL;
+    }
+}
+
 ql_status ql_host_poll(ql_host* host, int timeout_ms) {
     if (!host) return QL_ERR_ARGUMENT;
     {
         std::lock_guard<std::mutex> lock(host->mu);
-        if (host->broken) return QL_ERR_TRANSPORT;
+        if (host->broken || !host->transport) return QL_ERR_TRANSPORT;
     }
     uint8_t buf[kReadSize];
     long n = host->transport->read(buf, sizeof buf, timeout_ms);
@@ -279,6 +326,10 @@ ql_status ql_host_get_info(ql_host* host, ql_info* out) {
         if (t < 64) out->rx_counts[t] = n;
     out->streams = s.streams();
     out->byes_sent = s.byes_sent();
+    out->losses = s.losses();
+    out->last_loss = int32_t(s.last_loss());
+    out->resumes = s.resumes();
+    out->resuming = s.resuming() ? 1 : 0;
     return QL_OK;
 }
 
