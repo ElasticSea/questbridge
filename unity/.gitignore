@@ -1,0 +1,14 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Ll]ogs/
+[Oo]bj/
+[Uu]ser[Ss]ettings/
+[Bb]uild/
+[Bb]uilds/
+*.csproj
+*.sln
+.vs/
+.idea/
+*.slnx
+.vscode/

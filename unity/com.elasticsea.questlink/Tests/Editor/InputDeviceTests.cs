@@ -1,0 +1,117 @@
+using ElasticSea.QuestLink.Input;
+using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.XR;
+
+namespace ElasticSea.QuestLink.Tests
+{
+    public class InputDeviceTests : InputTestFixture
+    {
+        const float Eps = 1e-5f;
+
+        public override void Setup()
+        {
+            base.Setup();
+            QuestLinkInput.RegisterLayouts();
+            QuestLinkInput.AddDevices();
+        }
+
+        public override void TearDown()
+        {
+            QuestLinkInput.RemoveDevices();
+            QuestLinkInput.hapticHandler = null;
+            base.TearDown();
+        }
+
+        [Test]
+        public void DevicesRegisterAsGenericXRDevices()
+        {
+            Assert.AreSame(QuestLinkInput.Hmd, InputSystem.GetDevice<XRHMD>());
+            Assert.AreSame(QuestLinkInput.LeftController, XRController.leftHand);
+            Assert.AreSame(QuestLinkInput.RightController, XRController.rightHand);
+            Assert.AreEqual(QuestLinkHand.Left, QuestLinkInput.LeftController.Hand);
+            Assert.AreEqual(QuestLinkHand.Right, QuestLinkInput.RightController.Hand);
+            Assert.IsTrue(QuestLinkInput.Hmd.updateBeforeRender);
+        }
+
+        [Test]
+        public void AddDevicesIsIdempotent()
+        {
+            QuestLinkInput.AddDevices();
+            Assert.AreEqual(3, InputSystem.devices.Count);
+        }
+
+        [Test]
+        public void HeadPoseReachesHmdControls()
+        {
+            var rot = Quaternion.Euler(0, 90, 0);
+            QuestLinkInput.QueueHead(new QuestLinkPose { position = new Vector3(1, 2, 3), rotation = rot }, 0.064f, true);
+            InputSystem.Update();
+
+            var hmd = QuestLinkInput.Hmd;
+            Assert.AreEqual(new Vector3(1, 2, 3), hmd.centerEyePosition.ReadValue());
+            Assert.AreEqual(new Vector3(1, 2, 3), hmd.devicePosition.ReadValue());
+            Assert.AreEqual(rot, hmd.centerEyeRotation.ReadValue());
+            Assert.AreEqual(3, hmd.trackingState.ReadValue());
+            Assert.IsTrue(hmd.isTracked.isPressed);
+            // Head turned 90 deg right: the left eye sits toward +Z.
+            var left = hmd.leftEyePosition.ReadValue();
+            Assert.AreEqual(1f, left.x, Eps);
+            Assert.AreEqual(3.032f, left.z, Eps);
+        }
+
+        [Test]
+        public void ControllerStateReachesControls()
+        {
+            QuestLinkInput.QueueController(QuestLinkHand.Right, new QuestLinkControllerState
+            {
+                connected = true, positionTracked = true, rotationTracked = true,
+                pose = new QuestLinkPose { position = new Vector3(0.2f, 1.2f, 0.3f), rotation = Quaternion.identity },
+                trigger = 0.75f, grip = 0.25f, thumbstick = new Vector2(0.5f, -0.5f),
+                primaryButton = true, menu = true,
+            });
+            InputSystem.Update();
+
+            var c = QuestLinkInput.RightController;
+            Assert.AreEqual(new Vector3(0.2f, 1.2f, 0.3f), c.devicePosition.ReadValue());
+            Assert.AreEqual(0.75f, ((AxisControl)c["trigger"]).ReadValue(), Eps);
+            Assert.IsTrue(((ButtonControl)c["triggerPressed"]).isPressed);
+            Assert.IsFalse(((ButtonControl)c["gripPressed"]).isPressed);
+            Assert.IsTrue(((ButtonControl)c["primaryButton"]).isPressed);
+            Assert.IsTrue(((ButtonControl)c["menu"]).isPressed);
+            Assert.AreEqual(0.5f, ((StickControl)c["thumbstick"]).ReadValue().x, 1e-3f);
+            Assert.IsFalse(((ButtonControl)QuestLinkInput.LeftController["primaryButton"]).isPressed);
+        }
+
+        [TestCase("<XRHMD>/centerEyePosition")]
+        [TestCase("<XRHMD>/centerEyeRotation")]
+        [TestCase("<XRController>{LeftHand}/devicePosition")]
+        [TestCase("<XRController>{RightHand}/deviceRotation")]
+        [TestCase("<XRController>{LeftHand}/pointerPosition")]
+        [TestCase("<XRController>{LeftHand}/trigger")]
+        [TestCase("<XRController>{LeftHand}/{TriggerButton}")]
+        [TestCase("<XRController>{LeftHand}/{GripButton}")]
+        [TestCase("<XRController>{LeftHand}/{Primary2DAxis}")]
+        [TestCase("<XRController>{RightHand}/primary2DAxis")]
+        [TestCase("<XRController>{RightHand}/{PrimaryButton}")]
+        [TestCase("<XRController>{RightHand}/{MenuButton}")]
+        public void CommonXRBindingPathsResolve(string path)
+        {
+            Assert.IsNotNull(InputSystem.FindControl(path), path);
+        }
+
+        [Test]
+        public void HapticImpulseIsForwarded()
+        {
+            (QuestLinkHand hand, float amp, float dur)? got = null;
+            QuestLinkInput.hapticHandler = (h, a, d) => got = (h, a, d);
+            QuestLinkInput.LeftController.SendImpulse(0.6f, 0.2f);
+            Assert.IsTrue(got.HasValue);
+            Assert.AreEqual(QuestLinkHand.Left, got.Value.hand);
+            Assert.AreEqual(0.6f, got.Value.amp, Eps);
+            Assert.AreEqual(0.2f, got.Value.dur, Eps);
+        }
+    }
+}
