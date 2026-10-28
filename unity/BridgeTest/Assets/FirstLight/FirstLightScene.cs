@@ -41,6 +41,16 @@ namespace ElasticSea.QuestLink.BridgeTest
 
         void Awake()
         {
+            // "-native-check": log whether libquestlink loads, then quit (exit 1 if not). No USB.
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-native-check") >= 0)
+            {
+                var ok = NativeQuestLink.LibraryLoads(out var error);
+                Debug.Log(ok ? "[QuestLink] native check: libquestlink loaded" : $"[QuestLink] native check failed: {error}");
+                Application.Quit(ok ? 0 : 1);
+                enabled = false;
+                return;
+            }
+
             // Stream at the headset's rate even while the Editor is not focused; never hold the cursor
             Application.runInBackground = true;
             Cursor.lockState = CursorLockMode.None;
