@@ -16,7 +16,7 @@
 ## Milestones
 - [x] M0: USB captures from Windows Link session + protocol spec (handshake, video H.264 slices, pose, audio decoded)
 - [~] M1: Link handshake + session from our host — done on Windows (2026-10-28); still to run on a Mac
-- [~] M2: Video into the headset — replayed Meta frame shows at 72 fps; own encoded test pattern in progress
+- [x] M2: Our own encoded video in the headset — x264 test pattern (4096×2240, 5 slices, ~86 Mbit/s) at 72 fps, 0 glitches (2026-10-28)
 - [ ] M3: Host on macOS: same handshake + VideoToolbox encoder, test pattern in the headset
 - [ ] M4: Sensors decoded: controllers, hands, passthrough (whatever Link carries)
 - [ ] M5: Unity bridge: a Unity scene renders in the headset with head + controller tracking
