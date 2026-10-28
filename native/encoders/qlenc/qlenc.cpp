@@ -3,7 +3,7 @@
 // tools/encode_pattern.py, so `XRSP_REPLAY=... py host/handshake.py` streams it unchanged).
 //
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
-//              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--no-low-latency]
+//              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency]
 //              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
 // Strips (VideoToolbox): one .h264 per strip, capture/runs/<name>-<i>.h264.
 #include <algorithm>
@@ -257,7 +257,7 @@ double percentile(std::vector<double> v, double q) {
 int main(int argc, char** argv) {
     int frames = 144, gop = 72, slices = 5;
     double mbps = 100;
-    bool vbr = false, software = false, csd_every = true, low_latency = true;
+    bool vbr = false, software = false, csd_every = true, low_latency = false;
     std::string name = "qlenc", input = "nv12", root_arg;
 #ifdef __APPLE__
     std::string layout_arg = "strips";  // VideoToolbox has no slice-count control
@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
         else if (a == "--gop") gop = std::stoi(next());
         else if (a == "--input") input = next();
         else if (a == "--software") software = true;
-        else if (a == "--no-low-latency") low_latency = false;
+        else if (a == "--low-latency") low_latency = true;
         else if (a == "--slices") slices = std::stoi(next());
         else if (a == "--layout") layout_arg = next();
         else if (a == "--max-slice-bytes") max_slice_bytes = std::stoul(next());
@@ -283,7 +283,7 @@ int main(int argc, char** argv) {
         else if (a == "--root") root_arg = next();
         else {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
-                            "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--no-low-latency] [--slices 5] "
+                            "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency] [--slices 5] "
                             "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO]\n");
             return 2;
         }

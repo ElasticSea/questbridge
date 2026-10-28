@@ -1,13 +1,13 @@
 // VideoToolbox H.264 backend (macOS).
 //
 // Layout::Strips (the one to use): one VTCompressionSession per strip (5 x 4096x448), all
-// encoding in parallel. Each strip is its own stream (SPS/PPS, IDR, frame_num), which maps onto
+// submitted together. Each strip is its own stream (SPS/PPS, IDR, frame_num), which maps onto
 // the headset's decoder per strip and needs no slice-count control (VideoToolbox has none).
-// Layout::Slices: one full-size session limited by kVTCompressionPropertyKey_MaxH264SliceBytes,
-// kept as a comparison; the slice boundaries follow the byte budget, not the 28-row bands.
+// Layout::Slices: one full-size session with kVTCompressionPropertyKey_MaxH264SliceBytes, kept
+// as a comparison; macOS 26 rejects that property for H.264 (both encoders), so it is 1 slice.
 //
-// Input: CPU NV12/BGRA rows are copied into IOSurface-backed strip buffers; a CVPixelBuffer
-// (GpuFrame) is cut into strips by a VTPixelTransferSession (crop, converts BGRA to NV12).
+// Input: NV12/BGRA rows (CPU memory, or a locked CVPixelBuffer: unified memory, so a row copy
+// beats VTPixelTransferSession crops) are copied into IOSurface-backed strip buffers.
 // Keyframes are forced by this backend (every gop frames) so all strips switch together.
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMedia/CoreMedia.h>
@@ -79,10 +79,6 @@ public:
             for (auto* p : s.pools)
                 if (p) CVPixelBufferPoolRelease(p);
         }
-        if (transfer_) {
-            VTPixelTransferSessionInvalidate(transfer_);
-            CFRelease(transfer_);
-        }
     }
 
     bool init(std::string* error) {
@@ -97,7 +93,7 @@ public:
             strips_[i].pools[1] = make_pool(cfg_.width, strip_h_, cv_format(PixelFormat::BGRA));
             if (!strips_[i].pools[0] || !strips_[i].pools[1]) return fail(error, "CVPixelBufferPoolCreate failed");
         }
-        // ave.avc = the hardware encoder; low-latency RC runs h264.rtvc (which doesn't report it)
+        // ave.avc = the hardware encoder; low-latency RC runs h264.rtvc (long-term refs + MMCO)
         std::string id = "?";
         CFStringRef eid = nullptr;
         if (VTSessionCopyProperty(strips_[0].session, kVTCompressionPropertyKey_EncoderID, nullptr, &eid) == noErr && eid) {
@@ -131,39 +127,27 @@ public:
         auto src = static_cast<CVPixelBufferRef>(g.texture);
         if (!src || int(CVPixelBufferGetWidth(src)) != cfg_.width || int(CVPixelBufferGetHeight(src)) != cfg_.height)
             return fail(nullptr, "GpuFrame needs a CVPixelBuffer of the configured size");
-        if (!transfer_) {
-            OSStatus st = VTPixelTransferSessionCreate(nullptr, &transfer_);
-            if (st != noErr) return fail(nullptr, os_err("VTPixelTransferSessionCreate", st));
-            VTSessionSetProperty(transfer_, kVTPixelTransferPropertyKey_ScalingMode, kVTScalingMode_CropSourceToCleanAperture);
+        OSType t = CVPixelBufferGetPixelFormatType(src);
+        CpuFrame f;
+        if (t == kCVPixelFormatType_32BGRA) {
+            f.format = PixelFormat::BGRA;
+        } else if (t != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange && t != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
+            return fail(nullptr, "CVPixelBuffer must be BGRA or NV12");
         }
-        // The crop is the source's clean aperture (offsets from the picture centre); the
-        // caller's attachment is put back afterwards.
-        CFTypeRef saved = CVBufferCopyAttachment(src, kCVImageBufferCleanApertureKey, nullptr);
-        std::vector<CVPixelBufferRef> bufs(strips_.size(), nullptr);
-        OSStatus st = noErr;
-        for (size_t i = 0; i < strips_.size() && st == noErr; i++) {
-            if (CVPixelBufferPoolCreatePixelBuffer(nullptr, strips_[i].pools[0], &bufs[i]) != kCVReturnSuccess) {
-                st = kCVReturnAllocationFailed;
-                break;
-            }
-            CfRef<CFNumberRef> w(num(int64_t(cfg_.width))), h(num(int64_t(strip_h_))), x(num(int64_t(0))),
-                y(num(int64_t(int(i) * strip_h_ + strip_h_ / 2 - cfg_.height / 2)));
-            const void* k[4] = {kCVImageBufferCleanApertureWidthKey, kCVImageBufferCleanApertureHeightKey,
-                                kCVImageBufferCleanApertureHorizontalOffsetKey, kCVImageBufferCleanApertureVerticalOffsetKey};
-            const void* v[4] = {w.ref, h.ref, x.ref, y.ref};
-            CfRef<CFDictionaryRef> aperture(CFDictionaryCreate(nullptr, k, v, 4, &kCFTypeDictionaryKeyCallBacks,
-                                                               &kCFTypeDictionaryValueCallBacks));
-            CVBufferSetAttachment(src, kCVImageBufferCleanApertureKey, aperture, kCVAttachmentMode_ShouldNotPropagate);
-            st = VTPixelTransferSessionTransferImage(transfer_, src, bufs[i]);
-        }
-        if (saved) {
-            CVBufferSetAttachment(src, kCVImageBufferCleanApertureKey, saved, kCVAttachmentMode_ShouldNotPropagate);
-            CFRelease(saved);
+        if (CVPixelBufferLockBaseAddress(src, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess)
+            return fail(nullptr, "CVPixelBufferLockBaseAddress failed");
+        if (f.format == PixelFormat::BGRA) {
+            f.plane[0] = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(src));
+            f.stride[0] = int(CVPixelBufferGetBytesPerRow(src));
         } else {
-            CVBufferRemoveAttachment(src, kCVImageBufferCleanApertureKey);
+            for (size_t p = 0; p < 2; p++) {
+                f.plane[p] = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(src, p));
+                f.stride[p] = int(CVPixelBufferGetBytesPerRowOfPlane(src, p));
+            }
         }
-        if (st != noErr) return release_fail(bufs, os_err("VTPixelTransferSessionTransferImage", st));
-        return submit(bufs, ts, force_idr, out);
+        bool ok = encode(f, ts, force_idr, out);
+        CVPixelBufferUnlockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
+        return ok;
     }
 
     std::string name() const override { return name_; }
@@ -347,7 +331,7 @@ private:
             size_t n = 0;
             if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fd, k, &p, &n, nullptr, nullptr) != noErr) continue;
             Bytes ps(p, p + n);
-            if (h264::nal_type(ps) == h264::kSps) h264::set_fixed_frame_rate(ps);
+            if (h264::nal_type(ps) == h264::kSps && !h264::add_vui(ps, cfg_.fps)) h264::set_fixed_frame_rate(ps);
             h264::append_annexb(s.csd, ps);
         }
         CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sample);
@@ -370,7 +354,6 @@ private:
     EncoderConfig cfg_;
     std::string name_, error_, rc_note_;
     std::vector<Strip> strips_;
-    VTPixelTransferSessionRef transfer_ = nullptr;
     int strip_h_ = 0;
     int64_t frame_ = 0;
     bool low_latency_ = false, cbr_ = false;

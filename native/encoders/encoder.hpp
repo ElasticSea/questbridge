@@ -35,7 +35,7 @@ struct EncoderConfig {
     int gop = 72;                      // IDR interval in frames; 1 = all intra, 0 = first frame only
     bool hardware = true;              // try the GPU encoder first
     bool allow_software = true;        // fall back to a software encoder
-    bool low_latency_rc = true;        // VideoToolbox: low-latency rate control (no frame delay)
+    bool low_latency_rc = false;       // VideoToolbox: low-latency RC (h264.rtvc: long-term refs, MMCO)
     void* gpu_device = nullptr;        // ID3D11Device* (Windows) for texture input; null = CPU input only
                                        // (macOS: unused, GpuFrame takes a CVPixelBuffer)
 };
