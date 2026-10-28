@@ -9,3 +9,6 @@ __pycache__/
 
 # Native build output
 native/**/build/
+tools/capture/CAP_*
+tools/capture/OVR_*
+tools/capture/REPLUG

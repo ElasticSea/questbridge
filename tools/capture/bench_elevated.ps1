@@ -1,6 +1,6 @@
 # One UAC prompt for a whole bench slot (tools\bench_slot.ps1): stops OVRService, then serves
 # trigger files from the non-elevated slot driver until capture\STOP exists:
-#   capture\CAP_START -> start a USB capture (pcaps\<Name>-<stamp>.pcap)  capture\CAP_STOP -> stop it
+#   capture\CAP_START -> start a USB capture (out\captures\<Name>-<stamp>.pcap)  capture\CAP_STOP -> stop it
 #   capture\REPLUG    -> restart the hub the Quest is on (only with a host running: an unanswered
 #                       HELLO across a replug wedges xrspd, docs/protocol/connecting.md)
 #   capture\OVR_START -> Start-Service OVRService      capture\OVR_STOP -> Stop-Service OVRService
@@ -17,7 +17,7 @@ if (-not $Elevated) {
     return
 }
 
-$outDir = Join-Path $here "pcaps"
+$outDir = Join-Path (Split-Path (Split-Path $here)) "out\captures"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $triggers = "CAP_START", "CAP_STOP", "REPLUG", "OVR_START", "OVR_STOP"
 foreach ($f in @("STOP") + $triggers) { Remove-Item (Join-Path $here $f) -ErrorAction SilentlyContinue }

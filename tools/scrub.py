@@ -7,7 +7,7 @@ length keeps XRSP framing and Cap'n Proto layout (and byte-exact tests) valid.
 Identifiers are learned from the capture itself, not hard-coded: each Quest
 HELLO (topic 1, inner type 0x81) holds the device id (root data word 3), the
 headset serial (text p0) and device/session UUIDs (any UUID text pointer). This PC's host
-name is scrubbed too. Placeholders follow docs/PUBLIC_RELEASE_AUDIT.md.
+name is scrubbed too. Placeholders: tests/fixtures/README.md.
 """
 import os
 import re

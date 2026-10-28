@@ -1,11 +1,11 @@
 # Logs the foreground window's process every 200 ms and fails if a forbidden process ever owns it.
 # Run it alongside a Unity run to prove nothing steals focus.
-#   .\focus_watch.ps1 -Seconds 300 -Out focus.log [-Forbidden 'Unity|SensorProbe|FirstLight']
+#   .\focus_watch.ps1 -Seconds 300 -Out focus.log [-Forbidden 'Unity|FirstLight']
 # Exit 0 = never in front, 1 = a forbidden process took the foreground (lines marked STOLEN).
 param(
     [int]$Seconds = 300,
     [string]$Out = "focus.log",
-    [string]$Forbidden = "^(Unity|Unity Hub|SensorProbe|FirstLight|UnityCrashHandler64)$",
+    [string]$Forbidden = "^(Unity|Unity Hub|FirstLight|UnityCrashHandler64)$",
     [int]$IntervalMs = 200
 )
 if (-not ("QuestBridge.Focus" -as [type])) {

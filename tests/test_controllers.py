@@ -1,5 +1,5 @@
 """Golden facts about controllers and haptics over Meta's Link (Quest 3 + Touch Plus,
-SensorProbe guided run, runtime 1.208). Fixture: tests/fixtures/sensors/controllers.json,
+OpenXR test app, runtime 1.208). Fixture: tests/fixtures/sensors/controllers.json,
 labelled messages written by `decode_controllers.py golden`."""
 import math
 import struct
@@ -131,7 +131,7 @@ class HapticsServer(unittest.TestCase):
         c = f["connect_haptics"]["header"]
         self.assertEqual(c["kind"], RIPC_CONNECT)
         self.assertIn(b"HapticsServer", bodies(f["connect_haptics"])[3])
-        for n, side in ((0, 1), (1, 2)):   # SensorProbe pulsed left, then right
+        for n, side in ((0, 1), (1, 2)):   # the test app pulsed left, then right
             h = f[f"haptic_{n}"]["header"]
             self.assertEqual((h["kind"], h["client"]), (RIPC_CALL, c["client"]))
             self.assertGreater(h["seq"], c["seq"])                               # one seq per PC request

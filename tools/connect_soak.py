@@ -30,7 +30,7 @@ ADB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "P
                    "Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe", "platform-tools", "adb.exe")
 SERIAL = "QUEST0SERIAL00"
 DISTURBANCES = ["none", "orphan", "early", "sleep"]
-OTHER_HOSTS = ("FirstLight.exe", "qbhost.exe", "SensorProbe.exe")
+OTHER_HOSTS = ("FirstLight.exe", "qbhost.exe")
 
 
 def adb(*args, timeout=15):

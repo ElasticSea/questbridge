@@ -1,6 +1,6 @@
 """Find and decode controller, haptics and passthrough traffic in a Link capture.
 
-Built for the SensorProbe guided run: its log has `STEP n name begin/end` lines
+Built for a guided capture run (an OpenXR test app under Meta's runtime): its log has `STEP n name begin/end` lines
 with UTC ms timestamps, and the pcap records carry UTC epoch times, so each
 step becomes a time window in the capture.
 
@@ -37,7 +37,7 @@ def pcap_start(path):
 
 
 def probe_steps(log_path):
-    """[(name, begin_utc, end_utc)] from a SensorProbe log."""
+    """[(name, begin_utc, end_utc)] from the test app's log."""
     begins, out = {}, []
     for line in open(log_path, encoding="utf-8"):
         parts = line.split()

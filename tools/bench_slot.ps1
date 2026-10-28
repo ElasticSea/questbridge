@@ -3,21 +3,19 @@
 #   2 recovery       FirstLight -sequence-recovery + tools\recovery_check.py (sleep, Link quit)
 #   3 encoder strips FirstLight with QB_ENCODER=mf QB_LAYOUT=strips, "picture OK?"
 #   4 encoder sw     FirstLight with QB_ENCODER=openh264, "picture OK?"
-#   5 passthrough    OVRService on, Meta Link, SensorProbe player (passthrough + env depth)
 # Between parts the board says "press Launch when you see it". A focus watcher runs throughout.
 # Needs tools\capture\bench_elevated.ps1 running (one UAC: capture + OVRService triggers) before the
-# user puts the headset on; the USB capture runs during part 5 only. Players start minimized and
+# user puts the headset on. Players start minimized and
 # fall back to -NoMinimize if they stream without encoding. Results: out\runs\slot-<stamp>\summary.txt.
-#   .\bench_slot.ps1 [-Parts 1,2,3,4,5]
-param([int[]]$Parts = @(1, 2, 3, 4, 5))
+#   .\bench_slot.ps1 [-Parts 1,2,3,4]
+param([int[]]$Parts = @(1, 2, 3, 4))
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
 $dir = Join-Path $repo ("out\runs\slot-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Force $dir | Out-Null
 $summary = Join-Path $dir "summary.txt"
-$adb = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools\adb.exe"
+$adb = if ($env:ADB) { $env:ADB } else { "adb" }
 $firstLight = Join-Path $repo "unity\BridgeTest\Build\FirstLight\FirstLight.exe"
-$sensorProbe = Join-Path $repo "unity\SensorProbe\Build\SensorProbe.exe"
 $launch = "Link closes now.|Press Launch when you see it."
 function Say($text) { $line = "$(Get-Date -Format HH:mm:ss) $text"; Write-Host $line; $line | Add-Content $summary }
 function Grep($file, $pattern) { if (Test-Path $file) { @(Select-String -Path $file -Pattern $pattern | ForEach-Object { $_.Line }) } else { @() } }
@@ -74,7 +72,7 @@ function FirstLight($name, [string]$flags, [hashtable]$envs) {
 }
 
 if (1 -in $Parts) {
-    FirstLight "1-player" "-sequence-look -look-label `"PART 1 of 5|Player check`" -look-next `"PART 2: recovery test.|$launch`"" @{} | Out-Null
+    FirstLight "1-player" "-sequence-look -look-label `"PART 1 of 4|Player check`" -look-next `"PART 2: recovery test.|$launch`"" @{} | Out-Null
 }
 if (2 -in $Parts) {
     $d = Join-Path $dir "2-recovery"
@@ -88,52 +86,13 @@ if (2 -in $Parts) {
     Say "part 2-recovery recovery_check: $((Get-Content (Join-Path $d 'recovery_check.log') -Tail 3) -join ' | ')"
 }
 if (3 -in $Parts) {
-    FirstLight "3-mf-strips" "-sequence-look -look-label `"PART 3 of 5|Encoder: Media Foundation strips`" -look-next `"PART 4: encoder test (software).|$launch`"" @{ QB_ENCODER = "mf"; QB_LAYOUT = "strips" } | Out-Null
+    FirstLight "3-mf-strips" "-sequence-look -look-label `"PART 3 of 4|Encoder: Media Foundation strips`" -look-next `"PART 4: encoder test (software).|$launch`"" @{ QB_ENCODER = "mf"; QB_LAYOUT = "strips" } | Out-Null
 }
 if (4 -in $Parts) {
-    FirstLight "4-openh264" "-sequence-look -look-label `"PART 4 of 5|Encoder: OpenH264 (software)`" -look-next `"PART 5: passthrough on Meta Link.|$launch`"" @{ QB_ENCODER = "openh264" } | Out-Null
-}
-if (5 -in $Parts) {
-    $d = Join-Path $dir "5-passthrough"
-    New-Item -ItemType Directory -Force $d | Out-Null
-    $pcaps = Join-Path $repo "out\captures"
-    $before = Get-Date
-    New-Item -ItemType File (Join-Path $repo "capture\CAP_START") -Force | Out-Null
-    New-Item -ItemType File (Join-Path $repo "capture\OVR_START") -Force | Out-Null
-    for ($i = 0; $i -lt 60 -and (Get-Service OVRService).Status -ne "Running"; $i++) { Start-Sleep 1 }
-    $pcap = Get-ChildItem $pcaps "*.pcap" | Where-Object { $_.CreationTime -gt $before } | Select-Object -First 1
-    Say "part 5 OVRService $((Get-Service OVRService).Status); capture $($pcap.Name); waiting for Meta Link to stream"
-    # SensorProbe's OpenXR needs the Link session up: start it on the headset's first frame
-    & $adb -s 192.0.2.10:5555 logcat -c
-    $seen = Start-Job -ScriptBlock { param($a) & $a -s 192.0.2.10:5555 logcat -s xrstreaming | Select-String -Pattern "first frame received" | Select-Object -First 1 } -ArgumentList $adb
-    Wait-Job $seen -Timeout 900 | Out-Null
-    Say "part 5 Meta Link: $(Receive-Job $seen)"
-    Remove-Job $seen -Force
-    # Meta's stream alone is several MB/s on the wire: less means USBPcap is blind to the Quest
-    if ($pcap) {
-        $s0 = (Get-Item $pcap.FullName).Length; Start-Sleep 5; $s1 = (Get-Item $pcap.FullName).Length
-        Say "part 5 capture rate $([math]::Round(($s1 - $s0) / 5MB, 1)) MB/s$(if (($s1 - $s0) / 5 -lt 1MB) { '  BLIND?' })"
-    }
-    $probe = Player $sensorProbe "-probeSteps passthrough,passthrough_off,envdepth,envdepth_off"
-    $log = $null
-    for ($i = 0; $i -lt 3600; $i++) {
-        Start-Sleep 1
-        if (-not $log) { $log = Get-ChildItem (Split-Path $sensorProbe) "SensorProbe_*.log" | Where-Object { $_.LastWriteTime -gt (Get-Date).AddSeconds(-$i - 5) } | Sort-Object LastWriteTime | Select-Object -Last 1 }
-        if ($log -and (Grep $log.FullName "guided end")) { break }
-    }
-    Start-Sleep 5
-    Get-Process SensorProbe -ErrorAction SilentlyContinue | Stop-Process -Force
-    Receive-Job $probe *>> (Join-Path $d "launcher.log")
-    Remove-Job $probe -Force
-    New-Item -ItemType File (Join-Path $repo "capture\CAP_STOP") -Force | Out-Null
-    if ($pcap) { Say "part 5 capture $($pcap.FullName) $([math]::Round((Get-Item $pcap.FullName).Length / 1MB)) MB" }
-    if ($log) {
-        Copy-Item $log.FullName $d
-        Say "part 5 $((Grep $log.FullName 'openxr extensions|ANSWER|passthrough on|envdepth on|envdepth frames') -join ' / ')"
-    }
+    FirstLight "4-openh264" "-sequence-look -look-label `"PART 4 of 4|Encoder: OpenH264 (software)`" -look-next `"All parts done.|Take the headset off.`"" @{ QB_ENCODER = "openh264" } | Out-Null
 }
 Stop-Job $focus; Remove-Job $focus -Force
 $stolen = @(Grep (Join-Path $dir "focus.log") "STOLEN").Count
 Say "focus: $stolen STOLEN samples"
-New-Item -ItemType File (Join-Path $repo "capture\STOP") -Force | Out-Null
+New-Item -ItemType File (Join-Path $repo "tools\capture\STOP") -Force | Out-Null
 Say "slot done; capture and OVRService stop requested"
