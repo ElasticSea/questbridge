@@ -24,9 +24,14 @@ struct Sps {
     int width_mbs = 0;
     int height_mbs = 0;
     int log2_max_frame_num = 0;
+    int fixed_frame_rate_bit = -1;  // RBSP bit offset of vui fixed_frame_rate_flag; -1 = no timing info
 };
 
 bool parse_sps(std::span<const uint8_t> nal, Sps& out);
+
+// Set the VUI fixed_frame_rate_flag (encoders that can't be told the rate is constant).
+// False if the SPS has no VUI timing info.
+bool set_fixed_frame_rate(Bytes& sps_nal);
 
 struct SliceHeader {
     int first_mb = 0;

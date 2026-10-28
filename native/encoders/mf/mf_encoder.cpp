@@ -478,7 +478,10 @@ private:
         Bytes sps, pps;
         for (auto nal : h264::split_annexb(es)) {
             switch (h264::nal_type(nal)) {
-            case h264::kSps: sps.assign(nal.begin(), nal.end()); break;
+            case h264::kSps:
+                sps.assign(nal.begin(), nal.end());
+                h264::set_fixed_frame_rate(sps);  // NVIDIA writes fixed_frame_rate_flag 0 at a constant rate
+                break;
             case h264::kPps: pps.assign(nal.begin(), nal.end()); break;
             case h264::kIdr:
             case h264::kSlice: {
@@ -512,7 +515,11 @@ private:
             return;
         Bytes blob(size);
         t->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, blob.data(), size, nullptr);
-        for (auto nal : h264::split_annexb(blob)) h264::append_annexb(csd_, nal);
+        for (auto nal : h264::split_annexb(blob)) {
+            Bytes n(nal.begin(), nal.end());
+            if (h264::nal_type(n) == h264::kSps) h264::set_fixed_frame_rate(n);
+            h264::append_annexb(csd_, n);
+        }
     }
 
     // BGRA (or any RGB) texture -> internal NV12 texture with the D3D11 video processor.

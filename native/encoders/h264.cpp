@@ -24,6 +24,7 @@ class Bits {
 public:
     explicit Bits(const Bytes& d) : d_(d) {}
     bool ok() const { return ok_; }
+    size_t pos() const { return p_; }
 
     uint32_t u(int n) {
         uint32_t v = 0;
@@ -110,7 +111,48 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
     int map_units = int(b.ue()) + 1;
     int frame_mbs_only = int(b.u(1));
     out.height_mbs = map_units * (2 - frame_mbs_only);
+    if (!frame_mbs_only) b.u(1);
+    b.u(1);  // direct_8x8_inference_flag
+    if (b.u(1))
+        for (int i = 0; i < 4; i++) b.ue();  // frame_crop offsets
+    out.fixed_frame_rate_bit = -1;
+    if (b.u(1)) {  // VUI (E.1.1) up to fixed_frame_rate_flag
+        if (b.u(1) && b.u(8) == 255) b.u(32);  // aspect_ratio_idc, sar
+        if (b.u(1)) b.u(1);                    // overscan
+        if (b.u(1)) {                          // video_signal_type_present_flag
+            b.u(3);                            // video_format
+            b.u(1);                            // video_full_range_flag
+            if (b.u(1)) b.u(24);               // colour description
+        }
+        if (b.u(1)) b.ue(), b.ue();            // chroma_sample_loc
+        if (b.u(1)) {                          // timing_info_present_flag
+            b.u(32);
+            b.u(32);
+            out.fixed_frame_rate_bit = int(b.pos());
+        }
+    }
     return b.ok();
+}
+
+bool set_fixed_frame_rate(Bytes& nal) {
+    Sps sps;
+    if (!parse_sps(nal, sps) || sps.fixed_frame_rate_bit < 0) return false;
+    Bytes data = rbsp(nal, nal.size());
+    size_t bit = size_t(sps.fixed_frame_rate_bit);
+    data[bit >> 3] |= uint8_t(0x80 >> (bit & 7));
+    // Re-escape (7.4.1): 00 00 0x with x <= 3 gets an emulation_prevention_three_byte.
+    Bytes out{nal[0]};
+    int zeros = 0;
+    for (uint8_t b : data) {
+        if (zeros >= 2 && b <= 3) {
+            out.push_back(3);
+            zeros = 0;
+        }
+        out.push_back(b);
+        zeros = b == 0 ? zeros + 1 : 0;
+    }
+    nal = std::move(out);
+    return true;
 }
 
 bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out) {
