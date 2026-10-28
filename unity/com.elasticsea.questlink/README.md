@@ -13,7 +13,8 @@ The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`);
 1. Add the package (Package Manager → Add package from disk → `package.json`, or `"com.elasticsea.questlink": "file:<path>"` in `manifest.json`).
 2. Put `QuestLinkRig` on an empty GameObject at the tracking origin (floor level). It creates `Head/LeftEye` and `Head/RightEye` cameras. Use `cameraTemplate` to copy clear flags, culling mask and similar settings onto both eyes.
 3. Bind to the generic XR paths with stock components such as TrackedPoseDriver or XRI: `<XRHMD>/centerEyePosition`, `<XRController>{LeftHand}/devicePosition`, `{RightHand}/{TriggerButton}`, `/primary2DAxis`, …
-4. Sample: Package Manager → Quest Link for Mac → Samples → Basic Scene.
+4. Hands: add `QuestLinkHands` to the rig object; `HandJointsVisualizer` draws each joint as a sphere. With Unity XR Hands (`com.unity.xr.hands` 1.3+) in the project, also add `QuestLinkXRHands` to run an `XRHandSubsystem` fed by QuestLink, so XR Hands visualizers and XRI hand interaction work; parent their visuals to the rig (joint poses are relative to the tracking origin).
+5. Sample: Package Manager → Quest Link for Mac → Samples → Basic Scene.
 
 Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it directly.
 
@@ -24,6 +25,7 @@ Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it dir
 - **Late latch.** In `Application.onBeforeRender` the rig reads the newest head pose, moves `Head`, and stores that exact pose with an increasing `FrameIndex`.
 - **Submit.** Once both eye cameras have rendered (`Camera.onPostRender` in the built-in pipeline, end of the SRP context otherwise), the rig calls `SubmitFrame(rt, renderPose, frameIndex)` once. The native backend passes the (flipped) texture's `GetNativeTexturePtr()` (`ID3D11Texture2D*` on D3D11, `id<MTLTexture>` on Metal) to the render thread through `CommandBuffer.IssuePluginEventAndData`.
 - **Input.** `QuestLinkHMD : XRHMD` and two `QuestLinkController : XRControllerWithRumble`, with `LeftHand`/`RightHand` usages. Control names follow Unity's Oculus Touch layout, and usages follow XR feature usages (`TriggerButton`, `GripButton`, `Primary2DAxis`, `PrimaryButton`, `MenuButton`, …). `SendImpulse` and any `SendHapticImpulseCommand` go to the backend's `SendHaptic`.
+- **Hands.** libquestlink turns hand tracking on once streaming (InputControl on topic 28; `QL_HANDS=0` before starting the Editor keeps it off) and parses topic 8. `QuestLinkHands` reads both hands in `Update` and again before rendering: 26 OpenXR joints (pose + radius; Unity XR Hands axes, +Z toward the fingertip, +Y back of the hand), confidence, pinch strength per finger, aim ray, dominant hand. The mock backend animates two hands curling their fingers through a C# port of the native forward kinematics (`QuestLinkHandSkeleton`).
 - **Defaults.** Quest 3 values from PROTOCOL_NOTES.md: FOV in up/down/left/right degrees is 44/55/54/40 for the left eye and mirrored for the right, IPD is 63.5 mm, and the stream runs at 72 Hz. The native layer overrides them when it reports device info.
 
 ## Audio
@@ -55,6 +57,7 @@ int  ql_poll(ql_session*);              // 0 idle, 1 connecting, 2 streaming
 int  ql_get_device_info(ql_session*, ql_device_info*);   // nonzero until HELLO arrived
 int  ql_get_head_pose(ql_session*, ql_pose*);            // newest (ideally predicted) head pose
 int  ql_get_controller(ql_session*, int hand /*0 L,1 R*/, ql_controller*);
+int  ql_get_hands(ql_session*, ql_hands*);               // 26 OpenXR joints per hand, see questlink.h "Hand tracking"
 int  ql_haptic(ql_session*, int hand, float amplitude, float duration_s);
 int  ql_submit_frame_texture(ql_session*, void* native_texture, const ql_pose* render_pose, uint64_t frame_index);
 // UnityRenderingEventAndData; event 1 = submit, data = ql_frame_submit* (valid until the event runs)

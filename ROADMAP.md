@@ -27,7 +27,7 @@
 - [~] M6: (Windows done 2026-10-28: FirstLight scene from a Unity player streams via native core + NVIDIA MF encoder, both eyes stable, timewarp OK; Mac/VideoToolbox pending) — Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
 - [~] audio: game audio → headset (topic 6, 10 ms paced float32 blocks) and headset mic → Unity (`QuestLinkAudio`, `QuestLinkMicrophone`); native + Unity tests pass, FirstLight beep/mic loop awaiting bench (2026-10-28)
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
-- [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); C# API pending
+- [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); native parse + FK + `ql_get_hands`, hands-on InputControl at stream start, `QuestLinkHands` + `HandJointsVisualizer` + XR Hands provider, mock hands (2026-10-28); live bench check pending
 - [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
 - [ ] M10: standalone macOS player build; latency tuning
 - [ ] later: environment depth / body tracking over Link; XR SDK display provider; raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
