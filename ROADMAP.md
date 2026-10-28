@@ -11,8 +11,8 @@
 - [ ] **6. Supporting work** — distortion/IPD/FOV per Quest model, guardian/passthrough, menu-bar app + installer, handling Quest firmware protocol changes
 
 ## Milestones
-- [~] M0: USB captures from Windows Link session + protocol spec (handshake fully decoded; video/pose layouts next)
-- [ ] M1: Mac completes Link handshake; Quest enters Link mode
+- [x] M0: USB captures from Windows Link session + protocol spec (handshake, video H.264 slices, pose, audio decoded)
+- [~] M1: Link handshake + session from our host — done on Windows (2026-10-28); still to run on a Mac
 - [ ] M2: Test pattern on Quest + pose round-trip
 - [ ] M3: Native Metal VR demo
 - [ ] M4: OpenXR runtime
