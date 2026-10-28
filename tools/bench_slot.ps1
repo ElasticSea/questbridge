@@ -6,7 +6,8 @@
 #   5 passthrough    OVRService on, Meta Link, SensorProbe player (passthrough + env depth)
 # Between parts the board says "press Launch when you see it". A focus watcher runs throughout.
 # Needs capture\bench_elevated.ps1 running (one UAC: capture + OVRService triggers) before the
-# user puts the headset on. Results: capture\runs\slot-<stamp>\summary.txt.
+# user puts the headset on; the USB capture runs during part 5 only. Players start minimized and
+# fall back to -NoMinimize if they stream without encoding. Results: capture\runs\slot-<stamp>\summary.txt.
 #   .\bench_slot.ps1 [-Parts 1,2,3,4,5]
 param([int[]]$Parts = @(1, 2, 3, 4, 5))
 $ErrorActionPreference = "Stop"
@@ -24,6 +25,15 @@ function Grep($file, $pattern) { if (Test-Path $file) { @(Select-String -Path $f
 $focus = Start-Job -ScriptBlock { param($s, $o) & $s -Seconds 3600 -Out $o } `
     -ArgumentList (Join-Path $PSScriptRoot "focus_watch.ps1"), (Join-Path $dir "focus.log")
 
+# Players start minimized; if a minimized player streams but never encodes a frame (nothing in
+# the headset), it is restarted with -NoMinimize and the rest of the slot keeps that
+$script:noMinimize = $false
+function Player($exe, [string]$argLine) {
+    $job = Start-Job -ScriptBlock { param($s, $e, $a, $n) & $s -Exe $e -ArgLine $a -TimeoutS 1800 -NoMinimize:$n *>&1; "exit $LASTEXITCODE" } `
+        -ArgumentList (Join-Path $PSScriptRoot "start_player.ps1"), $exe, $argLine, $script:noMinimize
+    return $job
+}
+
 # One FirstLight part through start_player.ps1; returns the part's log directory
 function FirstLight($name, [string]$flags, [hashtable]$envs) {
     $d = Join-Path $dir $name
@@ -33,10 +43,33 @@ function FirstLight($name, [string]$flags, [hashtable]$envs) {
     $env:QL_LOG = "1"
     $env:QL_LOG_FILE = Join-Path $d "ql.log"
     $argLine = "$flags -screen-fullscreen 0 -screen-width 320 -screen-height 180 -logFile `"$(Join-Path $d 'player.log')`""
-    Say "part $name start ($($envs.Keys | ForEach-Object { "$_=$($envs[$_])" }))"
-    & (Join-Path $PSScriptRoot "start_player.ps1") -Exe $firstLight -ArgLine $argLine -TimeoutS 1800 *>> (Join-Path $d "launcher.log")
-    Say "part $name exit $LASTEXITCODE; $((Grep (Join-Path $d 'player.log') '\[Look\] answer|\[Recovery\] done') -join '; ')"
-    Say "part $name encoder: $((Grep (Join-Path $d 'ql.log') 'encoder|backend' | Select-Object -First 2) -join ' / ')"
+    $ql = Join-Path $d "ql.log"
+    for ($try = 0; ; $try++) {
+        Say "part $name start ($($envs.Keys | ForEach-Object { "$_=$($envs[$_])" }))$(if ($script:noMinimize) { ' -NoMinimize' })"
+        $job = Player $firstLight $argLine
+        $streamingAt = $null
+        $restart = $false
+        while ($job.State -eq "Running") {
+            Start-Sleep -Milliseconds 500
+            if (-not $script:noMinimize -and $try -eq 0) {
+                if (-not $streamingAt -and (Grep $ql "-> streaming")) { $streamingAt = Get-Date }
+                if ($streamingAt -and -not (Grep $ql "encoder:") -and ((Get-Date) - $streamingAt).TotalSeconds -gt 8) {
+                    Say "part $name streaming but no frame encoded while minimized: restarting with -NoMinimize"
+                    Get-Process FirstLight -ErrorAction SilentlyContinue | Stop-Process -Force
+                    $restart = $true
+                    break
+                }
+            }
+        }
+        Wait-Job $job -Timeout 10 | Out-Null
+        Receive-Job $job *>> (Join-Path $d "launcher.log")
+        Remove-Job $job -Force
+        if (-not $restart) { break }
+        $script:noMinimize = $true
+        Rename-Item $ql "ql-minimized.log" -ErrorAction SilentlyContinue
+    }
+    Say "part $name done; $((Grep (Join-Path $d 'player.log') '\[Look\] answer|\[Recovery\] done') -join '; ')"
+    Say "part $name encoder: $((Grep $ql 'encoder' | Select-Object -First 2) -join ' / ')"
     return $d
 }
 
@@ -63,17 +96,25 @@ if (4 -in $Parts) {
 if (5 -in $Parts) {
     $d = Join-Path $dir "5-passthrough"
     New-Item -ItemType Directory -Force $d | Out-Null
+    $pcaps = Join-Path $repo "capture\pcaps"
+    $before = Get-Date
+    New-Item -ItemType File (Join-Path $repo "capture\CAP_START") -Force | Out-Null
     New-Item -ItemType File (Join-Path $repo "capture\OVR_START") -Force | Out-Null
     for ($i = 0; $i -lt 60 -and (Get-Service OVRService).Status -ne "Running"; $i++) { Start-Sleep 1 }
-    Say "part 5 OVRService $((Get-Service OVRService).Status); waiting for Meta Link to stream"
+    $pcap = Get-ChildItem $pcaps "*.pcap" | Where-Object { $_.CreationTime -gt $before } | Select-Object -First 1
+    Say "part 5 OVRService $((Get-Service OVRService).Status); capture $($pcap.Name); waiting for Meta Link to stream"
     # SensorProbe's OpenXR needs the Link session up: start it on the headset's first frame
     & $adb -s 192.0.2.10:5555 logcat -c
     $seen = Start-Job -ScriptBlock { param($a) & $a -s 192.0.2.10:5555 logcat -s xrstreaming | Select-String -Pattern "first frame received" | Select-Object -First 1 } -ArgumentList $adb
     Wait-Job $seen -Timeout 900 | Out-Null
     Say "part 5 Meta Link: $(Receive-Job $seen)"
     Remove-Job $seen -Force
-    $probe = Start-Job -ScriptBlock { param($s, $e) & $s -Exe $e -ArgLine "-probeSteps passthrough,passthrough_off,envdepth,envdepth_off" -TimeoutS 1800 } `
-        -ArgumentList (Join-Path $PSScriptRoot "start_player.ps1"), $sensorProbe
+    # Meta's stream alone is several MB/s on the wire: less means USBPcap is blind to the Quest
+    if ($pcap) {
+        $s0 = (Get-Item $pcap.FullName).Length; Start-Sleep 5; $s1 = (Get-Item $pcap.FullName).Length
+        Say "part 5 capture rate $([math]::Round(($s1 - $s0) / 5MB, 1)) MB/s$(if (($s1 - $s0) / 5 -lt 1MB) { '  BLIND?' })"
+    }
+    $probe = Player $sensorProbe "-probeSteps passthrough,passthrough_off,envdepth,envdepth_off"
     $log = $null
     for ($i = 0; $i -lt 3600; $i++) {
         Start-Sleep 1
@@ -82,7 +123,10 @@ if (5 -in $Parts) {
     }
     Start-Sleep 5
     Get-Process SensorProbe -ErrorAction SilentlyContinue | Stop-Process -Force
+    Receive-Job $probe *>> (Join-Path $d "launcher.log")
     Remove-Job $probe -Force
+    New-Item -ItemType File (Join-Path $repo "capture\CAP_STOP") -Force | Out-Null
+    if ($pcap) { Say "part 5 capture $($pcap.FullName) $([math]::Round((Get-Item $pcap.FullName).Length / 1MB)) MB" }
     if ($log) {
         Copy-Item $log.FullName $d
         Say "part 5 $((Grep $log.FullName 'openxr extensions|ANSWER|passthrough on|envdepth on|envdepth frames') -join ' / ')"

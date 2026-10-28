@@ -1,8 +1,12 @@
-# Starts a Unity player that streams to the headset (FirstLight, SensorProbe) on the user's desktop
+﻿# Starts a Unity player that streams to the headset (FirstLight, SensorProbe) on the user's desktop
 # without taking focus. Players must stay on the real desktop: on unity_hidden.ps1's hidden desktop
 # they reach Streaming but never submit frames (headset stays on Meta's loading dots). The Editor
 # and tests keep using unity_hidden.ps1.
-#   - window created minimized and not activated (SW_SHOWMINNOACTIVE; -NoMinimize: SW_SHOWNOACTIVATE)
+#   - embedded (Unity -parentHWND) as a child of a host window this script owns: WS_EX_NOACTIVATE
+#     tool window, off-screen (-NoMinimize: visible in the bottom-left corner of the primary screen).
+#     A child window can't be foreground, so the player can't take focus even while its engine
+#     init blocks its window (a top-level player window, minimized or not, held the foreground for
+#     ~10 s at startup when the user was idle; -NoEmbed keeps that old top-level mode)
 #   - LockSetForegroundWindow while it starts, so it can't call SetForegroundWindow
 #   - focus guard for the whole run: if a window of the player becomes foreground anyway, the
 #     previous foreground window is restored and the player minimized; each case is logged (FOCUS)
@@ -13,17 +17,18 @@ param(
     [string]$ArgLine = "",
     [string]$WorkingDirectory = (Get-Location).Path,
     [int]$TimeoutS = 1800,
-    [switch]$NoMinimize
+    [switch]$NoMinimize,
+    [switch]$NoEmbed
 )
 $ErrorActionPreference = "Stop"
 
-if (-not ("QuestLink.PlayerLauncher" -as [type])) {
+if (-not ("QuestLink.PlayerHost" -as [type])) {
     Add-Type -TypeDefinition @"
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 namespace QuestLink {
-public static class PlayerLauncher {
+public static class PlayerHost {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct STARTUPINFO {
         public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
@@ -47,6 +52,52 @@ public static class PlayerLauncher {
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+
+    delegate IntPtr WndProc(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct WNDCLASS {
+        public uint style; public WndProc lpfnWndProc; public int cbClsExtra, cbWndExtra;
+        public IntPtr hInstance, hIcon, hCursor, hbrBackground; public string lpszMenuName, lpszClassName;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public int x, y; }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClass(ref WNDCLASS c);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateWindowEx(uint ex, string cls, string title, uint style, int x, int y, int w, int h,
+        IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
+    [DllImport("user32.dll")] static extern IntPtr DefWindowProc(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool PeekMessage(out MSG m, IntPtr h, uint min, uint max, uint remove);
+    [DllImport("user32.dll")] static extern bool TranslateMessage(ref MSG m);
+    [DllImport("user32.dll")] static extern IntPtr DispatchMessage(ref MSG m);
+    [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    static WndProc proc = DefWindowProc;  // kept alive for the window's lifetime
+    static IntPtr host;
+
+    const uint WS_POPUP = 0x80000000, WS_CLIPCHILDREN = 0x02000000;
+    const uint WS_EX_NOACTIVATE = 0x08000000, WS_EX_TOOLWINDOW = 0x80;
+
+    // Host window for -parentHWND: never activated, off-screen unless visible is set
+    public static long CreateHost(int w, int h, bool visible) {
+        var c = new WNDCLASS();
+        c.lpfnWndProc = proc;
+        c.lpszClassName = "QuestLinkPlayerHost";
+        RegisterClass(ref c);
+        int x = visible ? 0 : -10 * w, y = visible ? GetSystemMetrics(1) - h - 48 : -10 * h;
+        host = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, c.lpszClassName, "QuestLink player",
+            WS_POPUP | WS_CLIPCHILDREN, x, y, w, h, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (host == IntPtr.Zero) throw new Win32Exception();
+        ShowWindow(host, SW_SHOWNOACTIVATE);
+        return host.ToInt64();
+    }
+
+    // Child windows of another process send messages to the host: keep its queue moving
+    public static void Pump() {
+        MSG m;
+        while (PeekMessage(out m, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(ref m); DispatchMessage(ref m); }
+    }
+
+    public static void DestroyHost() { if (host != IntPtr.Zero) DestroyWindow(host); host = IntPtr.Zero; }
 
     const int STARTF_USESHOWWINDOW = 0x1;
     const short SW_SHOWMINNOACTIVE = 7, SW_SHOWNOACTIVATE = 4;
@@ -103,18 +154,24 @@ public static class PlayerLauncher {
 }
 
 $exePath = (Resolve-Path $Exe).Path
-$procId = [QuestLink.PlayerLauncher]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path, -not $NoMinimize)
-Write-Host "started $([IO.Path]::GetFileName($exePath)) pid $procId (no-activate, focus guard on)"
+if (-not $NoEmbed) {
+    $hwnd = [QuestLink.PlayerHost]::CreateHost(320, 180, [bool]$NoMinimize)
+    $ArgLine = "-parentHWND $hwnd $ArgLine"
+}
+$procId = [QuestLink.PlayerHost]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path, -not $NoMinimize)
+Write-Host "started $([IO.Path]::GetFileName($exePath)) pid $procId ($(if ($NoEmbed) { "top-level" } else { "embedded" }), no-activate, focus guard on)"
 $started = Get-Date
 $deadline = $started.AddSeconds($TimeoutS)
 $unlocked = $false
 $code = -2
 while ($code -eq -2) {
-    if ((Get-Date) -gt $deadline) { $code = [QuestLink.PlayerLauncher]::Kill(); break }
-    if ([QuestLink.PlayerLauncher]::Guard()) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) FOCUS taken by the player, restored" }
+    if ((Get-Date) -gt $deadline) { $code = [QuestLink.PlayerHost]::Kill(); break }
+    if ([QuestLink.PlayerHost]::Guard()) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) FOCUS taken by the player, restored" }
     # Keep the foreground lock while the player starts up (window creation, XR init), then release it.
-    if (-not $unlocked -and ((Get-Date) - $started).TotalSeconds -gt 30) { [QuestLink.PlayerLauncher]::Unlock(); $unlocked = $true }
-    $code = [QuestLink.PlayerLauncher]::Poll(100)
+    if (-not $unlocked -and ((Get-Date) - $started).TotalSeconds -gt 30) { [QuestLink.PlayerHost]::Unlock(); $unlocked = $true }
+    [QuestLink.PlayerHost]::Pump()
+    $code = [QuestLink.PlayerHost]::Poll(20)
 }
-if (-not $unlocked) { [QuestLink.PlayerLauncher]::Unlock() }
+[QuestLink.PlayerHost]::DestroyHost()
+if (-not $unlocked) { [QuestLink.PlayerHost]::Unlock() }
 exit $code
