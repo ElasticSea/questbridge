@@ -9,6 +9,7 @@ Usage: py host/handshake.py [seconds]
 import collections
 import copy
 import json
+import math
 import os
 import struct
 import sys
@@ -26,6 +27,10 @@ TOPIC_CONTROL = 1
 HELLO, CONFIG, ACK, CONFIRM, CONFIRM_ACK, START, READY, LINK_REQUEST = 0x81, 0x82, 0x83, 0x89, 0x8A, 0x87, 0x80, 0x85
 CLOCK_PING, CLOCK_PONG = 0x06, 0x16
 TOPIC_HEAD_POSE, HEAD_POSE_SEGMENT = 34, 272
+TOPIC_INPUT_CONTROL = 28
+# Per-eye FovPort tangents (left, right, up, down) from the HELLO device description: up 44, down 55,
+# outer 54, inner 40 degrees. Meta's recorded loading-screen frame has them all zero.
+FOV_TANGENTS = tuple(tuple(math.tan(math.radians(a)) for a in eye) for eye in ((54, 40, 44, 55), (40, 54, 44, 55)))
 
 
 def load_templates():
@@ -58,6 +63,9 @@ class Host:
         # Render pose written into each frame: "fixed" = first head pose (panel stays put in
         # the world via headset reprojection), "live" = latest pose, "template" = as recorded
         self.pose_mode = os.environ.get("XRSP_POSE", "fixed")
+        # XRSP_DUMP=8,9,32: append raw Quest->PC messages of these topics to capture/runs/dump.txt
+        self.dump_topics = {int(t) for t in filter(None, os.environ.get("XRSP_DUMP", "").split(","))}
+        self.dump = open(os.path.join(ROOT, "capture", "runs", "dump.txt"), "a") if self.dump_topics else None
 
     # --- sending -------------------------------------------------------------
     def send_control(self, typ, version, patch=None):
@@ -131,6 +139,14 @@ class Host:
         def config_patch(tree):
             if version == 1:
                 tree["s"][10] = session
+            else:
+                if os.environ.get("XRSP_SLICES"):
+                    tree["s"][1] = int(os.environ["XRSP_SLICES"])  # v3 CONFIG data word 1: slices per frame
+                for f in filter(None, os.environ.get("XRSP_FEATURES_ADD", "").split(",")):
+                    # Selected session features: u16 list at p1 (Meta: 1,3,2,19,7,14,15)
+                    feats = tree["p"][1]
+                    feats["b"] += struct.pack("<H", int(f)).hex()
+                    feats["n"] += 1
 
         def session_patch(tree):
             if version == 1:
@@ -148,9 +164,15 @@ class Host:
             # Headset session is still up from an earlier run of ours: skip the handshake
             self.seq = int(os.environ.get("XRSP_CONTROL_SEQ", "16"))
             # The headset remembers per-topic seq and frame index; continue past earlier runs
+            # XRSP_VIDEO_SEQ: one value for all slice topics, or five comma-separated (topics 10..14)
+            seqs = [int(v) for v in os.environ.get("XRSP_VIDEO_SEQ", "0").split(",")]
             for t in range(10, 15):
-                self.stream_seq[t] = int(os.environ.get("XRSP_VIDEO_SEQ", "0"))
+                self.stream_seq[t] = seqs[min(t - 10, len(seqs) - 1)]
             self.frame_start = int(os.environ.get("XRSP_FRAME_START", "0")) or None
+            # XRSP_STREAM_SEQ: other PC->Q topics already used, "topic:seq,..." (e.g. 28:2 after setup)
+            for item in filter(None, os.environ.get("XRSP_STREAM_SEQ", "").split(",")):
+                t, n = item.split(":")
+                self.stream_seq[int(t)] = int(n)
             self.skip_setup = True
             self.log("info", "attaching to existing session", None)
             self.stream(seconds)
@@ -161,7 +183,7 @@ class Host:
         if version == 1:
             self.phase(hello, 1)
             self.log("info", "phase 1 done; waiting for Enable Link (0x85)", None)
-            self.expect(LINK_REQUEST, timeout=seconds)
+            self.expect(LINK_REQUEST, timeout=float(os.environ.get("XRSP_LINK_WAIT", seconds)))
             self.seq = 0
             hello = self.expect(HELLO, timeout=10)
         self.phase(hello, 3)
@@ -183,10 +205,15 @@ class Host:
         reader = threading.Thread(target=self.read_loop, args=(stop,), daemon=True)
         reader.start()
         try:
-            self.replay(replay, seconds)
+            index = self.replay(replay, seconds)
         finally:
             stop.set()
             reader.join(timeout=2)
+        # After the reader stopped, so no clock pong can still bump the control seq
+        self.log("info", f"resume with XRSP_FRAME_START={index} XRSP_CONTROL_SEQ={self.seq} "
+                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)) +
+                 " XRSP_STREAM_SEQ=" + ",".join(f"{t}:{n}" for t, n in sorted(self.stream_seq.items())
+                                                if not 10 <= t < 15), None)
 
     # --- streaming -----------------------------------------------------------
     def read_loop(self, stop):
@@ -202,13 +229,16 @@ class Host:
                     self.log("Q->PC", f"control 0x{msg[8]:02x}", struct.unpack_from("<H", msg, 4)[0])
                 else:
                     self.rx_counts[topic] += 1
+                    if topic in self.dump_topics:
+                        self.dump.write(f"{time.perf_counter_ns()} {topic} {msg.hex()}\n")
                     if topic == TOPIC_HEAD_POSE and len(msg) == 8 + HEAD_POSE_SEGMENT:
                         # Capnp segment of a head pose: quat xyzw @0xe8, position @0xf8, sample ns @0x108
                         self.head_pose = (struct.unpack_from("<4f", msg, 8 + 0xE8),
                                           struct.unpack_from("<3f", msg, 8 + 0xF8),
                                           struct.unpack_from("<Q", msg, 8 + 0x108)[0])
             if time.time() - last >= 2:
-                self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())), None)
+                pose = " pose q=(%.3f %.3f %.3f %.3f) p=(%.3f %.3f %.3f)" % (*self.head_pose[0], *self.head_pose[1])                     if self.head_pose else ""
+                self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())) + pose, None)
                 self.rx_counts.clear()
                 last = time.time()
 
@@ -222,6 +252,13 @@ class Host:
                 time.sleep(min(m["t"] - prev_t, 0.5))
             prev_t = m["t"]
             self.send_stream([(m["topic"], m["flags"], bytes.fromhex(m["body"]))])
+        if os.environ.get("XRSP_INPUT_CONTROL"):
+            # InputControl (topic 28): root with 1 data word, given as 16 hex chars.
+            # Meta sends 0100000000000000 at session start (hands off).
+            word = bytes.fromhex(os.environ["XRSP_INPUT_CONTROL"])
+            self.send_stream([(TOPIC_INPUT_CONTROL, 0x10, bytes.fromhex("0000000002000000")),
+                              (TOPIC_INPUT_CONTROL, 0x10, struct.pack("<Q", 1 << 32) + word)])
+            self.log("info", f"sent InputControl {word.hex()}", None)
         clip = data.get("frames") or [data["frame"]]
         self.log("info", f"sent {len(data['setup'])} setup msgs; looping {len(clip)} frame(s) at 72 Hz", None)
         # EncodedSlice timing words in the Quest clock: renderPose time (5), pcPresentBegin (9),
@@ -244,15 +281,24 @@ class Host:
             while self.head_pose is None:
                 time.sleep(0.01)
         fixed_pose = self.head_pose
+        hold = int(os.environ.get("XRSP_HOLD", "1"))  # send each clip frame this many times (1 frame/s clips: 72)
         nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
-            frame, headers = prepared[sent % len(prepared)]
+            frame, headers = prepared[sent // hold % len(prepared)]
             quest_now = time.perf_counter_ns() + self.quest_offset_ns
             pose = fixed_pose if self.pose_mode == "fixed" else self.head_pose
             for body, d, orig in headers:
                 if pose and self.pose_mode != "template":
                     # renderPose: orientation xyzw at data u32 slots 3..6, translation at 7..9
                     struct.pack_into("<4f3f", body, d + 12, *pose[0], *pose[1])
+                if os.environ.get("XRSP_MESH"):
+                    # rectifyMeshId (data u32 slot 2): Meta's game frames use 1001, its loading screen 0
+                    struct.pack_into("<I", body, d + 8, int(os.environ["XRSP_MESH"]))
+                if os.environ.get("XRSP_FOV"):
+                    for eye in range(2):  # FovPort struct pointers at data word 18 + eye
+                        p = d + 8 * (18 + eye)
+                        target = p + 8 + 8 * ((struct.unpack_from("<Q", body, p)[0] & 0xFFFFFFFF) >> 2)
+                        struct.pack_into("<4f", body, target, *FOV_TANGENTS[eye])
                 struct.pack_into("<Q", body, d, index)  # frame.index
                 # Shift all timestamps together so the frame targets a vsync ~20 ms out
                 shift = quest_now + 20_000_000 - orig[11]
@@ -265,6 +311,7 @@ class Host:
             nxt += period
             time.sleep(max(0.0, nxt - time.perf_counter()))
         self.log("info", f"streamed {sent} frames", None)
+        return index
 
 
 def main():
@@ -293,6 +340,8 @@ def main():
             Host(link, log).run(seconds)
             return
         except OSError as e:
+            if os.environ.get("XRSP_ATTACH"):
+                raise  # resuming the old seq/frame numbers again would not match the headset
             # Unplugged/replugged mid-session: wait for it to come back and start over
             log("info", f"transport lost ({e}); waiting for reconnect", None)
         finally:

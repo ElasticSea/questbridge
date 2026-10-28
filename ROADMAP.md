@@ -16,8 +16,8 @@
 - [x] M0: USB captures + protocol spec (handshake, video slices, pose, audio)
 - [x] M1: own host completes handshake + session (Windows bench; Mac in M4)
 - [x] M2: video into the headset: own x264 test pattern at 72 fps, 0 glitches
-- [ ] M2a: encoder gate (bench): headset accepts a VideoToolbox-compatible stream (1 slice, or 5 independent slice streams; reduced encode size as fallback)
-- [ ] M2b: timewarp check: constant renderPose stays world-locked
+- [x] M2a: encoder gate (bench): headset accepts a VideoToolbox-compatible stream: 5 independent 4096×448 streams (one decoder per strip) at 72 fps incl. P frames; each slice message ≤ ~128 KiB; <5 slices not shown with CONFIG slices=5 (2026-10-28)
+- [x] M2b: timewarp check: constant renderPose stays world-locked, needs rectifyMeshId=1001 + per-eye FOV in EncodedSlice (2026-10-28)
 - [ ] M2c: sensor gate (bench): hands + controller input + haptics found on the wire via Meta-Link captures with the Unity sensor-probe app; feature bits identified
        → if M2a or M2c fails: decide on the own-APK path before M3
 - [ ] M3: Mac encoder bench: VideoToolbox 4096×2240 (or chosen size) in real time, slice layout from M2a
