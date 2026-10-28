@@ -130,6 +130,42 @@ namespace ElasticSea.QuestLink
             return true;
         }
 
+        public bool TryGetHand(QuestLinkHand hand, QuestLinkHandState state)
+        {
+            state.Clear();
+            if (ql_get_hands(session, out var hands) != 0)
+                return false;
+            FromNative(hand == QuestLinkHand.Left ? hands.left : hands.right, state);
+            return true;
+        }
+
+        // By value: fixed buffers of a local need no pinning
+        internal static unsafe void FromNative(ql_hand h, QuestLinkHandState state)
+        {
+            state.Clear();
+            state.tracked = (h.flags & HandTracked) != 0;
+            if (!state.tracked)
+                return;
+            state.confidence = h.confidence;
+            state.scale = h.scale;
+            state.dominant = (h.flags & HandDominant) != 0;
+            state.aimValid = (h.flags & HandAimValid) != 0;
+            state.aim = ToUnity(h.aim);
+            state.timeNs = (long)h.root.time_ns;
+            for (var i = 0; i < 4; i++)
+                state.pinch[i] = h.pinch[i];
+            for (var i = 0; i < HandJointCount; i++)
+            {
+                var f = 8 * i;
+                state.joints[i] = new QuestLinkJointPose
+                {
+                    rotation = QuestLinkMath.LinkToUnity(new Quaternion(h.joints[f], h.joints[f + 1], h.joints[f + 2], h.joints[f + 3])),
+                    position = QuestLinkMath.LinkToUnity(new Vector3(h.joints[f + 4], h.joints[f + 5], h.joints[f + 6])),
+                    radius = h.joints[f + 7],
+                };
+            }
+        }
+
         public void SendHaptic(QuestLinkHand hand, float amplitude, float durationSeconds) =>
             ql_haptic(session, (int)hand, amplitude, durationSeconds);
 

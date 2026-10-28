@@ -14,6 +14,8 @@ namespace ElasticSea.QuestLink
         bool TryGetDeviceInfo(out QuestLinkDeviceInfo info);
         bool TryGetHeadPose(out QuestLinkPose pose);
         bool TryGetController(QuestLinkHand hand, out QuestLinkControllerState state);
+        // Fills state in place; false (state cleared) when no hand data arrived yet.
+        bool TryGetHand(QuestLinkHand hand, QuestLinkHandState state);
         void SendHaptic(QuestLinkHand hand, float amplitude, float durationSeconds);
 
         // Main thread, after the frame's cameras have rendered. Implementations hand the

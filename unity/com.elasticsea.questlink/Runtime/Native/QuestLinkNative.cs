@@ -68,6 +68,34 @@ namespace ElasticSea.QuestLink.Native
             public uint flags;
         }
 
+        // Hand tracking (questlink.h "Hand tracking"). Joints in XrHandJointEXT order with OpenXR axes.
+        public const int HandJointCount = 26;
+        public const uint HandTracked = 1 << 0;
+        public const uint HandAimValid = 1 << 1;
+        public const uint HandDominant = 1 << 2;
+        public const uint HandHeadsetSkeleton = 1 << 3;
+
+        // 8 floats per joint: qx qy qz qw px py pz radius
+        [StructLayout(LayoutKind.Sequential)]
+        public unsafe struct ql_hand
+        {
+            public uint flags;
+            public uint input_status;
+            public float confidence;
+            public float scale;
+            public fixed float pinch[4];  // index, middle, ring, little
+            public ql_pose root;          // wrist, OVR bone frame
+            public ql_pose aim;
+            public fixed float joints[HandJointCount * 8];
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct ql_hands
+        {
+            public ql_hand left, right;
+            public ulong count;
+        }
+
         // Payload of EventSubmitFrame. Must stay alive until the render thread has run the event.
         [StructLayout(LayoutKind.Sequential)]
         public struct ql_frame_submit
@@ -84,6 +112,7 @@ namespace ElasticSea.QuestLink.Native
         [DllImport(Library)] public static extern int ql_get_device_info(IntPtr session, out ql_device_info info);
         [DllImport(Library)] public static extern int ql_get_head_pose(IntPtr session, out ql_pose pose);
         [DllImport(Library)] public static extern int ql_get_controller(IntPtr session, int hand, out ql_controller controller);
+        [DllImport(Library)] public static extern int ql_get_hands(IntPtr session, out ql_hands hands);
         [DllImport(Library)] public static extern int ql_haptic(IntPtr session, int hand, float amplitude, float duration_s);
         [DllImport(Library)] public static extern int ql_submit_frame_texture(IntPtr session, IntPtr native_texture, ref ql_pose render_pose, ulong frame_index);
         [DllImport(Library)] public static extern IntPtr ql_get_render_event_func();
