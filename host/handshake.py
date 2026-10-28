@@ -131,6 +131,8 @@ class Host:
         def config_patch(tree):
             if version == 1:
                 tree["s"][10] = session
+            elif os.environ.get("XRSP_SLICES"):
+                tree["s"][1] = int(os.environ["XRSP_SLICES"])  # v3 CONFIG data word 1: slices per frame
 
         def session_patch(tree):
             if version == 1:
@@ -148,8 +150,10 @@ class Host:
             # Headset session is still up from an earlier run of ours: skip the handshake
             self.seq = int(os.environ.get("XRSP_CONTROL_SEQ", "16"))
             # The headset remembers per-topic seq and frame index; continue past earlier runs
+            # XRSP_VIDEO_SEQ: one value for all slice topics, or five comma-separated (topics 10..14)
+            seqs = [int(v) for v in os.environ.get("XRSP_VIDEO_SEQ", "0").split(",")]
             for t in range(10, 15):
-                self.stream_seq[t] = int(os.environ.get("XRSP_VIDEO_SEQ", "0"))
+                self.stream_seq[t] = seqs[min(t - 10, len(seqs) - 1)]
             self.frame_start = int(os.environ.get("XRSP_FRAME_START", "0")) or None
             self.skip_setup = True
             self.log("info", "attaching to existing session", None)
@@ -264,7 +268,8 @@ class Host:
             sent += 1
             nxt += period
             time.sleep(max(0.0, nxt - time.perf_counter()))
-        self.log("info", f"streamed {sent} frames", None)
+        self.log("info", f"streamed {sent} frames; resume with XRSP_FRAME_START={index} XRSP_CONTROL_SEQ={self.seq} "
+                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)), None)
 
 
 def main():
@@ -293,6 +298,8 @@ def main():
             Host(link, log).run(seconds)
             return
         except OSError as e:
+            if os.environ.get("XRSP_ATTACH"):
+                raise  # resuming the old seq/frame numbers again would not match the headset
             # Unplugged/replugged mid-session: wait for it to come back and start over
             log("info", f"transport lost ({e}); waiting for reconnect", None)
         finally:
