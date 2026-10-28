@@ -126,6 +126,11 @@ public:
             const auto& slices = prepared[sent % prepared.size()];
             ql_frame_info fi{};
             fi.is_intra = 1;
+            // Same lead as the runtime (QL_VSYNC_LEAD_MS): the session's 20 ms default makes the
+            // headset drop frames as "~8.5 ms before deadline"
+            ql_info now_info;
+            if (ql_host_get_info(h_, &now_info) == QL_OK && now_info.has_clock_offset)
+                fi.target_vsync_quest_ns = ql_now_ns() + now_info.quest_clock_offset_ns + vsync_lead_ns_;
             if (pose_mode != "template") {
                 ql_head_pose live{};
                 fi.has_render_pose = 1;
@@ -167,6 +172,7 @@ private:
     std::thread io_;
     std::atomic<bool> stop_{false};
     std::atomic<bool> lost_{false};
+    const int64_t vsync_lead_ns_ = int64_t(env_num("QL_VSYNC_LEAD_MS", 16) * 1'000'000);
 };
 
 }  // namespace
