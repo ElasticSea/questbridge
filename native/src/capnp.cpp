@@ -308,4 +308,39 @@ bool same(const Ptr& a, const Ptr& b) {
     return !a || same_node(*a, *b);
 }
 
+View View::root(std::span<const uint8_t> segment) { return at_pointer(segment, 0); }
+
+View View::at_pointer(std::span<const uint8_t> seg, size_t word) {
+    size_t words = seg.size() / 8;
+    if (word >= words) return {};
+    uint64_t w = rd64(&seg[word * 8]);
+    if (w == 0 || (w & 3) != 0) return {};  // null, or not a struct pointer
+    int64_t target = int64_t(word) + 1 + s30(w >> 2);
+    uint16_t dw = uint16_t(w >> 32), pw = uint16_t(w >> 48);
+    if (target < 0 || size_t(target) + dw + pw > words) return {};
+    return View(seg, size_t(target) * 8, dw, pw);
+}
+
+View View::ptr(size_t i) const {
+    if (seg_.empty() || i >= pwords_) return {};
+    return at_pointer(seg_, at_ / 8 + dwords_ + i);
+}
+
+size_t View::list(size_t i, View* out, size_t max_out) const {
+    if (seg_.empty() || i >= pwords_) return 0;
+    size_t words = seg_.size() / 8, word = at_ / 8 + dwords_ + i;
+    uint64_t w = rd64(&seg_[word * 8]);
+    if ((w & 3) != 1 || ((w >> 32) & 7) != 7) return 0;  // not a composite list
+    int64_t tag = int64_t(word) + 1 + s30(w >> 2);
+    uint64_t list_words = w >> 35;
+    if (tag < 0 || size_t(tag) + 1 + list_words > words) return 0;
+    uint64_t t = rd64(&seg_[size_t(tag) * 8]);
+    size_t count = size_t((t >> 2) & 0x3FFFFFFF);
+    uint16_t dw = uint16_t(t >> 32), pw = uint16_t(t >> 48);
+    if (uint64_t(count) * (dw + pw) > list_words) return 0;
+    for (size_t e = 0; e < count && e < max_out; ++e)
+        out[e] = View(seg_, (size_t(tag) + 1 + e * (dw + pw)) * 8, dw, pw);
+    return count;
+}
+
 }  // namespace ql::capnp
