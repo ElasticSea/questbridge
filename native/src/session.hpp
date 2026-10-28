@@ -61,13 +61,25 @@ enum class State {
 };
 const char* state_name(State s);
 
-// From the HELLO device description (PROTOCOL_NOTES "Device description")
+// HELLO device description (docs/PROTOCOL.md §8; tools/device_info.py is the same parse)
 struct DeviceInfo {
+    struct Mode {
+        uint32_t hz = 0;
+        double a = 0, b = 0;   // unknown scale factors
+        uint64_t bitrate = 0;  // probably bit/s
+    };
+    uint16_t version = 0;  // HELLO version (1 phase 1, 3 phase 2)
+    std::string product, manufacturer, firmware;
     uint32_t panel_width = 0, panel_height = 0;
     uint32_t encode_width = 0, encode_height = 0;
-    float refresh_hz = 0;
+    float refresh_hz = 0;  // the panel's default rate
     float ipd_m = 0;
-    float fov_deg[4] = {};  // left eye up, down, left, right; the right eye mirrors left/right
+    float fov_deg[2][4] = {};  // per eye (left, right): up, down, left, right
+    uint32_t slices = 0;       // HELLO v1 only (5 on Quest 3); 0 in v3
+    std::vector<uint32_t> refresh_rates;  // HELLO p4, ascending
+    std::vector<Mode> modes;
+    std::vector<uint16_t> codecs;    // video codecs the headset decodes (empty on Quest 3)
+    std::vector<uint16_t> features;  // offered session features (v3; v1 has phase-1 ids here)
 };
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello);
 
@@ -89,6 +101,9 @@ struct SessionConfig {
     // again every bye_retry_ns while none comes (0 = once). bye_delay_ns < 0 = never.
     int64_t bye_delay_ns = 50'000'000;
     int64_t bye_retry_ns = 3'000'000'000;
+    // CONFIG v3 refresh: 0 = the device's default rate when the HELLO offers it, else the
+    // recorded 72 Hz; another value must be in the HELLO's refresh list
+    uint32_t refresh_hz = 0;
 };
 
 class Session {
@@ -115,6 +130,7 @@ public:
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
+    uint32_t refresh_hz() const { return refresh_hz_; }  // CONFIG v3's rate; 0 before phase 2
     uint64_t head_pose_count() const { return head_pose_count_; }
     const std::optional<HandsFrame>& hands() const { return hands_; }  // latest topic 8
     uint64_t hands_count() const { return hands_count_; }
@@ -139,6 +155,7 @@ public:
         std::optional<uint32_t> rectify_mesh_id;
         std::optional<std::array<FovPort, 2>> fov;
         bool intra = true;
+        uint32_t picture_height = 0;  // 0 = the HELLO's encode height
     };
     // TooLarge: a slice's csd or video exceeds kMaxStreamMessage; nothing is sent.
     Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
@@ -160,6 +177,7 @@ private:
     void send_bye();
     void wait_hello(int64_t bye_in_ns);
     void begin_phase(uint16_t version);
+    uint32_t pick_refresh() const;
     void advance_phase(uint8_t type);
     void finish_handshake();
     void enter(State s, int64_t timeout_ns);
@@ -184,6 +202,7 @@ private:
     std::optional<int64_t> quest_offset_;
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
+    uint32_t refresh_hz_ = 0;
     uint64_t head_pose_count_ = 0;
     std::optional<HandsFrame> hands_;
     uint64_t hands_count_ = 0;

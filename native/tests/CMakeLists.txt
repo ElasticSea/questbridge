@@ -6,6 +6,7 @@ add_executable(questlink_tests
   test_xrsp.cpp
   test_capnp.cpp
   test_session.cpp
+  test_device.cpp
   test_frame.cpp
   test_pose.cpp
   test_audio.cpp

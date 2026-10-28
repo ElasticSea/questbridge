@@ -10,7 +10,7 @@
 - [ ] **3. Mac host** — native dylib (libusb, XRSP, handshake, clock sync, pacing, VideoToolbox) with a small C API (`ql_get_pose`, `ql_submit_frame`, …) plus a CLI
 - [~] **4. Unity bridge** — C# package `unity/com.elasticsea.questlink` and native core merged (Windows: D3D11 + NVIDIA MF encoder, `unity\install-native.ps1`); first live scene `unity/BridgeTest` FirstLight ready for the bench. C# two-eye rig → one RenderTexture → Metal/IOSurface → VideoToolbox; poses and input back as Input System XRHMD/XRController devices (TrackedPoseDriver/XRI work unchanged). An XR SDK display provider comes later.
 - [ ] **5. Sensors** — controllers + buttons + haptics, hand-tracking joints, passthrough as a headset-composited layer (alpha blend). Raw camera pixels are APK-only. Eye/face: no Quest 3 hardware.
-- [ ] **6. Supporting work** — FOV/IPD from the HELLO device description, latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
+- [~] **6. Supporting work** — ✓ device description fully decoded; the host takes encode size, FOV, IPD, refresh and strip geometry from the HELLO (`ql_get_device_info`, golden fixtures per headset in `tests/fixtures/devices/`). Open: latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
 
 ## Milestones
 - [x] M0: USB captures + protocol spec (handshake, video slices, pose, audio)

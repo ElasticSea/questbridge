@@ -27,25 +27,56 @@ const templates::Control& control_template(uint8_t type, uint16_t version) {
 }  // namespace
 
 std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
-    // HELLO root p3 -> p0: display struct; its p3: eye FOV in degrees
+    // HELLO root p3 -> p0: display struct (layout: docs/PROTOCOL.md §8)
     const capnp::Node* desc = hello ? hello->child(3) : nullptr;
     const capnp::Node* d = desc ? desc->child(0) : nullptr;
-    if (!d || d->data.size() < 6) return std::nullopt;
-    auto f32 = [](const capnp::Node& n, size_t word, int half) {
-        uint32_t u = n.u32(word, half);
+    if (!d || d->kind != capnp::Kind::Struct || d->data.size() < 6) return std::nullopt;
+    auto f32 = [](const capnp::Node* n, size_t word, int half) {
+        uint32_t u = n ? n->u32(word, half) : 0;
         float f;
         std::memcpy(&f, &u, 4);
         return f;
     };
+    auto f64 = [](const capnp::Node* n, size_t word) {
+        uint64_t u = n ? n->word(word) : 0;
+        double v;
+        std::memcpy(&v, &u, 8);
+        return v;
+    };
+    auto text = [](const capnp::Node* n) { return n && n->kind == capnp::Kind::Prim ? n->text() : std::string(); };
+    auto list = [](const capnp::Node* n, auto elem) {
+        std::vector<decltype(elem)> out;
+        if (!n || n->kind != capnp::Kind::Prim) return out;
+        for (size_t i = 0; i + sizeof elem <= n->bytes.size(); i += sizeof elem) {
+            std::memcpy(&elem, &n->bytes[i], sizeof elem);
+            out.push_back(elem);
+        }
+        return out;
+    };
     DeviceInfo info;
+    info.version = uint16_t(hello->word(0));
+    info.product = text(d->child(0));
+    info.manufacturer = text(d->child(1));
+    info.firmware = text(hello->child(5));
     info.panel_width = d->u32(0, 1);
     info.panel_height = d->u32(1, 0);
-    info.refresh_hz = f32(*d, 1, 1);
-    info.ipd_m = f32(*d, 2, 0);
+    info.refresh_hz = f32(d, 1, 1);
+    info.ipd_m = f32(d, 2, 0);
     info.encode_width = d->u32(5, 0);
     info.encode_height = d->u32(5, 1);
-    if (const capnp::Node* fov = d->child(3); fov && fov->data.size() >= 2)
-        for (int i = 0; i < 4; ++i) info.fov_deg[i] = f32(*fov, size_t(i / 2), i % 2);
+    info.slices = d->u32(6, 0);
+    for (int eye = 0; eye < 2; ++eye)
+        for (int i = 0; i < 4; ++i) info.fov_deg[eye][i] = f32(d->child(3 + eye), size_t(i / 2), i % 2);
+    info.refresh_rates = list(hello->child(4), uint32_t{});
+    std::sort(info.refresh_rates.begin(), info.refresh_rates.end());
+    if (const capnp::Node* m = d->child(5); m && m->kind == capnp::Kind::Composite)
+        for (const auto& e : m->elems) {
+            const capnp::Node* rate = e.child(1);
+            info.modes.push_back({e.u32(0, 0), f64(e.child(0), 0), f64(e.child(0), 1), rate ? rate->word(0) : 0});
+        }
+    const capnp::Node* video = d->child(6);
+    info.codecs = list(video ? video->child(0) : nullptr, uint16_t{});
+    info.features = list(hello->child(6), uint16_t{});
     return info;
 }
 
@@ -126,6 +157,11 @@ void Session::send_control(uint8_t type, uint16_t version) {
         if (type == control::kConfig) tree->data.at(10) = session_id_;
         else tree->data.at(1) = session_id_;
     }
+    if (type == control::kConfig && version == 3) {
+        // Data word 2 = refresh rate, Hz (the recorded one is 72)
+        if (refresh_hz_) tree->data.at(2) = (tree->data.at(2) & ~0xFFFFFFFFull) | refresh_hz_;
+        refresh_hz_ = uint32_t(tree->data.at(2));
+    }
     Bytes capnp = capnp::encode(tree, words);  // recorded offsets: Meta's allocation order
     Bytes body(8);
     body[0] = type;
@@ -181,6 +217,7 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     p.rectify_mesh_id = opt.rectify_mesh_id;
     p.fov = opt.fov;
     p.intra = opt.intra;
+    p.encode_height = opt.picture_height ? opt.picture_height : device_info_ ? device_info_->encode_height : 0;
     send_stream(build_frame(slices, p));
     next_frame_index_ = p.index + 1;
     return Submit::Ok;
@@ -246,6 +283,13 @@ void Session::on_message(std::span<const uint8_t> raw) {
         log("Q->PC", hex2(type) + " undecodable: " + e.what(), seq);
         return;
     }
+    if (type == control::kHello) {
+        // Raw HELLO for tools/device_info.py (new headsets' descriptions)
+        static const char* digits = "0123456789abcdef";
+        std::string hex;
+        for (uint8_t b : body) hex += {digits[b >> 4], digits[b & 15]};
+        log("info", "HELLO " + hex);
+    }
     on_control(type, tree, seq);
 }
 
@@ -268,7 +312,12 @@ void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
     if (type == control::kHello) {
         // A HELLO in any state starts over: the headset restarts pairing after Link is quit,
         // after a BYE, or when it never heard back from an earlier host
-        if (auto info = parse_device_info(tree)) device_info_ = info;
+        if (auto info = parse_device_info(tree)) {
+            device_info_ = info;
+            log("info", "device " + info->product + ", encode " + std::to_string(info->encode_width) + "x" +
+                            std::to_string(info->encode_height) + ", " + std::to_string(int(info->refresh_hz)) +
+                            " Hz, firmware " + info->firmware);
+        }
         if (state_ != State::WaitHello && state_ != State::WaitHelloV3)
             log("info", std::string("headset restarted the handshake during ") + state_name(state_));
         if (version == 1) session_id_ = tree ? tree->word(6) : 0;
@@ -296,6 +345,18 @@ void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
     }
 }
 
+// 0 = keep the recorded rate
+uint32_t Session::pick_refresh() const {
+    const auto& rates = device_info_ ? device_info_->refresh_rates : std::vector<uint32_t>{};
+    auto offered = [&](uint32_t hz) { return std::find(rates.begin(), rates.end(), hz) != rates.end(); };
+    if (cfg_.refresh_hz) {
+        if (rates.empty() || offered(cfg_.refresh_hz)) return cfg_.refresh_hz;
+        log("info", "refresh " + std::to_string(cfg_.refresh_hz) + " Hz not offered by the headset");
+    }
+    uint32_t def = device_info_ ? uint32_t(device_info_->refresh_hz + 0.5f) : 0;
+    return offered(def) ? def : 0;
+}
+
 void Session::begin_phase(uint16_t version) {
     if (version != 1 && version != 3) {
         fail("unsupported HELLO version " + std::to_string(version));
@@ -309,6 +370,7 @@ void Session::begin_phase(uint16_t version) {
         next_frame_index_ = cfg_.first_frame_index;
         clock_count_ = 0;
     }
+    if (version == 3) refresh_hz_ = pick_refresh();
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
     expected_ = control::kAck;
     send_control(control::kConfig, version);

@@ -2,12 +2,13 @@
 //
 // Waits for the Quest's XRSP interface, does the handshake (press "Enable Link" in the
 // headset between the phases), then either listens for 5 s or, with XRSP_REPLAY set, loops a
-// recorded clip (host/replay/*.json) at 72 Hz with the render pose patched in.
+// recorded clip (host/replay/*.json) at the session's refresh rate with the render pose patched in.
 //
 // Usage: qlhost [seconds]
 // Env (as handshake.py): XRSP_WAIT (600 s to wait for the device), XRSP_HELLO_WAIT (300 s),
 //   XRSP_REPLAY=<clip.json>, XRSP_POSE=fixed|live|template, XRSP_ATTACH=1 with
-//   XRSP_CONTROL_SEQ (16), XRSP_VIDEO_SEQ (0), XRSP_FRAME_START (clip's frame_index).
+//   XRSP_CONTROL_SEQ (16), XRSP_VIDEO_SEQ (0), XRSP_FRAME_START (clip's frame_index),
+//   XRSP_REFRESH (Hz; default = the headset's default rate).
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -102,7 +103,10 @@ public:
     }
 
     Outcome replay(const qlcli::Clip& clip, double seconds, const std::string& pose_mode) {
-        log_line("info", "looping " + std::to_string(clip.frames.size()) + " frame(s) at 72 Hz");
+        ql_device_info dev{};
+        ql_host_get_device_info(h_, &dev);
+        const double hz = dev.stream_refresh_hz ? dev.stream_refresh_hz : 72;  // attach: no HELLO
+        log_line("info", "looping " + std::to_string(clip.frames.size()) + " frame(s) at " + std::to_string(int(hz)) + " Hz");
         std::vector<std::vector<ql_slice>> prepared;
         for (const auto& f : clip.frames) {
             std::vector<ql_slice> s;
@@ -118,7 +122,7 @@ public:
             while (ql_host_get_head_pose(h_, &fixed) != QL_OK && !lost_) sleep_s(0.01);
         if (lost_) return Outcome::TransportLost;
 
-        const auto period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 72));
+        const auto period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / hz));
         auto next = Clock::now();
         const auto end = next + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(seconds));
         size_t sent = 0;
@@ -131,6 +135,7 @@ public:
             ql_info now_info;
             if (ql_host_get_info(h_, &now_info) == QL_OK && now_info.has_clock_offset)
                 fi.target_vsync_quest_ns = ql_now_ns() + now_info.quest_clock_offset_ns + vsync_lead_ns_;
+            fi.picture_height = clip.height;
             if (pose_mode != "template") {
                 ql_head_pose live{};
                 fi.has_render_pose = 1;
@@ -197,6 +202,7 @@ int main(int argc, char** argv) {
     cfg.log = on_log;
     cfg.send_setup = replay.empty() ? 0 : 1;  // handshake.py sends the setup only when replaying
     cfg.hello_timeout_ms = int(env_num("XRSP_HELLO_WAIT", 300) * 1000);
+    cfg.refresh_hz = uint32_t(env_num("XRSP_REFRESH", 0));
     cfg.link_request_timeout_ms = int(seconds * 1000);
     cfg.bye_retry_ms = int(env_num("XRSP_BYE_RETRY_MS", cfg.bye_retry_ms));  // < 0: never send BYE
     cfg.first_frame_index = uint64_t(env_num("XRSP_FRAME_START", 0));

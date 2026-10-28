@@ -794,7 +794,7 @@ values: `tests/test_handshake.py`; field names are ours unless stated).
 | `d6` | u32 5 (v1) / 0 (v3) | slices (v1 only); u16 @+4 (byte 0x34) = slice mode (2 values, `deserializeSliceMode`) |
 | `p0`, `p1` | `"Meta Quest 3"`, `"Oculus VR"` | product, manufacturer |
 | `p2` | `{u32 53822, u32 49}` | unknown |
-| `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 small f32 (≈ ±0.0246, 0.0235, ±0.0031, 0.0430, 0.0460; per-eye offsets, meaning unknown) |
+| `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**, each eye stored in full: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 f32: (∓0.0246, −0, 0.0235, ∓0.0031, 0, 0.0235, 0.0430, 0.0460) left/right; sign flips with the eye, meaning unknown (lens centre / distortion parameters?) |
 | `p5` | list of 5 structs `{u32 Hz; p0 {f64, f64}; p1 {u64}}` | **mode table** (below) |
 | `p6` | null (v1) / struct 3 data + empty u16 list (v3) | `p6.p0` = **supported video codecs** (u16 list, values 0–2, `deserializeVideoCodec`); empty on Quest 3, so it advertises nothing |
 
@@ -813,8 +813,30 @@ and ~2.98; lens distortion / chroma, inferred); `p3.p3` `{f32 0.70, f32 0.705}`;
 three structs `{u32 6416, u32 3432, u32 flags, u32 w, u32 w, u32 h}` with sizes 3616 × 2016,
 4128/3616 × 2880 and 3104/3616 × 3516 (resolution presets, meaning unknown).
 
-What our host uses: encode size, refresh list, IPD and the per-eye FOV (→ `FovPort` tangents,
-§6.5); `ql_device_info` in `native/include/questlink.h`.
+Decoders: `tools/device_info.py` (prints a description from a fixture, a pcap or the hex
+`HELLO <hex>` line our host logs; `--save <name>` writes a scrubbed golden fixture) and
+`parse_device_info` in `native/src/session.cpp`. Both are checked against every
+`tests/fixtures/devices/*.json` (`tests/test_device_info.py`, `native/tests/test_device.cpp`).
+Field names of the decoded form: `version`, `product`, `manufacturer`, `firmware`, `panel`,
+`encode`, `default_refresh_hz`, `ipd_m`, `fov_deg.left/right` (up, down, left, right),
+`slices` (v1), `refresh_rates` (root `p4`, sorted), `modes`, `codecs` (`p6.p0`), `features`
+(root `p6`; session features in v3, phase-1 ids in v1).
+
+What our host derives from it (nothing here is hard-coded for the Quest 3 any more, except
+rectify mesh id 1001, which the HELLO doesn't carry):
+
+| Use | Source |
+|---|---|
+| CONFIG v3 refresh (data word 2, low u32) | `ql_config.refresh_hz` / `XRSP_REFRESH` if the HELLO's refresh list has it, else the description's default refresh (72 → Meta's bytes) |
+| Frame pacing (qlhost replay, texture encoder rate) | the CONFIG v3 refresh |
+| EncodedSlice `yOffsetInPixels` / `heightInMacroBlocks` | encode height split into equal macroblock-row strips (last takes the rest): 2240 / 5 = 448 px, 28 MB = Meta's values. `ql_frame_info.picture_height` overrides it (qlhost takes it from the clip's headers) |
+| Eye render target (Unity) | encode width × height |
+| Per-eye `FovPort` | each eye's own angles (tangents), not a mirror of the left eye |
+| Eye separation | IPD |
+
+C API: `ql_get_device_info` / `ql_host_get_device_info` fill `ql_device_info` (API version 3,
+240 B): encode size, default refresh, IPD, both FOVs, panel size, refresh list, the session's
+`stream_refresh_hz`, codec and feature bitmasks, HELLO version, product, manufacturer, firmware.
 
 ## 9. Open questions
 
