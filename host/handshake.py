@@ -26,6 +26,7 @@ TOPIC_CONTROL = 1
 HELLO, CONFIG, ACK, CONFIRM, CONFIRM_ACK, START, READY, LINK_REQUEST = 0x81, 0x82, 0x83, 0x89, 0x8A, 0x87, 0x80, 0x85
 CLOCK_PING, CLOCK_PONG = 0x06, 0x16
 TOPIC_HEAD_POSE, HEAD_POSE_SEGMENT = 34, 272
+TOPIC_INPUT_CONTROL = 28
 
 
 def load_templates():
@@ -131,8 +132,14 @@ class Host:
         def config_patch(tree):
             if version == 1:
                 tree["s"][10] = session
-            elif os.environ.get("XRSP_SLICES"):
-                tree["s"][1] = int(os.environ["XRSP_SLICES"])  # v3 CONFIG data word 1: slices per frame
+            else:
+                if os.environ.get("XRSP_SLICES"):
+                    tree["s"][1] = int(os.environ["XRSP_SLICES"])  # v3 CONFIG data word 1: slices per frame
+                for f in filter(None, os.environ.get("XRSP_FEATURES_ADD", "").split(",")):
+                    # Selected session features: u16 list at p1 (Meta: 1,3,2,19,7,14,15)
+                    feats = tree["p"][1]
+                    feats["b"] += struct.pack("<H", int(f)).hex()
+                    feats["n"] += 1
 
         def session_patch(tree):
             if version == 1:
@@ -155,6 +162,10 @@ class Host:
             for t in range(10, 15):
                 self.stream_seq[t] = seqs[min(t - 10, len(seqs) - 1)]
             self.frame_start = int(os.environ.get("XRSP_FRAME_START", "0")) or None
+            # XRSP_STREAM_SEQ: other PC->Q topics already used, "topic:seq,..." (e.g. 28:2 after setup)
+            for item in filter(None, os.environ.get("XRSP_STREAM_SEQ", "").split(",")):
+                t, n = item.split(":")
+                self.stream_seq[int(t)] = int(n)
             self.skip_setup = True
             self.log("info", "attaching to existing session", None)
             self.stream(seconds)
@@ -193,7 +204,9 @@ class Host:
             reader.join(timeout=2)
         # After the reader stopped, so no clock pong can still bump the control seq
         self.log("info", f"resume with XRSP_FRAME_START={index} XRSP_CONTROL_SEQ={self.seq} "
-                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)), None)
+                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)) +
+                 " XRSP_STREAM_SEQ=" + ",".join(f"{t}:{n}" for t, n in sorted(self.stream_seq.items())
+                                                if not 10 <= t < 15), None)
 
     # --- streaming -----------------------------------------------------------
     def read_loop(self, stop):
@@ -229,6 +242,12 @@ class Host:
                 time.sleep(min(m["t"] - prev_t, 0.5))
             prev_t = m["t"]
             self.send_stream([(m["topic"], m["flags"], bytes.fromhex(m["body"]))])
+        if os.environ.get("XRSP_HANDS"):
+            # InputControl (topic 28): root with 1 data word, byte0 = type (1 hands), byte1 = enabled
+            on = int(os.environ["XRSP_HANDS"])
+            self.send_stream([(TOPIC_INPUT_CONTROL, 0x10, bytes.fromhex("0000000002000000")),
+                              (TOPIC_INPUT_CONTROL, 0x10, struct.pack("<QBB6x", 1 << 32, 1, on))])
+            self.log("info", f"sent InputControl hands={on}", None)
         clip = data.get("frames") or [data["frame"]]
         self.log("info", f"sent {len(data['setup'])} setup msgs; looping {len(clip)} frame(s) at 72 Hz", None)
         # EncodedSlice timing words in the Quest clock: renderPose time (5), pcPresentBegin (9),
