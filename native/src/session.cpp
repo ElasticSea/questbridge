@@ -75,12 +75,31 @@ void Session::start() {
         enter(State::Streaming, 0);  // the earlier host already sent InputControl
         return;
     }
-    enter(State::WaitHello, cfg_.hello_timeout_ns);
+    wait_hello(cfg_.bye_delay_ns);
 }
 
 void Session::enter(State s, int64_t timeout_ns) {
     state_ = s;
     deadline_ = timeout_ns > 0 ? clock_() + timeout_ns : 0;
+    bye_due_ = 0;
+}
+
+// The headset sends HELLO (INVITE) once per pairing attempt; if nobody answered it, it waits
+// forever ("Attempting to connect to PC"). A BYE with session id 0 (wildcard) makes it give up
+// and send a fresh one, unless it sent its INVITE < 1 s ago (then that INVITE reaches us).
+void Session::wait_hello(int64_t bye_in_ns) {
+    enter(State::WaitHello, cfg_.hello_timeout_ns);
+    if (cfg_.bye_delay_ns >= 0 && bye_in_ns >= 0) bye_due_ = clock_() + bye_in_ns;
+}
+
+void Session::send_bye() {
+    // Meta's preluding BYE: an all-zero Bye root (2 data words: version, session id)
+    Bytes body = {control::kBye, 0x8c, 2, 0, 1, 0, 0, 0,  // inner header
+                  0, 0, 0, 0, 3, 0, 0, 0,                 // segment table: 1 segment, 3 words
+                  0, 0, 0, 0, 2, 0, 0, 0};                // root pointer: struct, 2 data words
+    body.resize(body.size() + 16, 0);
+    ++byes_sent_;
+    send_raw_control(std::move(body), "BYE (no HELLO yet)");
 }
 
 void Session::fail(const std::string& why) {
@@ -246,23 +265,31 @@ void Session::on_clock(uint8_t type, std::span<const uint8_t> body) {
 void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
     uint16_t version = tree ? uint16_t(tree->word(0) & 0xFFFF) : 0;
     log("Q->PC", hex2(type) + " v" + std::to_string(version), seq);
-    if (type == control::kHello)
+    if (type == control::kHello) {
+        // A HELLO in any state starts over: the headset restarts pairing after Link is quit,
+        // after a BYE, or when it never heard back from an earlier host
         if (auto info = parse_device_info(tree)) device_info_ = info;
+        if (state_ != State::WaitHello && state_ != State::WaitHelloV3)
+            log("info", std::string("headset restarted the handshake during ") + state_name(state_));
+        if (version == 1) session_id_ = tree ? tree->word(6) : 0;
+        begin_phase(version);
+        return;
+    }
     switch (state_) {
-        case State::WaitHello:
-        case State::WaitHelloV3:
-            if (type != control::kHello) return;
-            if (state_ == State::WaitHello) session_id_ = tree ? tree->word(6) : 0;
-            begin_phase(version);
-            break;
         case State::Phase1:
         case State::Phase2:
             if (type == expected_) advance_phase(type);
             break;
         case State::WaitLinkRequest:
             if (type != control::kLinkRequest) return;
-            control_seq_ = 0;  // phase 2 numbers control messages from 0 again
             enter(State::WaitHelloV3, cfg_.hello_v3_timeout_ns);
+            break;
+        case State::Setup:
+        case State::Streaming:
+            if (type != control::kBye) return;
+            // Protocol error or Link quit: its xrspd sends a new HELLO v1 soon; BYE if not
+            log("info", "headset ended the session (BYE)");
+            wait_hello(cfg_.bye_retry_ns);
             break;
         default:
             break;
@@ -275,6 +302,13 @@ void Session::begin_phase(uint16_t version) {
         return;
     }
     version_ = version;
+    control_seq_ = 0;  // each phase numbers control messages from 0
+    if (version == 3) {
+        // New streaming session: fresh per-topic seq, frame index and clock counter
+        stream_seq_.clear();
+        next_frame_index_ = cfg_.first_frame_index;
+        clock_count_ = 0;
+    }
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
     expected_ = control::kAck;
     send_control(control::kConfig, version);
@@ -318,6 +352,7 @@ void Session::finish_handshake() {
 
 void Session::on_streaming() {
     enter(State::Streaming, 0);
+    ++streams_;
     if (cfg_.hands) set_hands(true);
 }
 
@@ -331,12 +366,18 @@ void Session::set_hands(bool on) {
 void Session::tick() {
     int64_t now = clock_();
     if (deadline_ && now > deadline_) {
-        const char* what = state_ == State::WaitHello         ? "no HELLO"
-                           : state_ == State::WaitLinkRequest ? "no Enable Link (0x85)"
-                           : state_ == State::WaitHelloV3     ? "no HELLO v3"
-                                                              : nullptr;
-        fail(what ? std::string(what) + " in time" : "no " + hex2(expected_) + " in time");
-        return;
+        // Our own limits end the session; a stalled headset step restarts pairing with a BYE
+        if (state_ == State::WaitHello || state_ == State::WaitLinkRequest) {
+            fail(state_ == State::WaitHello ? "no HELLO in time" : "no Enable Link (0x85) in time");
+            return;
+        }
+        std::string what = state_ == State::WaitHelloV3 ? "no HELLO v3" : "no " + hex2(expected_);
+        log("info", what + " in time; restarting the handshake");
+        wait_hello(0);
+    }
+    if (state_ == State::WaitHello && bye_due_ && now >= bye_due_) {
+        send_bye();
+        bye_due_ = cfg_.bye_retry_ns > 0 ? now + cfg_.bye_retry_ns : 0;
     }
     if (state_ != State::Setup) return;
     // Replay Meta's post-handshake stream setup with the recorded gaps (capped)

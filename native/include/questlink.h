@@ -160,9 +160,12 @@ typedef struct ql_config {
     int hands;                   /* turn hand tracking on once streaming (InputControl, default 1) */
     int hello_timeout_ms;        /* 0 = wait forever (default) */
     int link_request_timeout_ms; /* waiting for "Enable Link"; 0 = forever (default) */
-    int step_timeout_ms;         /* per handshake step (default 3000) */
+    int step_timeout_ms;         /* per handshake step; a stalled step restarts pairing (default 3000) */
     ql_log_fn log;
     void* log_user;
+    /* While waiting for HELLO, send a BYE so a headset whose earlier HELLO went unanswered
+     * sends a new one; repeat every bye_retry_ms (default 3000; 0 = once at open, < 0 = never). */
+    int bye_retry_ms;
 } ql_config;
 
 /* Byte transport for ql_host_open_transport (tests, other backends). read returns bytes
@@ -215,6 +218,8 @@ typedef struct ql_info {
     uint16_t video_seq; /* next seq on topic 10 */
     uint64_t rx_counts[64]; /* messages received per topic */
     uint16_t tx_seq[64];    /* next seq per PC->Q stream topic, 0 = not used yet */
+    uint32_t streams;       /* streaming sessions started on this host (a new one needs an IDR) */
+    uint32_t byes_sent;     /* BYEs sent while waiting for HELLO */
 } ql_info;
 
 QL_API void ql_config_init(ql_config* cfg);

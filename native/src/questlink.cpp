@@ -45,6 +45,8 @@ SessionConfig to_session_config(const ql_config& c) {
     s.hello_timeout_ns = int64_t(c.hello_timeout_ms) * 1'000'000;
     s.link_request_timeout_ns = int64_t(c.link_request_timeout_ms) * 1'000'000;
     s.step_timeout_ns = int64_t(c.step_timeout_ms) * 1'000'000;
+    if (c.bye_retry_ms < 0) s.bye_delay_ns = -1;
+    s.bye_retry_ns = c.bye_retry_ms > 0 ? int64_t(c.bye_retry_ms) * 1'000'000 : 0;
     return s;
 }
 
@@ -119,6 +121,7 @@ void ql_config_init(ql_config* cfg) {
     cfg->send_setup = 1;
     cfg->hands = 1;
     cfg->step_timeout_ms = 3000;
+    cfg->bye_retry_ms = 3000;
 }
 
 static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, ql_host** out) {
@@ -235,6 +238,8 @@ ql_status ql_host_get_info(ql_host* host, ql_info* out) {
     for (int t = 0; t < 64; ++t) out->tx_seq[t] = s.stream_seq(uint8_t(t));
     for (auto [t, n] : s.rx_counts())
         if (t < 64) out->rx_counts[t] = n;
+    out->streams = s.streams();
+    out->byes_sent = s.byes_sent();
     return QL_OK;
 }
 
