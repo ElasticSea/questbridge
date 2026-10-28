@@ -50,6 +50,9 @@ class Host:
         self.send_lock = threading.Lock()
         self.stream_seq = collections.defaultdict(int)
         self.rx_counts = collections.Counter()
+        self.quest_offset_ns = None
+        self.frame_start = None
+        self.skip_setup = False
 
     # --- sending -------------------------------------------------------------
     def send_control(self, typ, version, patch=None):
@@ -110,6 +113,9 @@ class Host:
         stamps = struct.unpack_from("<4Q", body, 8)
         self.log("Q->PC", f"clock 0x{typ:02x} {stamps[2]}", None)
         if typ == CLOCK_PING:
+            # Quest transmit time vs our receive time: offset good to ~1 ms (one-way USB latency)
+            self.quest_offset_ns = stamps[2] - now
+        if typ == CLOCK_PING:
             # NTP-style reply: echo their transmit time, our receive and transmit times
             self.send_clock(CLOCK_PONG, (stamps[2], now, time.perf_counter_ns(), 0))
 
@@ -133,6 +139,17 @@ class Host:
         self.expect(READY)
 
     def run(self, seconds):
+        if os.environ.get("XRSP_ATTACH"):
+            # Headset session is still up from an earlier run of ours: skip the handshake
+            self.seq = int(os.environ.get("XRSP_CONTROL_SEQ", "16"))
+            # The headset remembers per-topic seq and frame index; continue past earlier runs
+            for t in range(10, 15):
+                self.stream_seq[t] = int(os.environ.get("XRSP_VIDEO_SEQ", "0"))
+            self.frame_start = int(os.environ.get("XRSP_FRAME_START", "0")) or None
+            self.skip_setup = True
+            self.log("info", "attaching to existing session", None)
+            self.stream(seconds)
+            return
         hello = self.expect(HELLO, timeout=float(os.environ.get("XRSP_HELLO_WAIT", "300")))
         self.session_id = hello["s"][6]
         version = hello["s"][0] & 0xFFFF
@@ -145,6 +162,9 @@ class Host:
         self.phase(hello, 3)
         self.log("info", "phase 2 done; starting clock sync", None)
         self.send_clock(CLOCK_PING, (0, 0, time.perf_counter_ns(), 0))
+        self.stream(seconds)
+
+    def stream(self, seconds):
         replay = os.environ.get("XRSP_REPLAY")
         if not replay:
             end = time.time() + 5
@@ -187,7 +207,7 @@ class Host:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         prev_t = None
-        for m in data["setup"]:
+        for m in [] if self.skip_setup else data["setup"]:
             if prev_t is not None:
                 time.sleep(min(m["t"] - prev_t, 0.5))
             prev_t = m["t"]
@@ -196,13 +216,26 @@ class Host:
         frame = [(m["topic"], m["flags"], bytearray.fromhex(m["body"])) for m in data["frame"]]
         headers = [body for i, (t, fl, body) in enumerate(frame)
                    if i > 0 and len(frame[i - 1][2]) == 8 and frame[i - 1][0] == t]
-        period, index = 1 / 72, data["frame_index"]
+        period, index = 1 / 72, self.frame_start or data["frame_index"]
+        # EncodedSlice timing words in the Quest clock: renderPose time (5), pcPresentBegin (9),
+        # targetVsync (11), targetDeadline (12), estimatedGpuEnd (13), latency marker (14)
+        timing_words = (5, 9, 11, 12, 13, 14)
+        originals = []
+        for body in headers:
+            d = 8 + 8 * ((struct.unpack_from("<Q", body, 0)[0] & 0xFFFFFFFF) >> 2)
+            originals.append((d, {w: struct.unpack_from("<Q", body, d + 8 * w)[0] for w in timing_words}))
+        while self.quest_offset_ns is None:
+            time.sleep(0.05)  # need one clock ping to map our clock onto the Quest's
         nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
-            for body in headers:
-                # EncodedSlice.frame.index is the first data word of the root struct
-                root = struct.unpack_from("<Q", body, 0)[0]
-                struct.pack_into("<Q", body, 8 + 8 * ((root & 0xFFFFFFFF) >> 2), index)
+            quest_now = time.perf_counter_ns() + self.quest_offset_ns
+            for body, (d, orig) in zip(headers, originals):
+                struct.pack_into("<Q", body, d, index)  # frame.index
+                # Shift all timestamps together so the frame targets a vsync ~20 ms out
+                shift = quest_now + 20_000_000 - orig[11]
+                for w, v in orig.items():
+                    if v:
+                        struct.pack_into("<Q", body, d + 8 * w, v + shift)
             self.send_stream([(t, fl, bytes(b)) for t, fl, b in frame])
             index += 1
             sent += 1
