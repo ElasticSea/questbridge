@@ -20,6 +20,24 @@ from dataclasses import dataclass
 from usbpcap import read
 
 
+# Topic names as OVRService logs them ("destroying topic N (Name)"), runtime 1.208.
+TOPICS = {1: "Builtin", 2: "Command", 3: "Pose", 4: "Mesh", 5: "Video", 6: "Audio",
+          7: "Haptic", 8: "Hands", 9: "Skeleton",
+          **{10 + i: f"Slice{i}" for i in range(16)},
+          26: "AudioControl", 27: "UserSettingsSync", 28: "InputControl", 29: "Asw",
+          30: "Body", 31: "RuntimeIPC", 32: "CameraStream", 33: "Logging",
+          34: "Pose2", 35: "DeviceInput"}
+
+# Session feature ids as sent in HELLO v3 / CONFIG lists (wire = internal - 1,
+# internal 15-18 and 25 are never serialized). None = name not recovered.
+FEATURES = {0: None, 1: "base", 2: "base", 3: "base", 4: None,
+            5: "unreliableTracking", 6: "opusAudio", 7: "protocol7", 8: "oafInterface",
+            9: "hmdPoseFrequency", 10: "disableHmdMic", 11: "singleDecoder",
+            12: "mlSuperRes", 13: "protocol13", 14: "ripcRawMessages",
+            15: "ripcTransportHandshake", 16: None, 17: None, 18: "mobilePtw",
+            19: "protocol19", 20: "pcaStreaming"}
+
+
 @dataclass
 class Msg:
     ts: float
@@ -94,10 +112,11 @@ def stats(path, device):
         e[2] = m.ts if e[2] is None else e[2]
         e[3] = m.ts
         e[4].add(m.flags)
-    print(f"{'topic':>5} {'dir':>6} {'msgs':>8} {'bytes':>12} {'first':>8} {'last':>8} {'rate/s':>8} flags")
+    print(f"{'topic':>5} {'name':<16} {'dir':>6} {'msgs':>8} {'bytes':>12} {'first':>8} {'last':>8} {'rate/s':>8} flags")
     for (t, d), (n, b, f, l, fl) in sorted(s.items()):
         rate = n / (l - f) if l > f else 0
-        print(f"{t:>5} {d:>6} {n:>8} {b:>12} {f:>8.3f} {l:>8.3f} {rate:>8.1f} {','.join(hex(x) for x in sorted(fl))}")
+        print(f"{t:>5} {TOPICS.get(t, '?'):<16} {d:>6} {n:>8} {b:>12} {f:>8.3f} {l:>8.3f} {rate:>8.1f} "
+              f"{','.join(hex(x) for x in sorted(fl))}")
 
 
 def dump(path, device, topic, count):
