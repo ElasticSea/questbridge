@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m unittest discover -s tests -v
+
+  native-windows:
+    name: Native (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S native -B native/build -A x64
+      - run: cmake --build native/build --config Release --parallel
+      - run: ctest --test-dir native/build -C Release --output-on-failure
+
+  native-macos:
+    name: Native (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install libusb pkgconf
+      - run: cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build native/build --parallel
+      # Metal and VideoToolbox tests need a GPU encoder, which hosted runners don't have
+      - run: ctest --test-dir native/build --output-on-failure -E "metal|vt"
