@@ -13,6 +13,7 @@ namespace ElasticSea.QuestLink.Editor
         public const string PackageRoot = "Packages/com.elasticsea.questlink";
         public const string RigPrefabPath = PackageRoot + "/Runtime/Prefabs/QuestLink Rig.prefab";
         public const string WindowsPluginPath = PackageRoot + "/Runtime/Plugins/Windows/x86_64/questlink.dll";
+        public const string MacPluginPath = PackageRoot + "/Runtime/Plugins/macOS/libquestlink.dylib";
 
         public class Problem
         {
