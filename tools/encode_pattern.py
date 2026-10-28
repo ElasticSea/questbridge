@@ -38,33 +38,57 @@ TEMPLATE = os.path.join(ROOT, "host", "replay", "meta-idr.json")
 FONT = "/Windows/Fonts/arialbd.ttf"  # drive-less: a "C:" would need filtergraph escaping
 
 
+# Per-eye FovPort tangents (left, right, up, down) as in Meta's game frames; left half = left eye
+EYE_TANGENTS = ((1.3764, 0.8391, 0.9657, 1.4281), (0.8391, 1.3764, 0.9657, 1.4281))
+
+
+def eye_centre(eye, w, h):
+    """Pixel of the straight-ahead direction in one eye's half (rectilinear projection)."""
+    left, right, up, down = EYE_TANGENTS[eye]
+    return round(left / (left + right) * w), round(up / (up + down) * h)
+
+
 def source(src):
-    """lavfi source, same image in both eyes except testsrc2:
-      testsrc2                        moving pattern, differs per eye
-      grid:<colour>                   static grid with a centre cross
-      look:<colour>:<secs>:<l1>|<l2>  grid plus instruction lines and a countdown
-      text:<colour>:<secs>:<l1>|<l2>  instruction lines only
-    Text sits inside slice bands 1 (448-896 px) and 3 (1344-1792 px), never on a slice edge.
+    """lavfi source:
+      testsrc2                         moving pattern, differs per eye
+      grid:<colour>                    static grid with a centre cross, same pixels in both eyes
+      look:<colour>:<secs>:<l1>|<l2>   grid plus instruction lines and a countdown
+      text:<colour>:<secs>:<l1>|<l2>   instruction lines only
+      world:<colour>:<secs>:<l1>|<l2>  like look, but drawn per eye through its own projection
+                                       (cross straight ahead, grid every 0.25 tan) so the eyes fuse
+    Text sits inside one slice band (448 px each), never on a slice edge.
     Lines must not contain ':' ',' or quotes."""
     if src == "testsrc2":
         return f"testsrc2=size={WIDTH}x{HEIGHT}:rate=72,format=yuv420p"
     kind, c, *rest = src.split(":", 3)
-    eye = WIDTH // 2
-    # look/text clips change once a second: 1 frame/s, stream with XRSP_HOLD=72
-    vf = f"color=c={c}:s={eye}x{HEIGHT}:r={1 if kind in ('look', 'text') else 72}"
-    if kind in ("grid", "look"):
-        vf += (f",drawgrid=w=128:h=128:t=6:c=white,"
-               f"drawbox=x={eye // 2 - 20}:y={HEIGHT // 2 - 160}:w=40:h=320:c=black:t=fill,"
-               f"drawbox=x={eye // 2 - 160}:y={HEIGHT // 2 - 20}:w=320:h=40:c=black:t=fill")
-    if kind in ("look", "text"):
-        secs, lines = int(rest[0]), rest[1].split("|")
-        box = "box=1:boxcolor=black:boxborderw=14"
-        for i, line in enumerate(lines[:4]):
-            vf += (f",drawtext=fontfile={FONT}:text='{line}':fontsize=64:fontcolor=white:{box}"
-                   f":x=(w-text_w)/2:y={470 + 105 * i}")
-        vf += (rf",drawtext=fontfile={FONT}:text='%{{eif\:max(0\,{secs}-t)\:d}}':fontsize=150"
-               f":fontcolor=yellow:{box}:x=(w-text_w)/2:y=1480")
-    return vf + ",split[l][r];[l][r]hstack,format=yuv420p"
+    w, h = WIDTH // 2, HEIGHT
+    # look/text/world clips change once a second: 1 frame/s, stream with XRSP_HOLD=72
+    rate = 72 if kind == "grid" else 1
+    eyes = []
+    for eye in range(2):
+        cx, cy = eye_centre(eye, w, h) if kind == "world" else (w // 2, h // 2)
+        vf = f"color=c={c}:s={w}x{h}:r={rate}"
+        if kind == "world":
+            # 0.25 tan steps: the horizontal and vertical tangent spans differ, so cells are not square
+            gx, gy = round(0.25 * w / sum(EYE_TANGENTS[eye][:2])), round(0.25 * h / sum(EYE_TANGENTS[eye][2:]))
+            vf += f",drawgrid=x={cx % gx}:y={cy % gy}:w={gx}:h={gy}:t=6:c=white"
+        elif kind in ("grid", "look"):
+            vf += ",drawgrid=w=128:h=128:t=6:c=white"
+        if kind != "text":
+            vf += (f",drawbox=x={cx - 20}:y={cy - 160}:w=40:h=320:c=black:t=fill,"
+                   f"drawbox=x={cx - 160}:y={cy - 20}:w=320:h=40:c=black:t=fill")
+        if kind in ("look", "text", "world"):
+            secs, lines = int(rest[0]), [line for line in rest[1].split("|") if line]
+            box = "box=1:boxcolor=black:boxborderw=14"
+            # world: the centre cross sits near band 2's top edge, so text goes to band 3, countdown to 4
+            text_y, count_y = (1366, 1840) if kind == "world" else (470, 1480)
+            for i, line in enumerate(lines[:4]):
+                vf += (f",drawtext=fontfile={FONT}:text='{line}':fontsize=64:fontcolor=white:{box}"
+                       f":x={cx}-text_w/2:y={text_y + 105 * i}")
+            vf += (rf",drawtext=fontfile={FONT}:text='%{{eif\:max(0\,{secs}-t)\:d}}':fontsize=150"
+                   f":fontcolor=yellow:{box}:x={cx}-text_w/2:y={count_y}")
+        eyes.append(vf + f"[e{eye}]")
+    return ";".join(eyes) + ";[e0][e1]hstack,format=yuv420p"
 
 
 def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2", gop=1):

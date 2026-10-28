@@ -237,7 +237,8 @@ class Host:
                                           struct.unpack_from("<3f", msg, 8 + 0xF8),
                                           struct.unpack_from("<Q", msg, 8 + 0x108)[0])
             if time.time() - last >= 2:
-                self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())), None)
+                pose = " pose q=(%.3f %.3f %.3f %.3f) p=(%.3f %.3f %.3f)" % (*self.head_pose[0], *self.head_pose[1])                     if self.head_pose else ""
+                self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())) + pose, None)
                 self.rx_counts.clear()
                 last = time.time()
 
