@@ -495,13 +495,18 @@ private:
         int len_size = 4;
         param_set(0, nullptr, nullptr, &count, &len_size);
         s.csd.clear();
+        h264::Sps vt_sps;  // as VideoToolbox wrote it (POC type 0)
         for (size_t k = 0; k < count; k++) {
             const uint8_t* p = nullptr;
             size_t n = 0;
             if (param_set(k, &p, &n, nullptr, nullptr) != noErr) continue;
             Bytes ps(p, p + n);
-            if (!hevc() && h264::nal_type(ps) == h264::kSps && !h264::add_vui(ps, cfg_.fps))
-                h264::set_fixed_frame_rate(ps);
+            if (!hevc() && h264::nal_type(ps) == h264::kSps) {
+                // The Quest rejects POC type 0 (xr_video_codecs): rewrite to 2, slices below
+                h264::parse_sps(ps, vt_sps);
+                h264::set_poc_type2(ps);
+                if (!h264::add_vui(ps, cfg_.fps)) h264::set_fixed_frame_rate(ps);
+            }
             h264::append_annexb(s.csd, ps);
         }
         h264::Sps sps;
@@ -528,8 +533,9 @@ private:
                 uint8_t t = h264::nal_type(nal);
                 if (t == h264::kSlice || t == h264::kIdr) {
                     s.nals.emplace_back(nal.begin(), nal.end());
+                    if (have_ps && !h264::drop_poc_lsb(s.nals.back(), vt_sps, pps)) s.status = kVTParameterErr;
                     h264::SliceHeader sh;
-                    h264::parse_slice_header(nal, sh, have_ps ? &sps : nullptr, have_ps ? &pps : nullptr);
+                    h264::parse_slice_header(s.nals.back(), sh, have_ps ? &sps : nullptr, have_ps ? &pps : nullptr);
                     s.nal_qp.push_back(sh.qp);
                 }
                 if (t == h264::kIdr) s.idr = true;

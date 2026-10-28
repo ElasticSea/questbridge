@@ -24,6 +24,8 @@ struct Sps {
     int width_mbs = 0;
     int height_mbs = 0;
     int log2_max_frame_num = 0;
+    int poc_type_bit = -1;          // RBSP bit offset of pic_order_cnt_type
+    int poc_end_bit = -1;           // first bit after the POC fields
     int max_num_ref_frames = 0;
     int poc_type = 0;
     int log2_max_poc_lsb = 0;
@@ -53,6 +55,16 @@ struct Pps {
 };
 
 bool parse_pps(std::span<const uint8_t> nal, Pps& out);
+
+// The Quest's bitstream parser (xr_video_codecs) rejects pic_order_cnt_type != 2. Rewrite a
+// poc_type 0 SPS (VideoToolbox) to 2; its slices then need drop_poc_lsb with the ORIGINAL SPS.
+// Valid while output order = decode order and no two non-reference pictures follow each other
+// (no B frames, every P a reference). False for other poc types.
+bool set_poc_type2(Bytes& sps_nal);
+
+// Remove pic_order_cnt_lsb (and delta_pic_order_cnt_bottom) from a slice of a poc_type 0 stream
+// whose SPS went through set_poc_type2. `sps` is the original (poc_type 0) SPS.
+bool drop_poc_lsb(Bytes& slice_nal, const Sps& sps, const Pps& pps);
 
 struct SliceHeader {
     int first_mb = 0;

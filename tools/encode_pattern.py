@@ -18,7 +18,10 @@ Layouts (encoder gate experiments):
 Writes host/replay/<name>.json with "frames": [[{topic, flags, body}, ...], ...]
 and the setup messages copied from the Meta replay file.
 
-Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source] [gop]
+codec hevc (split5 only): x265 Main strips with VPS+SPS+PPS as csd, always 72 fps, for the HEVC gate
+(CONFIG codec, XRSP_CODEC in host/handshake.py).
+
+Usage: py encode_pattern.py [frames] [name] [crf] [layout] [chunk bytes] [source] [gop] [h264|hevc]
 """
 import json
 import os
@@ -48,7 +51,7 @@ def eye_centre(eye, w, h):
     return round(left / (left + right) * w), round(up / (up + down) * h)
 
 
-def source(src):
+def source(src, rate=None):
     """lavfi source:
       testsrc2                         moving pattern, differs per eye
       grid:<colour>                    static grid with a centre cross, same pixels in both eyes
@@ -63,7 +66,7 @@ def source(src):
     kind, c, *rest = src.split(":", 3)
     w, h = WIDTH // 2, HEIGHT
     # look/text/world clips change once a second: 1 frame/s, stream with XRSP_HOLD=72
-    rate = 72 if kind == "grid" else 1
+    rate = rate or (72 if kind == "grid" else 1)
     eyes = []
     for eye in range(2):
         cx, cy = eye_centre(eye, w, h) if kind == "world" else (w // 2, h // 2)
@@ -91,10 +94,20 @@ def source(src):
     return ";".join(eyes) + ";[e0][e1]hstack,format=yuv420p"
 
 
-def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2", gop=1):
-    vf = source(src)
+def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2", gop=1, codec="h264"):
+    # HEVC: x265 makes all-intra streams Main Intra (RExt), so look/text clips run at 72 fps with P frames
+    vf = source(src, 72 if codec == "hevc" else None)
     if crop_y is not None:
         vf += f",crop={WIDTH}:{height}:0:{crop_y}"
+    if codec == "hevc":
+        subprocess.run([
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", vf,
+            "-frames:v", str(frames), "-c:v", "libx265", "-profile:v", "main", "-preset", "ultrafast",
+            "-tune", "zerolatency", "-crf", str(crf),
+            "-x265-params", f"keyint={gop}:min-keyint={gop}:bframes=0:repeat-headers=1:aud=0:slices=1:log-level=error",
+            "-f", "hevc", out], check=True)
+        return
     subprocess.run([
         FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", vf,
@@ -165,10 +178,34 @@ def es_pictures(path):
         return pictures_of(split_nals(f.read()))
 
 
-def build(count, name, crf, layout, src, gop):
+def hevc_pictures(path):
+    """HEVC stream with one slice per picture -> [(csd, slice NAL)]; csd = VPS+SPS+PPS in effect."""
+    with open(path, "rb") as f:
+        nals = split_nals(f.read())
+    pics, ps = [], {}
+    for nal in nals:
+        t = nal[0] >> 1 & 0x3F
+        if t in (32, 33, 34):
+            ps[t] = nal
+        elif t < 32:
+            pics.append((b"".join(b"\x00\x00\x00\x01" + ps[k] for k in (32, 33, 34)), nal))
+    return pics
+
+
+def build(count, name, crf, layout, src, gop, codec="h264"):
     """-> per frame a list of slices (csd, nal, yOffset px, heightInMacroBlocks)."""
     es = os.path.join(ROOT, "capture", "runs", f"{name}.h264")
     os.makedirs(os.path.dirname(es), exist_ok=True)
+    if codec == "hevc":
+        if layout != "split5":
+            raise SystemExit("hevc: only the split5 layout")
+        h = HEIGHT // SLICES
+        streams = []
+        for i in range(SLICES):
+            part = es.replace(".h264", f"-{i}.h265")
+            encode(count, crf, part, "", h, i * h, src, gop, "hevc")
+            streams.append(hevc_pictures(part))
+        return [[(c, nal, i * h, h // 16) for i, (c, nal) in enumerate(pics)] for pics in zip(*streams)]
     if layout == "split5":
         h = HEIGHT // SLICES
         streams = []
@@ -201,7 +238,8 @@ def main():
     chunk = int(sys.argv[5]) if len(sys.argv) > 5 else 0
     src = sys.argv[6] if len(sys.argv) > 6 else "testsrc2"
     gop = int(sys.argv[7]) if len(sys.argv) > 7 else 1  # 1 = all intra; else IDR every gop frames + P frames
-    pictures = build(count, name, crf, layout, src, gop)
+    codec = sys.argv[8] if len(sys.argv) > 8 else "h264"
+    pictures = build(count, name, crf, layout, src, gop, codec)
 
     with open(TEMPLATE, encoding="utf-8") as f:
         meta = json.load(f)
@@ -220,7 +258,7 @@ def main():
             hdr = bytearray(header)
             d = 8 + 8 * ((struct.unpack_from("<Q", hdr, 0)[0] & 0xFFFFFFFF) >> 2)
             hdr[d + 48] = i                                       # slice.index
-            intra = nal[0] & 0x1F == 5
+            intra = (nal[0] >> 1 & 0x3F) in (19, 20) if codec == "hevc" else nal[0] & 0x1F == 5
             hdr[d + 49] = intra | (2 if i == len(slices) - 1 else 0)  # isIntraFrame, isLastSliceOfAFrame
             # yOffset (px), heightInMacroBlocks, csdLength, videoLength
             struct.pack_into("<IIII", hdr, d + 4 * 13, y, h_mb, len(c), len(video))
@@ -235,7 +273,8 @@ def main():
 
     dest = os.path.join(ROOT, "host", "replay", f"{name}.json")
     with open(dest, "w", encoding="utf-8") as f:
-        json.dump({"source": f"{src} x264 crf{crf} {layout} gop{gop}", "frame_index": 1, "setup": meta["setup"],
+        json.dump({"source": f"{src} {'x265' if codec == 'hevc' else 'x264'} crf{crf} {layout} gop{gop}",
+                   "frame_index": 1, "setup": meta["setup"],
                    "frames": out_frames}, f)
     sizes = [sum(len(bytes.fromhex(m["body"])) for m in fr) for fr in out_frames]
     print(f"{name}: {len(out_frames)} frames, avg {sum(sizes) // max(1, len(sizes))} B/frame, "
