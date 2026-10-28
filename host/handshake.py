@@ -118,7 +118,7 @@ class Host:
         self.expect(READY)
 
     def run(self, seconds):
-        hello = self.expect(HELLO, timeout=5)
+        hello = self.expect(HELLO, timeout=float(os.environ.get("XRSP_HELLO_WAIT", "300")))
         self.session_id = hello["s"][6]
         version = hello["s"][0] & 0xFFFF
         if version == 1:
