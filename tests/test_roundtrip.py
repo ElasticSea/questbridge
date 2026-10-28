@@ -7,7 +7,7 @@ from capnp_codec import encode
 from decode_audio import encode_audio, parse_segment, unpad
 from xrsp import encode_message, pack_transfer
 
-SCENARIOS = ["handshake"]
+SCENARIOS = ["handshake", "sensors"]
 
 
 def parse_header(raw):
