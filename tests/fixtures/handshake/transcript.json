@@ -1,0 +1,242 @@
+[
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x81"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x82"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x83"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x89"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x8a"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x87"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x80"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x85"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x81"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x82"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x83"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x89"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x8a"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "0x87"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "0x80"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 26,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 31,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 26,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 2,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 33,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 31,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 34,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 35,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 6,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 28,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 6,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 10,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 11,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 12,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 13,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 14,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 4,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 2,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "pc_to_quest",
+  "topic": 7,
+  "kind": "stream_start"
+ },
+ {
+  "dir": "quest_to_pc",
+  "topic": 1,
+  "kind": "clock"
+ }
+]
