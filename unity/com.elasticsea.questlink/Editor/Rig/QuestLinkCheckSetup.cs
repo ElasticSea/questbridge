@@ -110,6 +110,8 @@ namespace ElasticSea.QuestLink.Editor
         public static SetupCheck GraphicsCheck(RuntimePlatform platform, GraphicsDeviceType api)
         {
             const string title = "Editor graphics API";
+            if (api == GraphicsDeviceType.Null)
+                return Check("graphics_api", title, CheckStatus.Skip, "no graphics device (batch mode -nographics)");
             if (platform == RuntimePlatform.WindowsEditor)
                 return api == GraphicsDeviceType.Direct3D11
                     ? Check("graphics_api", title, CheckStatus.Ok, "Direct3D 11")

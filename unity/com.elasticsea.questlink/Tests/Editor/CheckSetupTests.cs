@@ -60,6 +60,8 @@ namespace ElasticSea.QuestLink.Tests
             Assert.AreEqual(CheckStatus.Ok, QuestLinkCheckSetup.GraphicsCheck(RuntimePlatform.OSXEditor, GraphicsDeviceType.Metal).status);
             Assert.AreEqual(CheckStatus.Fail, QuestLinkCheckSetup.GraphicsCheck(RuntimePlatform.OSXEditor, GraphicsDeviceType.OpenGLCore).status);
             Assert.AreEqual(CheckStatus.Skip, QuestLinkCheckSetup.GraphicsCheck(RuntimePlatform.LinuxEditor, GraphicsDeviceType.Vulkan).status);
+            // -nographics batch runs have no device: not a failure
+            Assert.AreEqual(CheckStatus.Skip, QuestLinkCheckSetup.GraphicsCheck(RuntimePlatform.WindowsEditor, GraphicsDeviceType.Null).status);
         }
 
         [Test]
