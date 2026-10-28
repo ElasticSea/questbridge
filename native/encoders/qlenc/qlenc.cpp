@@ -5,7 +5,10 @@
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
 //              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency]
 //              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
-//              [--codec h264|hevc] [--size 4096x2240]
+//              [--codec h264|hevc] [--size 4096x2240] [--pattern tiles|noise|motion|cuts]
+// Patterns noise (fresh random pixels every frame), motion (a random texture jumping ~300 px
+// per frame) and cuts (tiles with a 2-frame motion burst every 18 frames, so rate control is at
+// a low QP when the burst hits) are the worst cases for the per-slice size cap.
 // Strips (VideoToolbox): one .h264 per strip, capture/runs/<name>-<i>.h264.
 #include <algorithm>
 #include <chrono>
@@ -219,6 +222,43 @@ void draw_pattern(std::vector<uint8_t>& bgra, int w, int h, int frame, int slice
         }
 }
 
+// Random pixels. motion: one fixed random texture (16x16 blocks of noise, so it is not pure
+// static) scrolled far beyond any motion search range every frame. noise: new pixels each frame.
+void draw_random(std::vector<uint8_t>& bgra, int w, int h, int frame, bool motion) {
+    static std::vector<uint8_t> texture;
+    auto rng = [](uint64_t& x) {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        return x;
+    };
+    if (!motion) {
+        uint64_t x = 0x9E3779B97F4A7C15ull * uint64_t(frame + 1);
+        auto* p = reinterpret_cast<uint64_t*>(bgra.data());
+        for (size_t i = 0; i < bgra.size() / 8; i++) p[i] = rng(x) | 0xFF000000FF000000ull;
+        return;
+    }
+    const int tw = 2 * w, th = 2 * h;
+    if (texture.empty()) {
+        texture.resize(size_t(tw) * th * 4);
+        uint64_t x = 0x2545F4914F6CDD1Dull;
+        for (int by = 0; by < th; by += 16)
+            for (int bx = 0; bx < tw; bx += 16) {
+                uint64_t base = rng(x);
+                for (int y = by; y < by + 16; y++)
+                    for (int xx = bx; xx < bx + 16; xx++) {
+                        uint8_t* t = &texture[(size_t(y) * tw + xx) * 4];
+                        uint64_t r = rng(x);
+                        for (int c = 0; c < 3; c++) t[c] = uint8_t(((base >> (8 * c)) & 0xFF) / 2 + ((r >> (8 * c)) & 0x7F));
+                        t[3] = 255;
+                    }
+            }
+    }
+    const int ox = (frame * 331) % w, oy = (frame * 197) % h;
+    for (int y = 0; y < h; y++)
+        memcpy(&bgra[size_t(y) * w * 4], &texture[(size_t(y + oy) * tw + ox) * 4], size_t(w) * 4);
+}
+
 void bgra_to_nv12(const std::vector<uint8_t>& src, int w, int h, std::vector<uint8_t>& nv12) {
     nv12.resize(size_t(w) * h * 3 / 2);
     for (int y = 0; y < h; y += 2) {
@@ -259,7 +299,7 @@ int main(int argc, char** argv) {
     int frames = 144, gop = 72, slices = 5;
     double mbps = 100;
     bool vbr = false, software = false, csd_every = true, low_latency = false;
-    std::string name = "qlenc", input = "nv12", root_arg;
+    std::string name = "qlenc", input = "nv12", root_arg, pattern = "tiles";
 #ifdef __APPLE__
     std::string layout_arg = "strips";  // VideoToolbox has no slice-count control
 #else
@@ -290,6 +330,7 @@ int main(int argc, char** argv) {
         else if (a == "--max-slice-bytes") max_slice_bytes = std::stoul(next());
         else if (a == "--csd") csd_every = next() != "idr";
         else if (a == "--root") root_arg = next();
+        else if (a == "--pattern") pattern = next();
         else {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
                             "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency] [--slices 5] "
@@ -387,7 +428,8 @@ int main(int argc, char** argv) {
     std::map<std::string, int> layouts;
     std::vector<uint8_t> bgra(size_t(W) * H * 4), nv12;
     for (int f = 0; f < frames; f++) {
-        draw_pattern(bgra, W, H, f, slices);
+        if (pattern == "tiles" || (pattern == "cuts" && f % 18 < 16)) draw_pattern(bgra, W, H, f, slices);
+        else draw_random(bgra, W, H, f, pattern != "noise");
         int64_t ts = int64_t(f) * 1'000'000'000 / cfg.fps;
         ql::enc::EncodedFrame out;
         bool ok;
@@ -490,6 +532,41 @@ int main(int argc, char** argv) {
     stats("encoder submit->output", ms);
     stats("encode() call incl. copy/convert", call_ms);
     printf("wrote %s%s\n", es_path.string().c_str(), strips ? " (one file per strip: -0..-N)" : "");
+
+    // Slice cap fallback: frames re-encoded as IDR under a QP floor, and what it cost
+    int refit_frames = 0, refits = 0;
+    size_t first_try = 0;
+    double qp_sum[2] = {}, qp_n[2] = {};
+    int qp_max[2] = {-1, -1};
+    for (auto& e : encoded) {
+        refit_frames += e.refits > 0;
+        refits += e.refits;
+        first_try = std::max(first_try, e.first_try_bytes);
+        for (auto& s : e.slices) {
+            if (s.qp < 0) continue;
+            int k = e.refits > 0;
+            qp_sum[k] += s.qp;
+            qp_n[k]++;
+            qp_max[k] = std::max(qp_max[k], s.qp);
+        }
+    }
+    printf("slice cap: %d frames re-encoded (%d encodes), largest rejected slice %zu B\n", refit_frames, refits,
+           first_try);
+    if (qp_n[0] || qp_n[1])
+        printf("slice QP: normal frames mean %.1f max %d; re-encoded frames mean %.1f max %d\n",
+               qp_n[0] ? qp_sum[0] / qp_n[0] : 0, qp_max[0], qp_n[1] ? qp_sum[1] / qp_n[1] : 0, qp_max[1]);
+    for (size_t f = 0; f < encoded.size(); f++) {
+        const auto& e = encoded[f];
+        if (!e.refits) continue;
+        size_t big = 0;
+        for (auto& s : e.slices) big = std::max(big, s.nal.size());
+        printf("  frame %zu: %d re-encode(s), %zu B -> %zu B, %.2f ms\n", f, e.refits, e.first_try_bytes, big,
+               e.encode_ms);
+    }
+    if (over) {
+        printf("FAIL: %d slices over the %zu B cap\n", over, max_slice_bytes);
+        return 4;
+    }
 
     if (!layout_ok || slices != 5) {
         printf("replay clip skipped: needs exactly the 5-slice layout\n");

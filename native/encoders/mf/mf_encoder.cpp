@@ -5,6 +5,7 @@
 // from first_mb_in_slice; callers see it in Slice::first_mb.
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -384,18 +385,57 @@ private:
     }
 
     bool submit(IMFMediaBuffer* buffer, int64_t ts, bool force_idr, EncodedFrame& out) {
+        auto t0 = std::chrono::steady_clock::now();
+        bool ok = submit_once(buffer, ts, force_idr || frames_ == 0, out);
+        // A slice over the cap would end the headset session. Re-encode the same picture as an
+        // IDR (the rejected frame is already the encoder's reference, the headset never gets it)
+        // under a QP floor: +6 QP roughly halves the size. The floor is lifted afterwards.
+        if (ok && largest(out) > cfg_.max_slice_bytes) {
+            const size_t first = largest(out);
+            int qp = std::max(max_qp(out), 20);
+            double ratio = double(first) / double(cfg_.max_slice_bytes);
+            int floor = std::min(51, qp + int(std::ceil(6 * std::log2(ratio))) + 2);
+            for (int attempt = 1; ok && largest(out) > cfg_.max_slice_bytes; attempt++) {
+                if (attempt > 4 || !set_codec(CODECAPI_AVEncVideoMinQP, uint32_t(floor))) {
+                    set_codec(CODECAPI_AVEncVideoMinQP, 0);
+                    return fail(nullptr, "slice of " + std::to_string(largest(out)) + " B over the " +
+                                             std::to_string(cfg_.max_slice_bytes) + " B cap at QP floor " +
+                                             std::to_string(floor));
+                }
+                ok = submit_once(buffer, ts + 100 * attempt, true, out);  // 1 MF tick later
+                out.refits = attempt;
+                floor = std::min(51, floor + 6);
+            }
+            set_codec(CODECAPI_AVEncVideoMinQP, 0);
+            out.first_try_bytes = first;
+        }
+        out.encode_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        return ok;
+    }
+
+    static size_t largest(const EncodedFrame& f) {
+        size_t n = 0;
+        for (auto& s : f.slices) n = std::max(n, s.nal.size());
+        return n;
+    }
+
+    static int max_qp(const EncodedFrame& f) {
+        int qp = -1;
+        for (auto& s : f.slices) qp = std::max(qp, s.qp);
+        return qp;
+    }
+
+    bool submit_once(IMFMediaBuffer* buffer, int64_t ts, bool key, EncodedFrame& out) {
         ComPtr<IMFSample> sample;
         MFCreateSample(&sample);
         sample->AddBuffer(buffer);
         sample->SetSampleTime(ts / 100);
         sample->SetSampleDuration(10'000'000 / cfg_.fps);
 
-        if (force_idr || frames_ == 0) set_codec(CODECAPI_AVEncVideoForceKeyFrame, 1);
-        auto t0 = std::chrono::steady_clock::now();
+        if (key) set_codec(CODECAPI_AVEncVideoForceKeyFrame, 1);
         out = EncodedFrame{};
         out.timestamp_ns = ts;
         bool ok = async_ ? submit_async(sample.Get(), out) : submit_sync(sample.Get(), out);
-        out.encode_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         frames_++;
         return ok;
     }
@@ -481,13 +521,19 @@ private:
             case h264::kSps:
                 sps.assign(nal.begin(), nal.end());
                 h264::set_fixed_frame_rate(sps);  // NVIDIA writes fixed_frame_rate_flag 0 at a constant rate
+                h264::parse_sps(sps, sps_);
                 break;
-            case h264::kPps: pps.assign(nal.begin(), nal.end()); break;
+            case h264::kPps:
+                pps.assign(nal.begin(), nal.end());
+                have_ps_ = h264::parse_pps(pps, pps_);
+                break;
             case h264::kIdr:
             case h264::kSlice: {
                 Slice sl;
                 h264::SliceHeader sh;
-                h264::parse_slice_header(nal, sh);
+                if (!have_ps_ && !csd_.empty()) have_ps_ = h264::parse_csd(csd_, sps_, pps_);
+                h264::parse_slice_header(nal, sh, have_ps_ ? &sps_ : nullptr, have_ps_ ? &pps_ : nullptr);
+                sl.qp = sh.qp;
                 sl.index = int(out.slices.size());
                 sl.first_mb = sh.first_mb;
                 h264::append_annexb(sl.nal, nal);
@@ -592,6 +638,9 @@ private:
     int need_input_ = 0;
     uint64_t frames_ = 0;
     Bytes csd_;
+    h264::Sps sps_;  // in effect, for slice QPs
+    h264::Pps pps_;
+    bool have_ps_ = false;
 
     ComPtr<IMFActivate> activate_;
     ComPtr<IMFTransform> mft_;

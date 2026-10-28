@@ -26,6 +26,10 @@ struct EncodedSlices {
     std::vector<Bytes> slices;  // Annex-B slice NALs, in picture order
     std::vector<Bytes> slice_csd;  // per slice when each is its own stream (strips); empty = csd
     bool idr = false;
+    int refits = 0;               // re-encodes to fit the per-message slice cap (see enc::EncoderConfig)
+    size_t first_try_bytes = 0;   // refits > 0: largest slice of the rejected encode
+    size_t largest = 0;           // largest slice NAL sent
+    int qp = -1;                  // largest slice QP, -1 = unknown
 };
 
 class TextureEncoder {
