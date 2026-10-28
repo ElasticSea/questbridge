@@ -269,3 +269,69 @@ TEST(capi_hands) {
     CHECK_EQ(usb.written[0][1], uint8_t(28));
     ql_host_close(h);
 }
+
+namespace {
+
+// Queue a labelled sensors message (segment table + segment) as Meta's two XRSP messages
+void queue_capnp(FakeUsb& usb, uint8_t topic, const char* label) {
+    for (const auto& m : qltest::fixture("sensors", "controllers").items())
+        if (m["label"].as_string() == label) {
+            Bytes b = m["capnp"].as_hex();
+            usb.queue_message(encode_message(0x10, topic, 0, std::span(b).first(8)));
+            usb.queue_message(encode_message(0x10, topic, 1, std::span(b).subspan(8)));
+        }
+}
+
+ql_controller controller_after(FakeUsb& usb, ql_host* h, uint8_t topic, const char* label, int hand) {
+    queue_capnp(usb, topic, label);
+    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
+    ql_controller c;
+    CHECK_EQ(ql_host_get_controller(h, hand, &c), QL_OK);
+    return c;
+}
+
+}  // namespace
+
+TEST(capi_controllers) {
+    FakeUsb usb;
+    ql_config cfg;
+    ql_config_init(&cfg);
+    CHECK_EQ(cfg.haptics, 1);
+    cfg.attach = 1;
+    ql_transport t = usb.transport();
+    ql_host* h = nullptr;
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    ql_controller c;
+    CHECK_EQ(ql_host_get_controller(h, 0, &c), QL_ERR_NO_DATA);
+    CHECK_EQ(ql_host_get_controller(h, 2, &c), QL_ERR_ARGUMENT);
+
+    c = controller_after(usb, h, 34, "pose_both_tracked", 1);
+    CHECK_EQ(c.flags, uint32_t(0));  // pose but no input yet
+    c = controller_after(usb, h, 35, "a", 1);
+    CHECK_EQ(c.flags, uint32_t(QL_CONTROLLER_CONNECTED | QL_CONTROLLER_POSITION_TRACKED | QL_CONTROLLER_ROTATION_TRACKED));
+    CHECK_EQ(c.buttons, uint32_t(QL_BUTTON_PRIMARY));
+    CHECK(c.touches & QL_BUTTON_PRIMARY);
+    CHECK(std::abs(c.pose.pz - 0.645326f) < 1e-5f);
+    CHECK_EQ(c.pose.time_ns, uint64_t(0x0001441716a04368));
+    // Left X/Y/stick sit 8 bits up in the raw word; menu is left only
+    CHECK_EQ(controller_after(usb, h, 35, "x", 0).buttons, uint32_t(QL_BUTTON_PRIMARY));
+    CHECK_EQ(controller_after(usb, h, 35, "y", 0).buttons, uint32_t(QL_BUTTON_SECONDARY));
+    CHECK_EQ(controller_after(usb, h, 35, "l_stick_click", 0).buttons, uint32_t(QL_BUTTON_THUMBSTICK));
+    CHECK_EQ(controller_after(usb, h, 35, "r_stick_click", 1).buttons, uint32_t(QL_BUTTON_THUMBSTICK));
+    CHECK_EQ(controller_after(usb, h, 35, "menu", 0).buttons, uint32_t(QL_BUTTON_MENU));
+    c = controller_after(usb, h, 35, "l_trigger", 0);
+    CHECK(c.trigger > 0.99f);
+    CHECK(controller_after(usb, h, 35, "r_stick_y_min", 1).stick_y < -0.9f);
+    // Controllers put down: not connected
+    controller_after(usb, h, 34, "pose_controllers_lost", 0);
+    c = controller_after(usb, h, 35, "hands_mode", 0);
+    CHECK_EQ(c.flags, uint32_t(0));
+
+    usb.written.clear();
+    CHECK_EQ(ql_host_haptic(h, 0, -1.0f, 0.1f), QL_ERR_ARGUMENT);
+    REQUIRE(ql_host_haptic(h, 0, 1.0f, 1.0f) == QL_OK);
+    REQUIRE(usb.written.size() == 2);  // attached: lookup + connect first, then the call
+    CHECK_EQ(usb.written[0][1], uint8_t(31));
+    CHECK_EQ(usb.written[1][1], uint8_t(31));
+    ql_host_close(h);
+}

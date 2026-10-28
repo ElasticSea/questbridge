@@ -165,9 +165,9 @@ TEST(setup_paced_with_capped_gaps) {
         r.s.tick();
         count();
     }
-    CHECK_EQ(sent, setup.size() + 2);  // + InputControl hands on
+    CHECK_EQ(sent, setup.size() + 2 + 8);  // + InputControl hands on, HapticsServer lookup + connect
     CHECK_EQ(r.s.state(), State::Streaming);
-    CHECK_EQ(r.s.stream_seq(31), uint16_t(40));  // 48 setup msgs: 2 on 26, 4 on 2, 2 on 28, 40 on 31
+    CHECK_EQ(r.s.stream_seq(31), uint16_t(48));  // 48 setup msgs: 2 on 26, 4 on 2, 2 on 28, 40 on 31; + 8
     CHECK_EQ(r.s.stream_seq(topic::kInputControl), uint16_t(4));  // Meta's hands off, then our hands on
 }
 

@@ -65,6 +65,19 @@ std::vector<SentFrame> sent_frames() {
     return out;
 }
 
+// Haptic calls we sent (topic 31 RuntimeIPC payloads with the haptic type hash)
+int haptic_calls() {
+    std::lock_guard<std::mutex> l(g_quest.mu);
+    int n = 0;
+    for (const auto& x : g_quest.written)
+        for (size_t i = 0; i + 8 <= x.size();) {
+            size_t size = 4 + size_t(rd16(&x[i + 2])) * 4;
+            if (x[i + 1] == 31 && size == 32 && x[i + 8] == 5 && rd32(&x[i + 10]) == 0x2ADC6769) ++n;
+            i += size;
+        }
+    return n;
+}
+
 // Topic-6 blocks we sent; loud = PCM starts with 0.25 (else silence)
 int audio_blocks(bool loud) {
     std::lock_guard<std::mutex> l(g_quest.mu);
@@ -163,10 +176,13 @@ TEST(runtime_unity_flow) {
     CHECK_EQ(ql_read_mic(s2, mic, 2000), int(480));
     CHECK_EQ(ql_read_mic(s2, mic, 2000), 0);
 
+    // Controllers: the head-only pose stream has no controller list; haptics go out on topic 31
     ql_controller c;
-    CHECK_EQ(ql_get_controller(s2, 0, &c), int(QL_ERR_UNSUPPORTED));
+    CHECK_EQ(ql_get_controller(s2, 0, &c), int(QL_OK));
     CHECK_EQ(c.flags, uint32_t(0));
-    CHECK_EQ(ql_haptic(s2, 1, 0.5f, 0.1f), int(QL_ERR_UNSUPPORTED));
+    CHECK_EQ(ql_haptic(s2, 1, 0.5f, 0.1f), int(QL_OK));
+    REQUIRE(wait_for([] { return haptic_calls() == 1; }));
+    CHECK_EQ(ql_haptic(s1, 1, 0.5f, 0.1f), int(QL_ERR_ARGUMENT));  // closed
 
     // Shutdown hands the headset's session to another host: nothing more is sent, no reopen
     ql_shutdown();
