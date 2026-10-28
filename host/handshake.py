@@ -63,6 +63,9 @@ class Host:
         # Render pose written into each frame: "fixed" = first head pose (panel stays put in
         # the world via headset reprojection), "live" = latest pose, "template" = as recorded
         self.pose_mode = os.environ.get("XRSP_POSE", "fixed")
+        # XRSP_DUMP=8,9,32: append raw Quest->PC messages of these topics to capture/runs/dump.txt
+        self.dump_topics = {int(t) for t in filter(None, os.environ.get("XRSP_DUMP", "").split(","))}
+        self.dump = open(os.path.join(ROOT, "capture", "runs", "dump.txt"), "a") if self.dump_topics else None
 
     # --- sending -------------------------------------------------------------
     def send_control(self, typ, version, patch=None):
@@ -226,6 +229,8 @@ class Host:
                     self.log("Q->PC", f"control 0x{msg[8]:02x}", struct.unpack_from("<H", msg, 4)[0])
                 else:
                     self.rx_counts[topic] += 1
+                    if topic in self.dump_topics:
+                        self.dump.write(f"{time.perf_counter_ns()} {topic} {msg.hex()}\n")
                     if topic == TOPIC_HEAD_POSE and len(msg) == 8 + HEAD_POSE_SEGMENT:
                         # Capnp segment of a head pose: quat xyzw @0xe8, position @0xf8, sample ns @0x108
                         self.head_pose = (struct.unpack_from("<4f", msg, 8 + 0xE8),
@@ -275,15 +280,19 @@ class Host:
             while self.head_pose is None:
                 time.sleep(0.01)
         fixed_pose = self.head_pose
+        hold = int(os.environ.get("XRSP_HOLD", "1"))  # send each clip frame this many times (1 frame/s clips: 72)
         nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
-            frame, headers = prepared[sent % len(prepared)]
+            frame, headers = prepared[sent // hold % len(prepared)]
             quest_now = time.perf_counter_ns() + self.quest_offset_ns
             pose = fixed_pose if self.pose_mode == "fixed" else self.head_pose
             for body, d, orig in headers:
                 if pose and self.pose_mode != "template":
                     # renderPose: orientation xyzw at data u32 slots 3..6, translation at 7..9
                     struct.pack_into("<4f3f", body, d + 12, *pose[0], *pose[1])
+                if os.environ.get("XRSP_MESH"):
+                    # rectifyMeshId (data u32 slot 2): Meta's game frames use 1001, its loading screen 0
+                    struct.pack_into("<I", body, d + 8, int(os.environ["XRSP_MESH"]))
                 if os.environ.get("XRSP_FOV"):
                     for eye in range(2):  # FovPort struct pointers at data word 18 + eye
                         p = d + 8 * (18 + eye)
