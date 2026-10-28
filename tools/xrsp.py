@@ -28,11 +28,30 @@ class Msg:
     topic: int
     seq: int
     body: bytes
+    raw: bytes = b""
 
 
-def messages(path, device):
-    # Messages can span consecutive transfers, so keep a carry buffer per direction.
-    carry = {True: b"", False: b""}
+def encode_message(flags, topic, seq, body, reserved=0):
+    if len(body) % 4:
+        raise ValueError("XRSP body must be a multiple of 4 bytes")
+    return struct.pack("<BBHHH", flags, topic, (len(body) + 4) // 4, seq, reserved) + body
+
+
+def pack_transfer(raw_messages, block=1024):
+    """Concatenate messages and pad to a block multiple with a zeroed topic-0
+    message carrying the last message's seq (as Meta's host does)."""
+    data = b"".join(raw_messages)
+    pad = -len(data) % block
+    if pad:
+        if pad < 8:
+            pad += block
+        last_seq = struct.unpack_from("<H", raw_messages[-1], 4)[0] if raw_messages else 0
+        data += encode_message(0x10, 0, last_seq, bytes(pad - 8))
+    return data
+
+
+def transfers(path, device):
+    """Yield (packet, to_quest) for each real XRSP bulk transfer (echoes skipped)."""
     for p in read(path):
         if p.device != device or p.transfer != 3 or not p.data or (p.endpoint & 0x7F) != 1:
             continue
@@ -40,6 +59,13 @@ def messages(path, device):
         # OUT data is real on submission, IN data on completion; skip the echoes
         if p.inbound == to_quest:
             continue
+        yield p, to_quest
+
+
+def messages(path, device):
+    # Messages can span consecutive transfers, so keep a carry buffer per direction.
+    carry = {True: b"", False: b""}
+    for p, to_quest in transfers(path, device):
         d = carry[to_quest] + p.data
         i = 0
         while i + 8 <= len(d):
@@ -52,7 +78,7 @@ def messages(path, device):
                 break
             seq = struct.unpack_from("<H", d, i + 4)[0]
             if topic != 0:
-                yield Msg(p.ts, to_quest, flags, topic, seq, d[i + 8:i + size])
+                yield Msg(p.ts, to_quest, flags, topic, seq, d[i + 8:i + size], d[i:i + size])
             i += size
         # A snaplen-truncated transfer loses its tail; resync at the next transfer
         carry[to_quest] = b"" if p.truncated else d[i:]
