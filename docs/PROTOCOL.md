@@ -257,12 +257,12 @@ CONFIG v3 (root 15 data / 4 ptrs):
 
 | Field | Value (Meta) | Meaning |
 |---|---|---|
-| `d0` | u16 3, u16 1, u32 15 | version 3; other halves unknown |
+| `d0` | u16 3, u16 1, u16 15, u16 0 | version 3; u16 @2 unknown; u16 @4 unknown; **u16 @6 = video codec** (0 = H.264, Meta's value; 1 = HEVC, inferred; 3 values) |
 | `d1` u32 | 5 | **slices per frame** (the headset logs `5 strips`; only 5 tested end to end) |
 | `d2` u32 | 72 | **refresh rate, Hz** (one of HELLO's refresh list) |
 | `d3` | 1 | unknown |
 | `d4` | `0x00010001` | unknown |
-| `d11` | u32 @+4 = 1 | unknown |
+| `d11` | u32 @+4 = 1 | u16 @0x5c = alpha `ImageProcessingScheme` (`serializeImageProcessingScheme`), u16 @0x5e a 4-value enum |
 | `p0` | null | (empty data in v1) |
 | `p1` u16 list | `[1,3,2,19,7,14,15]` | **selected session features** (§4.7) |
 | `p2` text | `"USB3"` | transport |
@@ -778,12 +778,12 @@ values: `tests/test_handshake.py`; field names are ours unless stated).
 | `d3` | 0, f32 0.0302 | unknown |
 | `d4` | f32 1.0, f32 1.0 | unknown |
 | `d5` | u32 4096, u32 2240 | **encode width, height** (video size, §6.1) |
-| `d6` | u32 5 (v1) / 0 (v3) | slices (v1 only) |
+| `d6` | u32 5 (v1) / 0 (v3) | slices (v1 only); u16 @+4 (byte 0x34) = slice mode (2 values, `deserializeSliceMode`) |
 | `p0`, `p1` | `"Meta Quest 3"`, `"Oculus VR"` | product, manufacturer |
 | `p2` | `{u32 53822, u32 49}` | unknown |
 | `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 small f32 (≈ ±0.0246, 0.0235, ±0.0031, 0.0430, 0.0460; per-eye offsets, meaning unknown) |
 | `p5` | list of 5 structs `{u32 Hz; p0 {f64, f64}; p1 {u64}}` | **mode table** (below) |
-| `p6` | null (v1) / struct 3 data + empty u16 list (v3) | unknown |
+| `p6` | null (v1) / struct 3 data + empty u16 list (v3) | `p6.p0` = **supported video codecs** (u16 list, values 0–2, `deserializeVideoCodec`); empty on Quest 3, so it advertises nothing |
 
 Mode table (the host's CONFIG refresh picks one; the ACK echoes it):
 
