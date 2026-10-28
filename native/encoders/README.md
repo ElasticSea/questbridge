@@ -62,6 +62,17 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
   4096x448, one slice each, IDR 19/20) **10.9 ms**; `--size 2880x1600` H.264 (5 x 2880x320)
   **9.5 ms**, ~92 fps pipelined. Throughput varies ~20% with the Mac's desktop load (Aerial
   wallpaper, Unity open): 5 x 4096x448 H.264 measured 62 fps first, 50 fps later.
+- **HEVC strips in the native core (2026-10-28):** the session sends the codec in CONFIG v3
+  (`ql_config.codec` / `QL_CODEC`, auto = HEVC on macOS only when the HELLO v3 lists it; Quest 3/Pro
+  list nothing, so H.264), and the Metal texture encoder follows it. ave.hevc strip headers:
+  VPS + SPS + PPS per strip (csd), one slice segment per strip, IDR_N_LP (20) on forced keys in
+  every strip at once, no reordering (max_num_reorder 0, dec buffering 5), CTB 32, level 5.2,
+  POC lsb 11 bits, temporal MVP on, SAO on, **WPP on (entropy_coding_sync, entry points in the
+  slice header)**, loop filter across slices off, no VUI. 432 px strips (Quest Pro) encode without
+  a conformance window issue. `questlink_vt_tests`: HEVC 4096x2240 11.6 ms/frame, 4096x2160 11.8,
+  H.264 17.4 (sequential); every strip decodes on its own decoder incl. P frames. Noise at
+  400 Mbit/s: first HEVC try up to 1.7 MB per strip, refit lands under 120,000 B in 2 rounds
+  (slice QP isn't parsed for HEVC, so the refit starts from QP 20); even QP 51 noise is ~100 KB.
 - Strip sizes: `DataRateLimits` caps each strip at 120,000 B per frame duration; on the test
   pattern at 100 Mbit/s CBR the largest strip was 12 KB (P), 8.5 KB (IDR).
 
