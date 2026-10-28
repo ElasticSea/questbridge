@@ -91,6 +91,19 @@ TEST(capi_handshake_transfers_match_meta) {
     CHECK(std::abs(dev.fov_left.up - std::tan(44.0 * 3.14159265358979 / 180)) < 1e-6);
     CHECK_EQ(dev.fov_left.left, dev.fov_right.right);  // mirrored eyes
     CHECK_EQ(dev.fov_left.right, dev.fov_right.left);
+    CHECK_EQ(dev.panel_width, uint32_t(4128));
+    CHECK_EQ(dev.panel_height, uint32_t(2208));
+    CHECK_EQ(dev.refresh_count, uint32_t(4));
+    CHECK_EQ(dev.refresh_rates[0], uint32_t(72));
+    CHECK_EQ(dev.refresh_rates[3], uint32_t(120));
+    CHECK_EQ(dev.stream_refresh_hz, uint32_t(72));
+    CHECK_EQ(dev.codecs, uint32_t(0));
+    CHECK_EQ(dev.hello_version, uint32_t(3));
+    CHECK_EQ(dev.features, uint64_t((1u << 1) | (1u << 5) | (1u << 6) | (1u << 7) | (1u << 9) | (1u << 13) | (1u << 14) |
+                                    (1u << 15) | (1u << 19) | (1u << 20)));
+    CHECK_EQ(std::string(dev.product), std::string("Meta Quest 3"));
+    CHECK_EQ(std::string(dev.manufacturer), std::string("Oculus VR"));
+    CHECK_EQ(std::string(dev.firmware), std::string("releases-oculus-14.0-v207"));
 
     ql_info info;
     REQUIRE(ql_host_get_info(h, &info) == QL_OK);

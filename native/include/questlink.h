@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-#define QL_API_VERSION 2
+#define QL_API_VERSION 3
 
 typedef enum ql_status {
     QL_OK = 0,
@@ -61,11 +61,25 @@ typedef struct ql_fov {
     float up, down, left, right; /* positive tangents of the half-angles (OVR FovPort order) */
 } ql_fov;
 
+/* From the headset's HELLO device description (docs/PROTOCOL.md §8). */
+#define QL_MAX_REFRESH_RATES 8
+
 typedef struct ql_device_info {
     uint32_t encode_width, encode_height; /* video stream size (4096x2240 on Quest 3) */
-    float refresh_hz;
+    float refresh_hz;                     /* the panel's default rate */
     float ipd_m;
-    ql_fov fov_left, fov_right;
+    ql_fov fov_left, fov_right;           /* each eye's FOV as the headset reports it */
+    /* API version 3 */
+    uint32_t panel_width, panel_height;   /* both eyes (4128x2208 on Quest 3) */
+    uint32_t refresh_count;
+    uint32_t refresh_rates[QL_MAX_REFRESH_RATES]; /* offered rates, Hz, ascending */
+    uint32_t stream_refresh_hz;           /* the rate our CONFIG chose; 0 before phase 2 */
+    uint32_t codecs;                      /* bit n: headset lists video codec n (0 AVC, 1 HEVC?); 0 on Quest 3 */
+    uint32_t hello_version;               /* 1 (phase 1) or 3 (Link session) */
+    uint64_t features;                    /* bit n: headset offers session feature n (HELLO v3) */
+    char product[32];                     /* "Meta Quest 3" */
+    char manufacturer[32];                /* "Oculus VR" */
+    char firmware[64];                    /* "releases-oculus-14.0-v207" */
 } ql_device_info;
 
 /* ql_controller.buttons / touches bits */
@@ -166,6 +180,7 @@ typedef struct ql_config {
     /* While waiting for HELLO, send a BYE so a headset whose earlier HELLO went unanswered
      * sends a new one; repeat every bye_retry_ms (default 3000; 0 = once at open, < 0 = never). */
     int bye_retry_ms;
+    uint32_t refresh_hz;         /* Link session rate; 0 = the headset's default (default 0) */
 } ql_config;
 
 /* Byte transport for ql_host_open_transport (tests, other backends). read returns bytes
@@ -206,6 +221,9 @@ typedef struct ql_frame_info {
     uint32_t rectify_mesh_id;
     int has_fov;
     ql_fov fov_left, fov_right; /* the projections the eyes were rendered with */
+    /* Picture height the slices split into equal macroblock-row strips; 0 = the HELLO's
+     * encode height (or the recorded 2240 before a HELLO) */
+    uint32_t picture_height;
 } ql_frame_info;
 
 typedef struct ql_info {
