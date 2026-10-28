@@ -1,19 +1,23 @@
 # Quest Link for Mac — Roadmap
 
-## Components
-> Approach: speak Meta's own Link protocol so the Quest's built-in "Enable Link" works — no APK.
+**Target (2026-10-28):** a Unity game on the Mac streams to the Quest over USB via Meta's own Link protocol, and the headset streams its sensors back to Unity: head pose, controllers, hand tracking, and passthrough if Link carries it. Running Windows PC VR games (Wine) is out of scope for now.
 
-- [ ] **1. USB transport** — raw USB on macOS (IOKit/libusb), matching the interfaces/endpoints the Quest exposes in Link mode
-- [ ] **2. Link protocol reverse-engineering** — capture Windows PC ↔ Quest traffic (USBPcap + Wireshark); decode handshake/auth, video, pose, audio, haptics; write a spec; reimplement on Mac
-- [ ] **3. Mac streaming server** — VideoToolbox low-latency HEVC (sliced), A/V down, poses up, prediction, clock sync (<50 ms motion-to-photon)
-- [ ] **4. macOS OpenXR runtime** — loader-compatible `.dylib` + JSON manifest; HMD/controllers/swapchains → server
-- [ ] **5. PC VR game bridge** — Wine/CrossOver/GPTK (D3D→Metal); bridge OpenVR/OpenXR from Wine to native runtime; IOSurface/Metal texture sharing
-- [ ] **6. Supporting work** — distortion/IPD/FOV per Quest model, guardian/passthrough, menu-bar app + installer, handling Quest firmware protocol changes
+## Components
+> Approach: speak Meta's own Link protocol so the Quest's built-in Link works — no APK.
+
+- [~] **1. USB transport** — WinUSB on the Windows test bench works; macOS via libusb/IOKit still to do
+- [~] **2. Link protocol reverse-engineering** — handshake, video (H.264 slices), head pose, audio decoded; controllers, hand tracking, passthrough being researched
+- [ ] **3. Mac streaming host** — handshake, clock sync, VideoToolbox H.264 (Constrained Baseline, 5 slices, 4096×2240), audio, sensors in, pose prediction
+- [ ] **4. Unity bridge** — native macOS plugin + C# package: Unity renders both eyes to Metal textures → host encodes; host → Unity: head/controller/hand poses, input, passthrough. Exposed as a Unity XR provider (or simple MonoBehaviour API first)
+- [ ] **5. Sensors** — controllers + buttons, hand-tracking joints, passthrough (camera frames or a passthrough layer), eye/face if available
+- [ ] **6. Supporting work** — lens distortion/FOV/IPD from the HELLO device description, latency tuning, menu-bar app, firmware-change handling
+- [ ] *(later, optional)* OpenXR runtime for non-Unity apps; Wine/GPTK bridge for PC VR games
 
 ## Milestones
 - [x] M0: USB captures from Windows Link session + protocol spec (handshake, video H.264 slices, pose, audio decoded)
 - [~] M1: Link handshake + session from our host — done on Windows (2026-10-28); still to run on a Mac
-- [~] M2: Video into the headset — replayed Meta frame shows at 72 fps (2026-10-28); next: our own encoded test pattern
-- [ ] M3: Native Metal VR demo
-- [ ] M4: OpenXR runtime
-- [ ] M5: Wine/GPTK bridge for real PC VR games
+- [~] M2: Video into the headset — replayed Meta frame shows at 72 fps; own encoded test pattern in progress
+- [ ] M3: Host on macOS: same handshake + VideoToolbox encoder, test pattern in the headset
+- [ ] M4: Sensors decoded: controllers, hands, passthrough (whatever Link carries)
+- [ ] M5: Unity bridge: a Unity scene renders in the headset with head + controller tracking
+- [ ] M6: Hands and passthrough delivered into Unity
