@@ -124,6 +124,7 @@ public:
     }
 
     bool encode(const GpuFrame& g, int64_t ts, bool force_idr, EncodedFrame& out) override {
+        if (g.strip_count) return encode_strips(g, ts, force_idr, out);
         auto src = static_cast<CVPixelBufferRef>(g.texture);
         if (!src || int(CVPixelBufferGetWidth(src)) != cfg_.width || int(CVPixelBufferGetHeight(src)) != cfg_.height)
             return fail(nullptr, "GpuFrame needs a CVPixelBuffer of the configured size");
@@ -163,6 +164,20 @@ private:
         std::vector<Bytes> nals;  // slice NALs, start codes stripped
         bool idr = false;
     };
+
+    // Caller-filled strip buffers (e.g. Metal render targets over IOSurfaces) go straight in
+    bool encode_strips(const GpuFrame& g, int64_t ts, bool force_idr, EncodedFrame& out) {
+        if (cfg_.layout != Layout::Strips || g.strip_count != int(strips_.size()))
+            return fail(nullptr, "GpuFrame strips need Layout::Strips and one buffer per strip");
+        std::vector<CVPixelBufferRef> bufs;
+        for (int i = 0; i < g.strip_count; i++) {
+            auto b = static_cast<CVPixelBufferRef>(g.strips[i]);
+            if (!b || int(CVPixelBufferGetWidth(b)) != cfg_.width || int(CVPixelBufferGetHeight(b)) != strip_h_)
+                return release_fail(bufs, "GpuFrame strip " + std::to_string(i) + " has the wrong size");
+            bufs.push_back(CVPixelBufferRetain(b));  // submit() releases
+        }
+        return submit(bufs, ts, force_idr, out);
+    }
 
     bool fail(std::string* error, const std::string& msg) {
         error_ = msg;

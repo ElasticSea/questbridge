@@ -2,7 +2,7 @@
 //
 // capture() runs on the graphics (render) thread and must finish copying before it returns,
 // because the engine reuses the texture next frame. encode() runs on the runtime's encode
-// thread. Backends: D3D11 + Media Foundation (Windows); Metal + VideoToolbox (macOS, to do).
+// thread. Backends: D3D11 + Media Foundation (Windows); Metal + VideoToolbox (macOS).
 #pragma once
 
 #include <cstdint>
@@ -24,6 +24,7 @@ struct TextureEncoderConfig {
 struct EncodedSlices {
     Bytes csd;                  // Annex-B SPS + PPS
     std::vector<Bytes> slices;  // Annex-B slice NALs, in picture order
+    std::vector<Bytes> slice_csd;  // per slice when each is its own stream (strips); empty = csd
     bool idr = false;
 };
 

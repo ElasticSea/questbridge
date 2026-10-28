@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
+# macOS: arm64 (Apple silicon); 13+ for VideoToolbox CBR
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS")
 project(questlink LANGUAGES C CXX)
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,19 +49,33 @@ else()
   if(LIBUSB_FOUND)
     set(QL_USB_SOURCES src/transport_libusb.cpp)
     set(QL_USB_LIBS PkgConfig::LIBUSB)
+    # macOS: link libusb statically so libquestlink.dylib runs on Macs without Homebrew
+    find_library(LIBUSB_STATIC NAMES libusb-1.0.a HINTS ${LIBUSB_LIBRARY_DIRS} NO_DEFAULT_PATH)
+    if(APPLE AND LIBUSB_STATIC)
+      add_library(ql_libusb INTERFACE)
+      target_include_directories(ql_libusb INTERFACE ${LIBUSB_INCLUDE_DIRS})
+      target_link_libraries(ql_libusb INTERFACE ${LIBUSB_STATIC} objc "-framework IOKit"
+        "-framework CoreFoundation" "-framework Security")
+      set(QL_USB_LIBS ql_libusb)
+    endif()
   else()
     message(WARNING "libusb-1.0 not found: building without USB (brew install libusb pkg-config)")
     set(QL_USB_SOURCES src/transport_none.cpp)
   endif()
 endif()
 
-# H.264 encoders (Media Foundation on Windows; VideoToolbox later)
+# H.264 encoders (Media Foundation on Windows; VideoToolbox on macOS)
 add_subdirectory(encoders)
 
 # Texture capture + encode for ql_submit_frame_texture
 if(WIN32)
   set(QL_TEXTURE_SOURCES src/texture_encoder_d3d11.cpp)
   set(QL_TEXTURE_LIBS questlink_encoders d3d11)
+elseif(APPLE)
+  # Metal render passes into IOSurface strips + VideoToolbox; UnityPluginLoad lives here too
+  set(QL_TEXTURE_SOURCES src/texture_encoder_metal.mm)
+  set_source_files_properties(src/texture_encoder_metal.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+  set(QL_TEXTURE_LIBS questlink_encoders "-framework Metal" "-framework Foundation" "-framework IOSurface")
 else()
   set(QL_TEXTURE_SOURCES src/texture_encoder_none.cpp)
 endif()

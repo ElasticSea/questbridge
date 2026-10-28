@@ -27,3 +27,14 @@ add_executable(questlink_runtime_tests test_main.cpp test_runtime.cpp $<TARGET_O
 target_link_libraries(questlink_runtime_tests PRIVATE questlink_api questlink_core)
 target_compile_definitions(questlink_runtime_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
 add_test(NAME questlink_runtime_tests COMMAND questlink_runtime_tests)
+
+# macOS: the real Metal + VideoToolbox texture encoder behind the Session API, fake Quest
+if(APPLE)
+  add_executable(questlink_metal_tests test_main.cpp test_metal.mm ../src/texture_encoder_metal.mm
+    $<TARGET_OBJECTS:questlink_api>)
+  set_source_files_properties(test_metal.mm ../src/texture_encoder_metal.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+  target_link_libraries(questlink_metal_tests PRIVATE questlink_api questlink_core questlink_encoders
+    "-framework Metal" "-framework Foundation" "-framework IOSurface")
+  target_compile_definitions(questlink_metal_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
+  add_test(NAME questlink_metal_tests COMMAND questlink_metal_tests)
+endif()

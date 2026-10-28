@@ -30,6 +30,6 @@
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
 - [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); native parse + FK + `ql_get_hands`, hands-on InputControl at stream start, `QuestLinkHands` + `HandJointsVisualizer` + XR Hands provider, mock hands (2026-10-28); live bench check pending
 - [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
-- [ ] M10: standalone macOS player build; latency tuning
+- [~] M10: standalone macOS player build; latency tuning — arm64 `libquestlink.dylib` (static libusb) + Metal frame submit (GPU strip split into IOSurfaces → VT strips, no CPU copy) pass a fake-Quest decode test; FirstLight builds headless as a macOS player and loads the plugin (2026-10-28); headset run + latency pending
 - [ ] later: environment depth / body tracking over Link; XR SDK display provider; raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
 - [ ] M11 (last): public release as **QuestBridge for Mac** once a working Unity sample exists. Apache-2.0, fixes from docs/PUBLIC_RELEASE_AUDIT.md, targeted filter-repo rewrite into a new repo `questbridge-mac` as the very last step

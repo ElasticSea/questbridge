@@ -238,6 +238,23 @@ namespace ElasticSea.QuestLink
             catch (Exception e) when (e is EntryPointNotFoundException || e is DllNotFoundException) { }
         }
 
+        // True when libquestlink loads and exports the C API; doesn't start the runtime or open USB.
+        public static bool LibraryLoads(out string error)
+        {
+            error = null;
+            try
+            {
+                ql_now_ns();
+                ql_get_render_event_func();
+                return true;
+            }
+            catch (Exception e) when (e is EntryPointNotFoundException || e is DllNotFoundException)
+            {
+                error = e.Message;
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             if (session == IntPtr.Zero)
