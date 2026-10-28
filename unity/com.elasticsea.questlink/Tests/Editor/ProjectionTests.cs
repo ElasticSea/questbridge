@@ -36,8 +36,9 @@ namespace ElasticSea.QuestLink.Tests
         [Test]
         public void NativeDeviceInfoLayoutMatchesHeader()
         {
-            // questlink.h: ql_device_info 240 B, features at 104, firmware at 176
-            Assert.AreEqual(240, Marshal.SizeOf<QuestLinkNative.ql_device_info>());
+            // questlink.h: ql_device_info 248 B, features at 104, firmware at 176, stream_codec at 240
+            Assert.AreEqual(248, Marshal.SizeOf<QuestLinkNative.ql_device_info>());
+            Assert.AreEqual(240, (int)Marshal.OffsetOf<QuestLinkNative.ql_device_info>("stream_codec"));
             Assert.AreEqual(104, (int)Marshal.OffsetOf<QuestLinkNative.ql_device_info>("features"));
             Assert.AreEqual(176, (int)Marshal.OffsetOf<QuestLinkNative.ql_device_info>("firmware"));
         }
