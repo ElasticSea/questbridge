@@ -1,6 +1,6 @@
 # QuestBridge (Unity package)
 
-`com.elasticsea.questbridge` streams a Unity scene to a Quest over USB through the native `libquestbridge` (Meta's Link protocol, no headset APK) and brings head and controller poses back as Input System XR devices. Roadmap M6/M7; design in `docs/ROADMAP_REVIEW.md` ("Unity integration on macOS").
+`com.elasticsea.questbridge` streams a Unity scene to a Quest over USB through the native `libquestbridge` (Meta's Link protocol, no headset APK) and brings head and controller poses back as Input System XR devices.
 
 Unity 6000.3, Input System 1.19. Works in Editor Play mode. Without the native library the rig uses a mock backend.
 
@@ -9,7 +9,7 @@ Unity 6000.3, Input System 1.19. Works in Editor Play mode. Without the native l
 
 The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`); with another graphics API the rig warns and falls back to the mock. Set `QB_LOG_FILE=<path>` (and `QB_LOG=1` for every protocol message) before starting the Editor to get the native log, because the Editor drops plugin stderr. OVRService holds the XRSP interface while it runs: when the Quest is plugged in, the library stops it through one elevated helper (one UAC prompt per Editor session) that starts it again when the Editor exits (`QB_OVR_STOP=0` before starting the Editor turns this off; then `tools\windows\ovr_service.ps1 stop` by hand). **QuestBridge > Check Setup** shows what's missing on a machine.
 
-Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
+First run: [Getting started](../../docs/getting-started.md). Scripting: [QUICKSTART.md](QUICKSTART.md).
 
 ## Editor Play mode
 - **Drop-in prefab.** `Runtime/Prefabs/QuestBridge Rig.prefab` (GameObject → XR → QuestBridge Rig): rig + `QuestBridgeHands` + `HandJointsVisualizer`, `Head` with the AudioListener and `QuestBridgeAudio`, and `Left/Right Controller` on stock TrackedPoseDrivers with a block shown only while tracked (`QuestBridgeTrackedVisual`). No cameras in the prefab: the eyes are created at Play, so nothing renders in Edit mode. Regenerate with `BridgeTest/Assets/Editor/BuildRigPrefab.cs`.
@@ -20,7 +20,7 @@ Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
 - **No headset:** `qb_open` and the per-frame calls never block; USB is polled on the runtime's own thread. The rig logs its state changes and, after 15 s without streaming, a hint (OVRService / press Launch). The rig inspector shows the state and setup problems with fixes (Direct3D 11, missing `questbridge.dll`, Input System off).
 
 ## Use
-1. Add the package: Package Manager → Add package from git URL → `https://github.com/ElasticSea/meta-quest-link-for-mac.git?path=/unity/com.elasticsea.questbridge#v0.1.0` (testers: [docs/getting-started.md](../../docs/getting-started.md)), or from disk (`package.json`, or `"com.elasticsea.questbridge": "file:<path>"` in `manifest.json`).
+1. Add the package: Package Manager → Add package from git URL → `https://github.com/ElasticSea/questbridge.git?path=/unity/com.elasticsea.questbridge#v0.2.0` (testers: [docs/getting-started.md](../../docs/getting-started.md)), or from disk (`package.json`, or `"com.elasticsea.questbridge": "file:<path>"` in `manifest.json`).
 2. Put `QuestBridgeRig` on an empty GameObject at the tracking origin (floor level). It creates `Head/LeftEye` and `Head/RightEye` cameras. Use `cameraTemplate` to copy clear flags, culling mask and similar settings onto both eyes.
 3. Bind to the generic XR paths with stock components such as TrackedPoseDriver or XRI: `<XRHMD>/centerEyePosition`, `<XRController>{LeftHand}/devicePosition`, `{RightHand}/{TriggerButton}`, `/primary2DAxis`, …
 4. Hands: add `QuestBridgeHands` to the rig object; `HandJointsVisualizer` draws each joint as a sphere. With Unity XR Hands (`com.unity.xr.hands` 1.3+) in the project, also add `QuestBridgeXRHands` to run an `XRHandSubsystem` fed by QuestBridge, so XR Hands visualizers and XRI hand interaction work; parent their visuals to the rig (joint poses are relative to the tracking origin).
@@ -56,39 +56,8 @@ Instead of a `QuestBridgeRig`, an existing XR project can stream as is: Project 
 ## Coordinates
 The C API uses raw Link convention: right-handed, +Y up, −Z forward, metres, and Quest-clock nanoseconds. C# converts by mirroring Z: position `(x, y, −z)`, quaternion `(−x, −y, z, w)` (`QuestBridgeMath.LinkToUnity`). It converts back the same way for the submitted renderPose.
 
-## Assumed C API (libquestbridge)
-`native/include/questbridge.h` didn't exist when this package was written, so the C# side targets the API below. All of it lives in `Runtime/Native/QuestBridgeNative.cs`, the only file to change if the header ends up different. The library name is `questbridge` (`libquestbridge.dylib`). Return value `0` means success unless noted.
-
-```c
-typedef struct qb_session qb_session;
-typedef struct { float qx, qy, qz, qw; float px, py, pz; uint64_t time_ns; } qb_pose;  // Link convention, Quest clock
-typedef struct { float up, down, left, right; } qb_fov;                                 // positive tangents
-typedef struct { uint32_t encode_width, encode_height; float refresh_hz; float ipd_m;
-                 qb_fov fov_left, fov_right; } qb_device_info;
-typedef struct { qb_pose pose; uint32_t buttons, touches; float trigger, grip, stick_x, stick_y;
-                 uint32_t flags; } qb_controller;
-// buttons/touches: 1 A/X, 2 B/Y, 4 thumbstick, 8 menu, 16 trigger (touches only)
-// flags: 1 connected, 2 position tracked, 4 rotation tracked
-typedef struct { qb_session* session; void* native_texture; qb_pose render_pose; uint64_t frame_index; } qb_frame_submit;
-
-qb_session* qb_open(void);              // non-blocking; NULL on failure. USB/handshake run in the background
-void qb_close(qb_session*);             // must tolerate submit events for it still queued on the render thread
-int  qb_poll(qb_session*);              // 0 idle, 1 connecting, 2 streaming
-int  qb_get_link_status(qb_session*, qb_link_status*);  // API 4: recovery state and counters (QuestBridgeConnectionStatus)
-int  qb_get_device_info(qb_session*, qb_device_info*);   // nonzero until HELLO arrived
-int  qb_get_head_pose(qb_session*, qb_pose*);            // newest (ideally predicted) head pose
-int  qb_get_controller(qb_session*, int hand /*0 L,1 R*/, qb_controller*);
-int  qb_get_hands(qb_session*, qb_hands*);               // 26 OpenXR joints per hand, see questbridge.h "Hand tracking"
-int  qb_haptic(qb_session*, int hand, float amplitude, float duration_s);
-int  qb_submit_frame_texture(qb_session*, void* native_texture, const qb_pose* render_pose, uint64_t frame_index);
-// UnityRenderingEventAndData; event 1 = submit, data = qb_frame_submit* (valid until the event runs)
-void* qb_get_render_event_func(void);
-```
-
-Notes for the native side:
-- `frame_index` restarts at 1 on every Play-mode entry. The headset needs `frame.index` to increase across the whole session, which outlives Play mode, so the native side should map it to its own counter.
-- The render-thread callback has to copy the texture before returning (IOSurface/`CVPixelBuffer` from the VideoToolbox pool), because Unity reuses the RT next frame.
-- If any entry point is missing, the rig logs a warning and falls back to the mock backend in `Auto` mode.
+## Native API
+The C# side calls the C API in `native/include/questbridge.h` through `Runtime/Native/QuestBridgeNative.cs`, the only file that declares native entry points. If an entry point is missing, the rig logs a warning and falls back to the mock backend in `Auto` mode.
 
 ## Tests
 `unity/BridgeTest` references this package locally. From the repo root:

@@ -1,27 +1,14 @@
-# QuestBridge for Unity: 5-minute start (Windows)
+# QuestBridge for Unity: scripting quick start
 
-Play your own Unity scene on a Quest 3 over USB, straight from the Editor's Play button. No app on the headset. Setup of the PC and package: [docs/getting-started.md](../../docs/getting-started.md); this page is the rig and scripting part.
+Play your own Unity scene on a Quest over USB, straight from the Editor's Play button. No app on the headset. Installing the package and first run: [Getting started](../../docs/getting-started.md); this page is the rig and scripting part.
 
-## You need
-- Windows 10/11 PC with Unity **6000.3** and git installed.
-- Quest 3 with a USB-C data cable (USB 3 port if you can).
-- Access to the `ElasticSea/meta-quest-link-for-mac` GitHub repo (it's private; git must be able to clone it).
-
-## 1. Add the package
-1. Unity → **Window → Package Manager → + → Add package from git URL…**
-2. Paste:
-   ```
-   https://github.com/ElasticSea/meta-quest-link-for-mac.git?path=/unity/com.elasticsea.questbridge
-   ```
-3. If Unity asks to enable the new Input System and restart, say **Yes**.
-
-## 2. Drop the rig in your scene
+## 1. Drop the rig in your scene
 1. **GameObject → XR → QuestBridge Rig** (or drag `Packages/QuestBridge/Runtime/Prefabs/QuestBridge Rig`).
 2. Put it where the player should stand, on the floor. Leave your Main Camera where it is: while playing the rig copies its settings (clear color, culling mask) and turns it off, and `Camera.main` points at the rig's left eye.
 3. Leave **QuestBridge** unticked in Project Settings → XR Plug-in Management (that's the other way to stream, without the rig; both at once don't work).
 4. Select the rig. If the Inspector shows a red box (e.g. "streaming needs Direct3D 11"), press its button; Unity restarts once.
 
-## 3. Play
+## 2. Play
 1. Plug the Quest in.
 2. Press **Play** in Unity.
 3. Windows asks once (UAC) to pause Meta's Link service; allow it. It starts again when Unity exits.

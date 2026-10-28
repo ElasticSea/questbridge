@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] - 2026-10-28
+First public release, as QuestBridge.
+
+- Renamed to QuestBridge: package `com.elasticsea.questbridge`, namespace `ElasticSea.QuestBridge`, native library `questbridge` / `libquestbridge`, C API prefix `qb_`, environment variables `QB_*`, menus under **QuestBridge**.
+- macOS: HEVC by default, Metal zero-copy frame submit.
+- Windows: encoder chosen per GPU vendor, OpenH264 software fallback.
+- Recovery inside a running app after disconnects; `QuestBridgeConnectionStatus` events.
+- Apache-2.0 license.
+
 ## [0.1.0] - 2026-10-28
 First tester build.
 

@@ -1,42 +1,25 @@
-# QuestBridge — Roadmap
+# Roadmap
 
-**Target:** a Unity game on the Mac (Editor Play mode and standalone) streams to the Quest over USB via Meta's own Link protocol, and the headset sends its sensors back to Unity: head pose, controllers and input, hand tracking, passthrough. Windows PC VR games (Wine) are out of scope for now. Rationale and alternatives: [docs/ROADMAP_REVIEW.md](docs/ROADMAP_REVIEW.md).
+## Working today
 
-## Components
-> Main path: Meta's Link protocol, no headset install. Fallback if a gate fails: our own Quest APK (needs the user's decision).
+- Wired Link protocol: handshake, clock sync, video, head pose, controllers, hands, audio both ways, haptics.
+- Native library with a C API on macOS (Apple silicon) and Windows; the `qbhost` CLI.
+- Video: VideoToolbox HEVC on macOS (zero-copy from Metal), Media Foundation H.264 per GPU vendor on Windows, OpenH264 fallback.
+- Unity package: rig prefab, XR Plug-in Management loader, Input System devices, XR Hands provider, audio and microphone, connection events, Check Setup.
+- Connecting without replugs, and recovering inside a running app after disconnects.
 
-- [~] **1. USB transport** — WinUSB on the Windows bench works; macOS via libusb still to do
-- [~] **2. Link protocol** — handshake, video (H.264 slices), head pose, audio decoded; encoder format gate (which slice layouts the headset accepts); controllers, hands, passthrough being researched
-- [ ] **3. Mac host** — native dylib (libusb, XRSP, handshake, clock sync, pacing, VideoToolbox) with a small C API (`qb_get_pose`, `qb_submit_frame`, …) plus a CLI
-- [~] **4. Unity bridge** — C# package `unity/com.elasticsea.questbridge` and native core merged (Windows: D3D11 + NVIDIA MF encoder, `unity\install-native.ps1`); first live scene `unity/BridgeTest` FirstLight ready for the bench. C# two-eye rig → one RenderTexture → Metal/IOSurface → VideoToolbox; poses and input back as Input System XRHMD/XRController devices (TrackedPoseDriver/XRI work unchanged). XR Plug-in Management loader "Quest Link" (managed, `QuestBridgeXRDriver` on the XR Origin camera) lets unchanged XRI projects stream; mock-tested, headset check pending. A native XR SDK display provider comes later (headers are sign-up gated).
-- [ ] **5. Sensors** — controllers + buttons + haptics, hand-tracking joints, passthrough as a headset-composited layer (alpha blend). Raw camera pixels are APK-only. Eye/face: no Quest 3 hardware.
-- [~] **6. Supporting work** — ✓ device description fully decoded; the host takes encode size, FOV, IPD, refresh and strip geometry from the HELLO (`qb_get_device_info`, golden fixtures per headset in `tests/fixtures/devices/`). Open: latency tuning (pose prediction, pacing, bitrate), firmware-version pinning, menu-bar app
+## Next
 
-## Milestones
-- [x] M0: USB captures + protocol spec (handshake, video slices, pose, audio)
-- [x] M1: own host completes handshake + session (Windows bench; Mac in M4)
-- [x] M2: video into the headset: own x264 test pattern at 72 fps, 0 glitches
-- [x] M2a: encoder gate (bench): headset accepts a VideoToolbox-compatible stream: 5 independent 4096×448 streams (one decoder per strip) at 72 fps incl. P frames; each slice message ≤ ~128 KiB; <5 slices not shown with CONFIG slices=5 (2026-10-28)
-- [x] Slice cap: MF and VT encoders keep every slice ≤ 120,000 B (re-encode as IDR at higher QP, never drop silently); `tools/slice_cap_stress.py` passes on Windows and Mac (H.264, HEVC, 2880×1600) (2026-10-28)
-- [~] Windows encoder on any PC: MF hardware MFT by vendor (NVIDIA slices as benched; AMD strips first, Intel slices first) with a probe-frame format check, OpenH264 2.7.0 software fallback (BSD-2, Cisco DLL fetched per machine, 5 strips); backend in `qb_info.encoder` and the runtime log; qbenc + `slice_cap_stress.py` pass on NVIDIA slices/strips and OpenH264 (2026-10-28). Pending: headset run of MF strips and OpenH264, an AMD and an Intel PC
-- [x] M2b: timewarp check: constant renderPose stays world-locked, needs rectifyMeshId=1001 + per-eye FOV in EncodedSlice (2026-10-28)
-- [ ] backlog: Windows HW encoder P frames (deblocking off, bench pass 2026-10-28): confirmation run with logcat streamed during the run (72 fps, Glitches 0); qbenc per-eye test content (counter/bar in both eyes) to judge slice-edge smearing
-- [x] M2c: sensor gate (bench): hands + controller input + haptics found on the wire via Meta-Link captures with the Unity sensor-probe app (2026-10-28): controller input = topic 35 entries, controller poses = topic 34 list, app haptics = RuntimeIPC (topic 31), hands toggled by topic 28; no session feature bits involved. Passthrough/env depth not captured: the runtime offers XR_FB_passthrough / XR_META_environment_depth, but SensorProbe's Meta AR features failed to load in the player build; fix SensorProbe and rerun those steps (see M9)
-       → if M2a or M2c fails: decide on the own-APK path before M3
-- [x] M3: Mac encoder bench: VideoToolbox in real time, slice layout from M2a — **HEVC chosen for the Mac at full size** (5 × 4096×448 strips, ~11 ms/frame; CONFIG codec 1, auto on macOS; bench-verified on the Quest Pro 2026-10-28: 72/72 FPS, Glitches 0). H.264 at 4096×2240 tops out at ~62 fps (16.5 ms/frame), kept as the fallback (`QB_CODEC=h264`) and on Windows (MF); needs POC type 2 (rewritten from VT's 0)
-- [~] M4: Mac host CLI: libusb transport, handshake, clock sync, VideoToolbox test pattern in the headset — `native/` + `qbhost` build on macOS (arm64, brew libusb), all native tests pass there; libusb backend claims only the XRSP interface, reopens by polling (2026-10-28); **Mac → Quest Pro video works** (2026-10-28, `qbhost` + VideoToolbox H.264 4096×2160 in 5 strips of 432 px, POC type 2 fix): Pro logcat 72/72 FPS, Glitches 0; HEVC too (CONFIG codec 1, 5×4096×432, 72/72 FPS, Glitches 0); Quest 3 on the Mac not tried yet
-- [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qbhost` pending; macOS build + CTest pass (libusb, 2026-10-28)
-- [~] M6: (Windows done 2026-10-28: FirstLight scene from a Unity player streams via native core + NVIDIA MF encoder, both eyes stable, timewarp OK; Mac/VideoToolbox pending) — Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
-- [~] connect reliability: no replug/reboot needed (preluding BYE 0x85 like Meta's host, HELLO accepted in any state, stalls/BYE restart pairing); `tools/connect_soak.py` 8/8 on the Quest (killed hosts, unanswered HELLO, sleep), procedure in `docs/protocol/connecting.md`; Link quit → relaunch verified on the bench (quit drops USB; host recovers in ~3.5 s); physical replug not tried (2026-10-28)
-- [~] in-session recovery: a running app (Play mode, player) survives every disconnect: USB glitch → resume with continuing numbering, USB drop / Link quit / headset BYE / new HELLO / 3 s silence → new handshake (IDR, audio/hands/haptics restart); `qb_get_link_status`, Unity `QuestBridgeConnectionStatus` events + overlay; fake-headset tests + soak pass; live check (`docs/testing.md`, ~1 min) pending (2026-10-28)
-- [~] audio: game audio → headset (topic 6, 10 ms paced float32 blocks) and headset mic → Unity (`QuestBridgeAudio`, `QuestBridgeMicrophone`); native + Unity tests pass, FirstLight beep/mic loop awaiting bench (2026-10-28)
-- [x] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI — topics 34/35 decoded, native `qb_get_controller` + `qb_haptic` (RuntimeIPC HapticsServer, byte-exact vs Meta), head pose fixed for the 520-byte Pose2 with controllers, Unity `QuestBridgeController` fed from it (2026-10-28). Bench-verified on the right controller (buttons, axes, motion, buzz); left verified by symmetry (its battery was dead), recheck when convenient
-- [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); native parse + FK + `qb_get_hands`, hands-on InputControl at stream start, `QuestBridgeHands` + `HandJointsVisualizer` + XR Hands provider, mock hands (2026-10-28); live bench check pending
-- [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
-- [~] M10: standalone macOS player build; latency tuning — arm64 `libquestbridge.dylib` (static libusb) + Metal frame submit (GPU strip split into IOSurfaces → VT strips, no CPU copy) pass a fake-Quest decode test; FirstLight builds headless as a macOS player and loads the plugin (2026-10-28); headset run + latency pending
-- [~] tester build 0.1.0: UPM git install with `questbridge.dll` (Win x64) + `libquestbridge.dylib` (macOS arm64) committed, CHANGELOG, automatic OVRService stop/restore (one UAC prompt per process), QuestBridge > Check Setup + `qbhost --check`, `docs/getting-started.md` (2026-10-28); tag `v0.1.0` after merge, UAC path and a tester install from git not tried yet
-- [ ] later: environment depth / body tracking over Link; native XR SDK display/input provider (managed loader exists); raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
-- [ ] M11 (last): public release as **QuestBridge for Mac** once a working Unity sample exists. Apache-2.0, fixes from docs/PUBLIC_RELEASE_AUDIT.md, targeted filter-repo rewrite into a new repo `questbridge-mac` as the very last step
+- Hardware coverage: Quest 3S and Quest 2, AMD and Intel GPUs on Windows, more Macs.
+- Latency: pose prediction, pacing and bitrate tuning.
+- 90 and 120 Hz display modes.
+- Passthrough as a composited layer, with a transparent clear in Unity.
+
+## Later
+
+- A native XR SDK display/input provider (single-pass rendering), alongside the managed loader.
+- Environment depth and body tracking over the link.
+- A small menu-bar app for using QuestBridge without Unity.
 
 ## Open / in progress (2026-10-28)
 Verified on hardware: Windows Editor Play mode on Quest 3 (head, hands, controllers + haptics, audio, connect without replug, sleep recovery, OpenH264 picture); Mac → Quest Pro video (H.264 and HEVC clips, 72 fps).
