@@ -1,0 +1,35 @@
+{
+    "name": "ElasticSea.QuestLink.XRManagement.Tests",
+    "rootNamespace": "ElasticSea.QuestLink.Tests",
+    "references": [
+        "ElasticSea.QuestLink",
+        "ElasticSea.QuestLink.XRManagement",
+        "Unity.XR.Management",
+        "Unity.XR.Management.Editor",
+        "Unity.XR.CoreUtils",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "QUESTLINK_XR_MANAGEMENT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.management",
+            "expression": "4.0.0",
+            "define": "QUESTLINK_XR_MANAGEMENT"
+        }
+    ],
+    "noEngineReferences": false
+}

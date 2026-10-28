@@ -127,8 +127,8 @@ function Test-UnityCompile($project) {
 
 function Test-Unity {
     if (-not (Test-Path $unityExe)) { Add-Result "unity" "SKIP" 0 "Unity 6000.3.11f1 not installed at $unityExe" $null; return }
-    Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestLink.Tests"
-    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests"
+    Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestLink.Tests;ElasticSea.QuestLink.XRManagement.Tests"
+    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests;ElasticSea.QuestLink.XRManagement.PlayModeTests"
     Test-UnityCompile "SensorProbe"
 }
 

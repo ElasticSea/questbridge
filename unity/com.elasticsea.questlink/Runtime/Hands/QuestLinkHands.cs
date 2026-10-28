@@ -9,7 +9,7 @@ namespace ElasticSea.QuestLink
     [DisallowMultipleComponent]
     public class QuestLinkHands : MonoBehaviour
     {
-        [Tooltip("Rig whose backend supplies the hands; defaults to the QuestLinkRig on this object or a parent.")]
+        [Tooltip("Rig whose backend supplies the hands; defaults to the QuestLinkRig on this object or a parent, else the XR loader's driver.")]
         public QuestLinkRig rig;
 
         // Most recently enabled instance (the XR Hands provider reads it)
@@ -25,7 +25,8 @@ namespace ElasticSea.QuestLink
 
         public QuestLinkHandState Get(QuestLinkHand hand) => hand == QuestLinkHand.Left ? Left : Right;
 
-        public Transform TrackingSpace => rig != null ? rig.transform : transform;
+        public Transform TrackingSpace => rig != null ? rig.transform :
+            QuestLinkXRDriver.Active != null && QuestLinkXRDriver.Active.TrackingSpace != null ? QuestLinkXRDriver.Active.TrackingSpace : transform;
 
         public Pose WorldJoint(QuestLinkHand hand, QuestLinkHandJoint joint)
         {
@@ -53,7 +54,7 @@ namespace ElasticSea.QuestLink
 
         public void Refresh()
         {
-            var backend = rig != null ? rig.Backend : null;
+            var backend = rig != null ? rig.Backend : QuestLinkXRDriver.Active?.Backend;
             if (backend == null)
             {
                 HasData = false;

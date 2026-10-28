@@ -11,7 +11,7 @@ namespace ElasticSea.QuestLink
     [AddComponentMenu("QuestLink/QuestLink Audio")]
     public class QuestLinkAudio : MonoBehaviour
     {
-        [Tooltip("Rig whose backend gets the audio; empty = the first QuestLinkRig in the scene.")]
+        [Tooltip("Rig whose backend gets the audio; empty = the first QuestLinkRig in the scene, else the XR loader's.")]
         public QuestLinkRig rig;
         [Tooltip("Silence the PC's own speakers; the headset still gets the audio.")]
         public bool muteLocal = true;
@@ -50,7 +50,7 @@ namespace ElasticSea.QuestLink
         {
             if (rig == null)
                 rig = FindAnyObjectByType<QuestLinkRig>();
-            backend = rig != null ? rig.Backend : null;
+            backend = rig != null ? rig.Backend : QuestLinkXRDriver.Active?.Backend;
         }
 
         // Tests and custom setups without a rig.
