@@ -125,7 +125,7 @@ def build(count, name, crf, layout):
     params = {"equal5": f"slices={SLICES}:threads={SLICES}", "single": "slices=1:threads=1"}.get(layout)
     if params is None:
         kind, n = layout.split(":")
-        params = {"mbs": "slice-max-mbs", "bytes": "slice-max-size"}[kind] + f"={n}:threads={SLICES}"
+        params = {"mbs": "slice-max-mbs", "bytes": "slice-max-size"}[kind] + f"={n}:threads=1"  # sliced threads would force >= threads slices
     encode(count, crf, es, params)
     out = []
     for sps, pps, nals in es_pictures(es):

@@ -165,7 +165,7 @@ class Host:
         if version == 1:
             self.phase(hello, 1)
             self.log("info", "phase 1 done; waiting for Enable Link (0x85)", None)
-            self.expect(LINK_REQUEST, timeout=seconds)
+            self.expect(LINK_REQUEST, timeout=float(os.environ.get("XRSP_LINK_WAIT", seconds)))
             self.seq = 0
             hello = self.expect(HELLO, timeout=10)
         self.phase(hello, 3)
@@ -187,10 +187,13 @@ class Host:
         reader = threading.Thread(target=self.read_loop, args=(stop,), daemon=True)
         reader.start()
         try:
-            self.replay(replay, seconds)
+            index = self.replay(replay, seconds)
         finally:
             stop.set()
             reader.join(timeout=2)
+        # After the reader stopped, so no clock pong can still bump the control seq
+        self.log("info", f"resume with XRSP_FRAME_START={index} XRSP_CONTROL_SEQ={self.seq} "
+                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)), None)
 
     # --- streaming -----------------------------------------------------------
     def read_loop(self, stop):
@@ -268,8 +271,8 @@ class Host:
             sent += 1
             nxt += period
             time.sleep(max(0.0, nxt - time.perf_counter()))
-        self.log("info", f"streamed {sent} frames; resume with XRSP_FRAME_START={index} XRSP_CONTROL_SEQ={self.seq} "
-                 "XRSP_VIDEO_SEQ=" + ",".join(str(self.stream_seq[t]) for t in range(10, 15)), None)
+        self.log("info", f"streamed {sent} frames", None)
+        return index
 
 
 def main():
