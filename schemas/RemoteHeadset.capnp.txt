@@ -1,0 +1,75 @@
+######## monterey.capnp  (3 nodes)
+
+
+
+
+
+
+######## oafInterface.capnp  (1 nodes)
+struct OafCommand @0xe341ce85d097bf8e {  # 1 data words, 3 ptrs
+  id @0 :UInt32;  # offset 0
+  command @1 :Text;  # offset 0
+  payload @2 :Text;  # offset 1
+  output @3 :Text;  # offset 2
+}
+
+######## video.capnp  (10 nodes)
+struct EncodedSlice @0x8e24568db6ef5462 {  # 18 data words, 2 ptrs
+  frame :group {
+    index @0 :UInt64;  # offset 0
+    rectifyMeshId @1 :UInt32;  # offset 2
+    renderFovPort0 @20 :FovPort;  # offset 0
+    renderFovPort1 @21 :FovPort;  # offset 1
+    isIntraFrame @22 :Bool;  # offset 392
+    pcPresentIndex @25 :UInt64;  # offset 15
+    envBlendMode @26 :EnvironmentBlendMode;  # offset 25
+    apertureId @27 :UInt64;  # offset 16
+    passthroughLayerId @28 :UInt64;  # offset 17
+    renderPose :group {
+      timeInNanoseconds @9 :Int64;  # offset 5
+      orientation :group {
+        x @2 :Float32;  # offset 3
+        y @3 :Float32;  # offset 4
+        z @4 :Float32;  # offset 5
+        w @5 :Float32;  # offset 6
+      }
+      translation :group {
+        x @6 :Float32;  # offset 7
+        y @7 :Float32;  # offset 8
+        z @8 :Float32;  # offset 9
+      }
+    }
+    metrics :group {
+      pcPresentBeginNanosecondsSinceEpoch @15 :Int64;  # offset 9
+      targetVsyncNanosecondsSinceEpoch @17 :Int64;  # offset 11
+      targetDeadlineNanosecondsSinceEpoch @18 :Int64;  # offset 12
+      estimatedGpuEndNanosecondsSinceEpoch @19 :Int64;  # offset 13
+      pcAppLatencyMarkerSensorNanosecondsSinceEpoch @24 :Int64;  # offset 14
+    }
+  }
+  slice :group {
+    index @10 :UInt8;  # offset 48
+    yOffsetInPixels @11 :UInt32;  # offset 13
+    heightInMacroBlocks @12 :UInt32;  # offset 14
+    csdLength @13 :UInt32;  # offset 15
+    videoLength @14 :UInt32;  # offset 16
+    isLastSliceOfAFrame @23 :Bool;  # offset 393
+    metrics :group {
+      pcPresentToTransmissionBeginDurationNanoseconds @16 :UInt64;  # offset 10
+    }
+  }
+  struct FovPort @0xaa3bd84457367b7f {  # 2 data words, 0 ptrs
+    leftTan @0 :Float32;  # offset 0
+    rightTan @1 :Float32;  # offset 1
+    upTan @2 :Float32;  # offset 2
+    downTan @3 :Float32;  # offset 3
+  }
+}
+
+enum EnvironmentBlendMode @0xa71fd5aceef6f0f2 {
+  blendModeInvalid @0;
+  blendModeOpaque @1;
+  blendModeAdditive @2;
+  blendModeAlphaBlend @3;
+}
+
