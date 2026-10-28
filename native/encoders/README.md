@@ -19,13 +19,13 @@
 `MFT_ENUM_HARDWARE_VENDOR_ID_Attribute`) plus OpenH264 if its DLL loads, and tries them in this
 order, each with its vendor's settings and layouts:
 
-| Backend (`--backend`, `QL_ENCODER`) | Layouts tried | Settings | Status |
+| Backend (`--backend`, `QB_ENCODER`) | Layouts tried | Settings | Status |
 |---|---|---|---|
-| `mf-nvidia` (`nvidia`) | slices, strips | defaults as benched | slices bench-verified in the headset; strips pass qlenc + stress |
+| `mf-nvidia` (`nvidia`) | slices, strips | defaults as benched | slices bench-verified in the headset; strips pass qbenc + stress |
 | `mf-amd` (`amd`) | strips, slices | QualityVsSpeed 33 | untested (no AMD GPU here) |
 | `mf-intel` (`intel`) | slices, strips | QualityVsSpeed 33 | untested (no Quick Sync encoder here) |
 | other hardware MFT | strips, slices | QualityVsSpeed 33 | untested |
-| `openh264` | strips | CAVLC, 1 ref, no scene-change/frame skip | qlenc + stress pass; not yet in the headset |
+| `openh264` | strips | CAVLC, 1 ref, no scene-change/frame skip | qbenc + stress pass; not yet in the headset |
 | `mf-software` (Microsoft MFT) | strips | QualityVsSpeed 0 | rejected by the probe: 4 slices per 4096x448 strip |
 
 Hardware on the adapter of the game's D3D11 device comes first (laptops: the dGPU running the
@@ -41,9 +41,9 @@ matching the config (Quest 3 4096x2240, Pro 4096x2160). Anything else is skipped
 (`Encoder::selection()`), so an encoder that ignores slice control or deblocking can't reach the
 headset. The chosen backend's first real frame is an IDR again.
 
-The runtime (`ql_submit_frame_texture`) logs `encoder: <tag>: <name>` and `encoder skipped: ...`
-on the first frame and reports the tag + name in `ql_info.encoder` (API version 4);
-`QL_ENCODER=nvidia|amd|intel|mf|mf-software|openh264|software` forces a backend.
+The runtime (`qb_submit_frame_texture`) logs `encoder: <tag>: <name>` and `encoder skipped: ...`
+on the first frame and reports the tag + name in `qb_info.encoder` (API version 4);
+`QB_ENCODER=nvidia|amd|intel|mf|mf-software|openh264|software` forces a backend.
 
 ### OpenH264 (software fallback)
 
@@ -54,10 +54,10 @@ on the first frame and reports the tag + name in `ql_info.encoder` (API version 
   user** (http://www.openh264.org/BINARY_LICENSE.txt), so the DLL is never shipped with our
   builds. `native\encoders\openh264\fetch.ps1` downloads `openh264-2.7.0-win64.dll` from
   ciscobinary.openh264.org, checks Cisco's SHA-256 and puts it in
-  `%LOCALAPPDATA%\QuestLink\openh264\`. Search order: `QL_OPENH264` (full path), next to
-  `questlink.dll` / `qlenc.exe`, then that folder; the version must match the headers (2.7).
+  `%LOCALAPPDATA%\QuestBridge\openh264\`. Search order: `QB_OPENH264` (full path), next to
+  `questbridge.dll` / `qbenc.exe`, then that folder; the version must match the headers (2.7).
   (Store Python's child processes can't see that AppData folder, so for `slice_cap_stress.py`
-  copy the DLL next to qlenc.)
+  copy the DLL next to qbenc.)
 - Layout: 5 encoders of 4096x448, one per strip, on 5 threads; rate control per strip at
   bitrate / 5. IDRs come from our frame count, so all strips switch on the same frame.
 - Slice cap: OpenH264's rate control never goes above QP 42, and noise at QP 42 is ~1.4 MB per
@@ -74,7 +74,7 @@ on the first frame and reports the tag + name in `ql_info.encoder` (API version 
 
 ```
 native\encoders\build.ps1
-native\encoders\build\qlenc.exe --frames 144 --name qlenc
+native\encoders\build\qbenc.exe --frames 144 --name qbenc
 ```
 
 Writes `out/runs/<name>.h264` and `out/clips/<name>.json` (same clip format as
@@ -101,7 +101,7 @@ NVIDIA H.264 Encoder MFT, 4096x2240 @ 72, Constrained Baseline (constraint flags
 
 ## Results on the Mac (M5 Pro, macOS 26.7.1, 2026-10-28)
 
-Build and run: [docs/building.md](../../docs/building.md). `qlenc` defaults to `--layout strips`
+Build and run: [docs/building.md](../../docs/building.md). `qbenc` defaults to `--layout strips`
 on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max-slice-bytes`.
 
 - **Layout:** 5 sessions of 4096x448 (`Layout::Strips`), Constrained Baseline (0xc0), level 4.2,
@@ -122,18 +122,18 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
   `PrioritizeEncodingSpeedOverQuality`, Quality 0, Constrained High: no gain. **72 Hz at
   4096x2240 is out of reach with H.264**; 3840x1920 as strips reaches ~74 fps, 1920x1088 217 fps.
   **HEVC is faster:** 4096x2240 72.8 fps (1 session), 5 strips 87.6 fps.
-- **Real-time options (`qlenc`, encode() per frame, NV12):** `--codec hevc` (ave.hevc, Main, 5 x
+- **Real-time options (`qbenc`, encode() per frame, NV12):** `--codec hevc` (ave.hevc, Main, 5 x
   4096x448, one slice each, IDR 19/20) **10.9 ms**; `--size 2880x1600` H.264 (5 x 2880x320)
   **9.5 ms**, ~92 fps pipelined. Throughput varies ~20% with the Mac's desktop load (Aerial
   wallpaper, Unity open): 5 x 4096x448 H.264 measured 62 fps first, 50 fps later.
 - **HEVC strips in the native core (2026-10-28):** the session sends the codec in CONFIG v3
-  (`ql_config.codec` / `QL_CODEC`, auto = HEVC on macOS unless the HELLO v3 lists codecs without HEVC; Quest 3/Pro
+  (`qb_config.codec` / `QB_CODEC`, auto = HEVC on macOS unless the HELLO v3 lists codecs without HEVC; Quest 3/Pro
   list nothing and the Pro decodes HEVC, so HEVC on the Mac, H.264 on Windows), and the Metal texture encoder follows it. ave.hevc strip headers:
   VPS + SPS + PPS per strip (csd), one slice segment per strip, IDR_N_LP (20) on forced keys in
   every strip at once, no reordering (max_num_reorder 0, dec buffering 5), CTB 32, level 5.2,
   POC lsb 11 bits, temporal MVP on, SAO on, **WPP on (entropy_coding_sync, entry points in the
   slice header)**, loop filter across slices off, no VUI. 432 px strips (Quest Pro) encode without
-  a conformance window issue. `questlink_vt_tests`: HEVC 4096x2240 11.6 ms/frame, 4096x2160 11.8,
+  a conformance window issue. `questbridge_vt_tests`: HEVC 4096x2240 11.6 ms/frame, 4096x2160 11.8,
   H.264 17.4 (sequential); every strip decodes on its own decoder incl. P frames. Noise at
   400 Mbit/s: first HEVC try up to 1.7 MB per strip, refit lands under 120,000 B in 2 rounds
   (slice QP isn't parsed for HEVC, so the refit starts from QP 20); even QP 51 noise is ~100 KB.
@@ -154,7 +154,7 @@ re-encodes a frame (MF) or strip (VT) with a slice over the cap as an IDR at a h
   session's first frame; one gray frame each warms them up in init, else the first use costs
   ~40 ms). ~35 hardware sessions per process is the limit (5 main + 15 refit = 20).
 
-`py tools/slice_cap_stress.py [-- --codec hevc | --size 2880x1600]` (qlenc `--pattern
+`py tools/slice_cap_stress.py [-- --codec hevc | --size 2880x1600]` (qbenc `--pattern
 noise|motion|cuts`, gop 1 and 72, 72 frames; also in the full `tools/test_all.ps1` run):
 
 | Backend | Largest slice | Rejected (first try) | Re-encoded frames | QP normal → re-encoded | encode() max |

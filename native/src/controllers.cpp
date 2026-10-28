@@ -6,7 +6,7 @@
 #include "capnp.hpp"
 #include "templates.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -136,4 +136,4 @@ SetupState from_setup() {
 
 }  // namespace ripc
 
-}  // namespace ql
+}  // namespace qb

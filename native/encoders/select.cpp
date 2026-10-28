@@ -5,7 +5,7 @@
 
 #include "h264.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 namespace {
 
@@ -275,4 +275,4 @@ std::unique_ptr<Encoder> select(const std::vector<Attempt>& attempts, const Fact
     return nullptr;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

@@ -33,7 +33,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-namespace ql::enc {
+namespace qb::enc {
 
 namespace {
 
@@ -738,4 +738,4 @@ std::unique_ptr<Encoder> create_mf(const Attempt& a, std::string* error) {
     return enc;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

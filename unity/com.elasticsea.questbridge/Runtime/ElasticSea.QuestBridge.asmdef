@@ -1,0 +1,16 @@
+{
+    "name": "ElasticSea.QuestBridge",
+    "rootNamespace": "ElasticSea.QuestBridge",
+    "references": [
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

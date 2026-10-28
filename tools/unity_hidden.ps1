@@ -1,6 +1,6 @@
 # The only allowed way to start the Unity Editor (batchmode builds and tests) from scripts. Players
 # that stream to the headset use start_player.ps1 instead: on this hidden desktop they never submit frames.
-# The process runs on a separate, never-shown desktop (WinSta0\QuestLinkHidden), so none of its
+# The process runs on a separate, never-shown desktop (WinSta0\QuestBridgeHidden), so none of its
 # windows can take focus. (SW_HIDE on the visible desktop is not enough: a test window
 # started that way still took the foreground.) Waits for exit and returns the exit code (-1 on
 # timeout, after killing it). The hidden desktop goes away with this script, so keep it running
@@ -14,12 +14,12 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-if (-not ("QuestLink.HiddenLauncher" -as [type])) {
+if (-not ("QuestBridge.HiddenLauncher" -as [type])) {
     Add-Type -TypeDefinition @"
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-namespace QuestLink {
+namespace QuestBridge {
 public static class HiddenLauncher {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct STARTUPINFO {
@@ -54,10 +54,10 @@ public static class HiddenLauncher {
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
         if (desktop == IntPtr.Zero) {
-            desktop = CreateDesktop("QuestLinkHidden", IntPtr.Zero, IntPtr.Zero, 0, DESKTOP_ALL, IntPtr.Zero);
+            desktop = CreateDesktop("QuestBridgeHidden", IntPtr.Zero, IntPtr.Zero, 0, DESKTOP_ALL, IntPtr.Zero);
             if (desktop == IntPtr.Zero) throw new Win32Exception();
         }
-        si.lpDesktop = @"WinSta0\QuestLinkHidden";
+        si.lpDesktop = @"WinSta0\QuestBridgeHidden";
         var cmd = new System.Text.StringBuilder("\"" + exe + "\" " + args);
         PROCESS_INFORMATION pi;
         if (!CreateProcess(exe, cmd, IntPtr.Zero, IntPtr.Zero, false, CREATE_NO_WINDOW, IntPtr.Zero, cwd, ref si, out pi))
@@ -80,6 +80,6 @@ public static class HiddenLauncher {
 }
 
 $exePath = (Resolve-Path $Exe).Path
-$procId = [QuestLink.HiddenLauncher]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path)
+$procId = [QuestBridge.HiddenLauncher]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path)
 Write-Host "started $([IO.Path]::GetFileName($exePath)) pid $procId on the hidden desktop"
-exit [QuestLink.HiddenLauncher]::Wait([uint32]($TimeoutS * 1000))
+exit [QuestBridge.HiddenLauncher]::Wait([uint32]($TimeoutS * 1000))

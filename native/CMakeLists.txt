@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 # macOS: arm64 (Apple silicon); 13+ for VideoToolbox CBR
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS")
-project(questlink LANGUAGES C CXX)
+project(questbridge LANGUAGES C CXX)
 if(APPLE)
   enable_language(OBJCXX)
 endif()
@@ -24,7 +24,7 @@ else()
 endif()
 
 # Protocol core: no I/O, no dependencies. Shared by the library and the tests.
-add_library(questlink_core STATIC
+add_library(questbridge_core STATIC
   src/xrsp.cpp
   src/json.cpp
   src/audio.cpp
@@ -39,69 +39,69 @@ add_library(questlink_core STATIC
   src/ovr_service.cpp
   src/setup_check.cpp
 )
-target_include_directories(questlink_core PUBLIC include src)
+target_include_directories(questbridge_core PUBLIC include src)
 
 # USB backend: WinUSB on Windows (adb keeps its interface), libusb-1.0 elsewhere
 if(WIN32)
   # OVRService helper: SCM query + an elevated PowerShell started through ShellExecuteEx
-  set(QL_USB_SOURCES src/transport_winusb.cpp src/ovr_service_win.cpp)
-  set(QL_USB_LIBS winusb setupapi advapi32 shell32 ole32)
+  set(QB_USB_SOURCES src/transport_winusb.cpp src/ovr_service_win.cpp)
+  set(QB_USB_LIBS winusb setupapi advapi32 shell32 ole32)
 else()
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
     pkg_check_modules(LIBUSB IMPORTED_TARGET libusb-1.0)
   endif()
   if(LIBUSB_FOUND)
-    set(QL_USB_SOURCES src/transport_libusb.cpp)
-    set(QL_USB_LIBS PkgConfig::LIBUSB)
-    # macOS: link libusb statically so libquestlink.dylib runs on Macs without Homebrew
+    set(QB_USB_SOURCES src/transport_libusb.cpp)
+    set(QB_USB_LIBS PkgConfig::LIBUSB)
+    # macOS: link libusb statically so libquestbridge.dylib runs on Macs without Homebrew
     find_library(LIBUSB_STATIC NAMES libusb-1.0.a HINTS ${LIBUSB_LIBRARY_DIRS} NO_DEFAULT_PATH)
     if(APPLE AND LIBUSB_STATIC)
-      add_library(ql_libusb INTERFACE)
-      target_include_directories(ql_libusb INTERFACE ${LIBUSB_INCLUDE_DIRS})
-      target_link_libraries(ql_libusb INTERFACE ${LIBUSB_STATIC} objc "-framework IOKit"
+      add_library(qb_libusb INTERFACE)
+      target_include_directories(qb_libusb INTERFACE ${LIBUSB_INCLUDE_DIRS})
+      target_link_libraries(qb_libusb INTERFACE ${LIBUSB_STATIC} objc "-framework IOKit"
         "-framework CoreFoundation" "-framework Security")
-      set(QL_USB_LIBS ql_libusb)
+      set(QB_USB_LIBS qb_libusb)
     endif()
   else()
     message(WARNING "libusb-1.0 not found: building without USB (brew install libusb pkg-config)")
-    set(QL_USB_SOURCES src/transport_none.cpp)
+    set(QB_USB_SOURCES src/transport_none.cpp)
   endif()
 endif()
 
 # H.264 encoders (Media Foundation on Windows; VideoToolbox on macOS)
 add_subdirectory(encoders)
 
-# Texture capture + encode for ql_submit_frame_texture
+# Texture capture + encode for qb_submit_frame_texture
 if(WIN32)
-  set(QL_TEXTURE_SOURCES src/texture_encoder_d3d11.cpp)
-  set(QL_TEXTURE_LIBS questlink_encoders d3d11)
+  set(QB_TEXTURE_SOURCES src/texture_encoder_d3d11.cpp)
+  set(QB_TEXTURE_LIBS questbridge_encoders d3d11)
 elseif(APPLE)
   # Metal render passes into IOSurface strips + VideoToolbox; UnityPluginLoad lives here too
-  set(QL_TEXTURE_SOURCES src/texture_encoder_metal.mm)
+  set(QB_TEXTURE_SOURCES src/texture_encoder_metal.mm)
   set_source_files_properties(src/texture_encoder_metal.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-  set(QL_TEXTURE_LIBS questlink_encoders "-framework Metal" "-framework Foundation" "-framework IOSurface")
+  set(QB_TEXTURE_LIBS questbridge_encoders "-framework Metal" "-framework Foundation" "-framework IOSurface")
 else()
-  set(QL_TEXTURE_SOURCES src/texture_encoder_none.cpp)
+  set(QB_TEXTURE_SOURCES src/texture_encoder_none.cpp)
 endif()
 
 # C API implementation, shared by the library and the runtime tests (which bring fake USB
 # and encoder backends)
-add_library(questlink_api OBJECT src/questlink.cpp src/link_runtime.cpp)
-target_compile_definitions(questlink_api PUBLIC QL_BUILD_SHARED)
-target_link_libraries(questlink_api PUBLIC questlink_core)
+add_library(questbridge_api OBJECT src/questbridge.cpp src/link_runtime.cpp)
+target_compile_definitions(questbridge_api PUBLIC QB_BUILD_SHARED)
+target_link_libraries(questbridge_api PUBLIC questbridge_core)
 
-# The C API: questlink.dll / libquestlink.dylib
-add_library(questlink SHARED $<TARGET_OBJECTS:questlink_api> ${QL_USB_SOURCES} ${QL_TEXTURE_SOURCES}
+# The C API: questbridge.dll / libquestbridge.dylib
+add_library(questbridge SHARED $<TARGET_OBJECTS:questbridge_api> ${QB_USB_SOURCES} ${QB_TEXTURE_SOURCES}
   src/setup_probe.cpp)
-target_compile_definitions(questlink PRIVATE QL_BUILD_SHARED)
-target_include_directories(questlink PUBLIC include)
-target_link_libraries(questlink PRIVATE questlink_core ${QL_USB_LIBS} ${QL_TEXTURE_LIBS})
+target_compile_definitions(questbridge PRIVATE QB_BUILD_SHARED)
+target_include_directories(questbridge PUBLIC include)
+target_link_libraries(questbridge PRIVATE questbridge_core ${QB_USB_LIBS} ${QB_TEXTURE_LIBS})
 
 # CLI on the C API only (plus the JSON reader for replay clips)
-add_executable(qlhost cli/qlhost.cpp src/json.cpp)
-target_include_directories(qlhost PRIVATE include src)
-target_link_libraries(qlhost PRIVATE questlink)
+add_executable(qbhost cli/qbhost.cpp src/json.cpp)
+target_include_directories(qbhost PRIVATE include src)
+target_link_libraries(qbhost PRIVATE questbridge)
 
 enable_testing()
 add_subdirectory(tests)

@@ -6,7 +6,7 @@
 
 #include "templates.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -108,4 +108,4 @@ std::vector<StreamMessage> build_frame(std::span<const SliceData> slices, const 
     return out;
 }
 
-}  // namespace ql
+}  // namespace qb

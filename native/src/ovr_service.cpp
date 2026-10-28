@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace ql::ovr {
+namespace qb::ovr {
 
 const char* to_string(ServiceState s) {
     switch (s) {
@@ -19,7 +19,7 @@ const char* to_string(HelperState s) {
     switch (s) {
         case HelperState::Idle: return "idle";
         case HelperState::Prompting: return "waiting for the admin prompt";
-        case HelperState::Stopped: return "stopped by QuestLink";
+        case HelperState::Stopped: return "stopped by QuestBridge";
         case HelperState::Declined: return "admin prompt declined";
         default: return "failed";
     }
@@ -70,4 +70,4 @@ std::string on_open_failed(bool (*)()) { return {}; }
 bool request_stop() { return false; }
 #endif
 
-}  // namespace ql::ovr
+}  // namespace qb::ovr

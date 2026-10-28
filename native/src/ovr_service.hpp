@@ -1,11 +1,11 @@
 // Meta's OVRService (Windows) holds the Quest's XRSP interface while it runs. When a USB open
 // fails because of it, the host stops it through one elevated helper (one UAC prompt per
-// process) that starts it again when the process exits. QL_OVR_STOP=0 turns this off.
+// process) that starts it again when the process exits. QB_OVR_STOP=0 turns this off.
 #pragma once
 
 #include <string>
 
-namespace ql::ovr {
+namespace qb::ovr {
 
 enum class ServiceState { NotInstalled, Stopped, Running, Pending, Unknown };
 
@@ -25,7 +25,7 @@ enum class HelperState { Idle, Prompting, Stopped, Declined, Failed };
 const char* to_string(HelperState s);
 
 // Platform side (ovr_service_win.cpp; elsewhere OVRService doesn't exist)
-bool enabled();               // QL_OVR_STOP != 0
+bool enabled();               // QB_OVR_STOP != 0
 ServiceState query();         // SCM, no elevation
 HelperState helper_state();
 // Starts the helper if should_stop() says so; never blocks. quest_present is only called while
@@ -34,4 +34,4 @@ std::string on_open_failed(bool (*quest_present)());
 // Ask now (Check Setup's button), even after a declined prompt. False if OVRService isn't running.
 bool request_stop();
 
-}  // namespace ql::ovr
+}  // namespace qb::ovr

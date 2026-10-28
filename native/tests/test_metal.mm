@@ -2,7 +2,7 @@
 // Session API, a fake Quest behind open_usb(). A 4096x2240 texture with one colour per strip
 // goes through the render event; every strip on the wire is decoded again and its colour
 // checked, which proves the GPU split (rows, order) and the per-strip SPS/PPS.
-// Default (auto) is HEVC on macOS (questlink_metal_hevc_tests); QL_CODEC=h264 (questlink_metal_tests)
+// Default (auto) is HEVC on macOS (questbridge_metal_hevc_tests); QB_CODEC=h264 (questbridge_metal_tests)
 // does the same with H.264 strips.
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
@@ -13,7 +13,7 @@
 
 #include "fake_quest.hpp"
 #include "harness.hpp"
-#include "questlink.h"
+#include "questbridge.h"
 #include "vt_decode.hpp"
 
 namespace {
@@ -89,23 +89,23 @@ TEST(metal_frame_submit) {
     }
     [tex replaceRegion:MTLRegionMake2D(0, 0, kW, kH) mipmapLevel:0 withBytes:pixels.data() bytesPerRow:kW * 4];
 
-    const char* env_codec = std::getenv("QL_CODEC");
+    const char* env_codec = std::getenv("QB_CODEC");
     const bool hevc = !env_codec || std::string(env_codec) != "h264";  // auto: HEVC on macOS
-    ql_session* s = ql_open();
+    qb_session* s = qb_open();
     REQUIRE(s);
     plug_recorded_quest();
-    REQUIRE(wait_for([&] { return ql_poll(s) == 2; }));
-    ql_device_info info{};
-    REQUIRE(ql_get_device_info(s, &info) == QL_OK);
-    CHECK_EQ(info.stream_codec, uint32_t(hevc ? QL_CODEC_HEVC : QL_CODEC_H264));
+    REQUIRE(wait_for([&] { return qb_poll(s) == 2; }));
+    qb_device_info info{};
+    REQUIRE(qb_get_device_info(s, &info) == QB_OK);
+    CHECK_EQ(info.stream_codec, uint32_t(hevc ? QB_CODEC_HEVC : QB_CODEC_H264));
 
-    ql_frame_submit f{};
+    qb_frame_submit f{};
     f.session = s;
     f.native_texture = (__bridge void*)tex;
     f.render_pose = {0, 0, 0, 1, 0, 1.6f, 0, 0};
     for (uint64_t i = 1; i <= 3; ++i) {
         f.frame_index = i;
-        ql_get_render_event_func()(QL_EVENT_SUBMIT_FRAME, &f);
+        qb_get_render_event_func()(QB_EVENT_SUBMIT_FRAME, &f);
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
     REQUIRE(wait_for([] {
@@ -150,5 +150,5 @@ TEST(metal_frame_submit) {
         CVPixelBufferUnlockBaseAddress(img, kCVPixelBufferLock_ReadOnly);
         CVPixelBufferRelease(img);
     }
-    ql_close(s);
+    qb_close(s);
 }

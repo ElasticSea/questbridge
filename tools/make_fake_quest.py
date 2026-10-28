@@ -1,7 +1,7 @@
-"""Build the Quest side for the runtime's offline bench (QL_FAKE_QUEST=<file>).
+"""Build the Quest side for the runtime's offline bench (QB_FAKE_QUEST=<file>).
 
 The recorded Quest 3 handshake (tests/fixtures/handshake) with the HELLOs swapped for another
-headset's, taken from a QL_LOG native log of a real session with it ("info   HELLO <hex>": the
+headset's, taken from a QB_LOG native log of a real session with it ("info   HELLO <hex>": the
 phase 1 HELLO, then the Link session's). The last records are the recorded head pose (segment
 table, segment), which the runtime replays with a moving yaw.
 

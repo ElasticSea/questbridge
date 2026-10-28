@@ -9,7 +9,7 @@
 
 #include "templates.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -600,4 +600,4 @@ void Session::tick() {
     }
 }
 
-}  // namespace ql
+}  // namespace qb

@@ -32,7 +32,7 @@
 #include "pose.hpp"
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace topic {
 constexpr uint8_t kControl = 1;
@@ -74,7 +74,7 @@ enum class State {
 };
 const char* state_name(State s);
 
-// Why a stream ended (same values as ql_loss)
+// Why a stream ended (same values as qb_loss)
 enum class Loss { None, Usb, HeadsetBye, NewHello, Silence };
 
 // HELLO device description (docs/protocol/spec.md §8; tools/device_info.py is the same parse)
@@ -283,4 +283,4 @@ private:
     uint64_t mic_blocks_ = 0;
 };
 
-}  // namespace ql
+}  // namespace qb

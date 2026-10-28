@@ -7,7 +7,7 @@
 #include "session.hpp"
 #include "templates.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
@@ -33,7 +33,7 @@ struct Rig {
 
 std::vector<const json::Value*> entries(const char* dir) {
     std::vector<const json::Value*> out;
-    for (const auto& e : qltest::fixture("handshake", "control").items())
+    for (const auto& e : qbtest::fixture("handshake", "control").items())
         if (e["dir"].as_string() == dir) out.push_back(&e);
     return out;
 }
@@ -58,7 +58,7 @@ TEST(templates_match_fixtures) {
     }
     CHECK_EQ(found, size_t(6));
 
-    auto clip = json::parse_file(qltest::repo("tests/fixtures/replay/idr-frame.json"));
+    auto clip = json::parse_file(qbtest::repo("tests/fixtures/replay/idr-frame.json"));
     const auto& setup = templates::stream_setup();
     REQUIRE(setup.size() == clip["setup"].size());
     for (size_t i = 0; i < setup.size(); ++i) {
@@ -330,7 +330,7 @@ namespace {
 
 // The recorded head pose (segment table, then the segment)
 void feed_pose(Session& s) {
-    for (const auto& g : qltest::fixture("handshake", "streams").items())
+    for (const auto& g : qbtest::fixture("handshake", "streams").items())
         if (g["topic"].as_u64() == topic::kHeadPose)
             for (const auto& m : g["samples"].items()) s.on_message(m["raw"].as_hex());
 }

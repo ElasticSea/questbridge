@@ -1,16 +1,16 @@
 """Connect soak: cycle the native host against the plugged-in Quest and check that every cycle
 reaches phase 1 (the headset's HELLO) with no replug and nobody in the headset.
 
-Usage: py tools/connect_soak.py [--cycles 12] [--qlhost PATH] [--hello-timeout 10]
+Usage: py tools/connect_soak.py [--cycles 12] [--qbhost PATH] [--hello-timeout 10]
                                 [--no-sleep] [--force]
 
 Each cycle first leaves the headset in a state that used to need a replug, then starts a
-fresh qlhost and times open -> HELLO -> phase 1. Disturbances rotate:
+fresh qbhost and times open -> HELLO -> phase 1. Disturbances rotate:
   none      the previous cycle's host was killed after phase 1 (headset HOST_CONNECTED)
   orphan    a host killed right after its BYE: the headset's new HELLO goes unanswered
   early     a host killed 50 ms after opening, before it said anything
   sleep     the headset sleeps 15 s (adb KEYCODE_SLEEP), then wakes
-Needs OVRService stopped and no other host (FirstLight, qlhost, handshake.py) on the bench.
+Needs OVRService stopped and no other host (FirstLight, qbhost, handshake.py) on the bench.
 Phase 2 (Launch) needs a person, so it is not part of the soak; see docs/protocol/connecting.md.
 Exit code 0 only if every cycle reached phase 1. Log: out/runs/connect-soak-<stamp>.txt
 """
@@ -25,12 +25,12 @@ import time
 from datetime import datetime
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-QLHOST = os.path.join(REPO, "native", "build", "bin", "Release", "qlhost.exe")
+QBHOST = os.path.join(REPO, "native", "build", "bin", "Release", "qbhost.exe")
 ADB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages",
                    "Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe", "platform-tools", "adb.exe")
 SERIAL = "QUEST0SERIAL00"
 DISTURBANCES = ["none", "orphan", "early", "sleep"]
-OTHER_HOSTS = ("FirstLight.exe", "qlhost.exe", "SensorProbe.exe")
+OTHER_HOSTS = ("FirstLight.exe", "qbhost.exe", "SensorProbe.exe")
 
 
 def adb(*args, timeout=15):
@@ -51,7 +51,7 @@ def bench_busy():
 
 
 class Host:
-    """qlhost in listen mode; lines arrive on a queue as (pc_time, text)"""
+    """qbhost in listen mode; lines arrive on a queue as (pc_time, text)"""
 
     def __init__(self, exe, hello_timeout, bye_retry_ms=None):
         env = dict(os.environ, XRSP_WAIT="10", XRSP_HELLO_WAIT=str(hello_timeout))
@@ -116,7 +116,7 @@ def disturb(kind, exe, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--cycles", type=int, default=12)
-    ap.add_argument("--qlhost", default=QLHOST)
+    ap.add_argument("--qbhost", default=QBHOST)
     ap.add_argument("--hello-timeout", type=float, default=10, help="seconds from open to phase 1")
     ap.add_argument("--no-sleep", action="store_true", help="skip the headset sleep disturbance")
     ap.add_argument("--force", action="store_true", help="run even if another host seems active")
@@ -126,8 +126,8 @@ def main():
     if busy and not a.force:
         print("bench busy: " + ", ".join(busy) + " (stop it, or --force)")
         return 2
-    if not os.path.exists(a.qlhost):
-        print(f"no qlhost at {a.qlhost} (run native\\build.ps1)")
+    if not os.path.exists(a.qbhost):
+        print(f"no qbhost at {a.qbhost} (run native\\build.ps1)")
         return 2
 
     os.makedirs(os.path.join(REPO, "capture", "runs"), exist_ok=True)
@@ -145,9 +145,9 @@ def main():
     for i in range(a.cycles):
         kind = kinds[i % len(kinds)]
         out(f"cycle {i + 1}/{a.cycles} ({kind})")
-        disturb(kind, a.qlhost, out)
+        disturb(kind, a.qbhost, out)
         state = adb("shell", "getprop ovr.xrspd.status") or "?"
-        h = Host(a.qlhost, a.hello_timeout + 5)
+        h = Host(a.qbhost, a.hello_timeout + 5)
         opened = h.wait_for("XRSP interface opened", 10)
         hello = h.wait_for("0x81 v1", a.hello_timeout) if opened is not None else None
         done = h.wait_for("phase 1 done", 3) if hello is not None else None

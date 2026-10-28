@@ -199,7 +199,7 @@ accept a table inline at the start of a body (`segments()` in `tools/decode_pose
 ### 4.1 States
 
 Names in `code` are from the headset's `xrspd`/`xrstreaming` logs; the host states are ours
-(`ql_state` in `native/include/questlink.h`).
+(`qb_state` in `native/include/questbridge.h`).
 
 | Host state | What happens | Headset side |
 |---|---|---|
@@ -329,7 +329,7 @@ topic 4 (inferred: built in, or the topic-4 values only repeat the headset's def
   whatever it has (waiting pairing attempt, phase-1 session, orphaned stream) and sends a fresh
   HELLO v1 about 1.6 s later (verified). It ignores a BYE that arrives < 1 s after its own HELLO
   (that HELLO then reaches the host anyway). Our hosts send one 50 ms after opening and repeat it
-  every 3 s while no HELLO comes (`ql_config.bye_retry_ms`).
+  every 3 s while no HELLO comes (`qb_config.bye_retry_ms`).
 - **BYE from the headset:** in WAIT_LINK_REQUEST it is the user's Launch (§4.2 #8). During a
   stream it means the headset dropped the session (protocol error, Link quit); the host returns
   to WAIT_HELLO, and the next HELLO starts over with fresh per-topic `seq` and frame index.
@@ -507,7 +507,7 @@ All verified on the bench by breaking them:
 | Requirement | Failure when violated (headset log) |
 |---|---|
 | Timing words (40, 72, 88–112) in the Quest clock and near now | stale: `Frame arrived N ms after deadline, frame drop` |
-| `targetVsync` not too far ahead either | `Frame arrived ~7.6 ms before deadline, frame drop to prevent submit offset` (seen at send time + 20 ms with a fast sender; Deadline 6.5 ms). Our runtime targets send time + 16 ms (`QL_VSYNC_LEAD_MS`); + 20 ms works for slower senders |
+| `targetVsync` not too far ahead either | `Frame arrived ~7.6 ms before deadline, frame drop to prevent submit offset` (seen at send time + 20 ms with a fast sender; Deadline 6.5 ms). Our runtime targets send time + 16 ms (`QB_VSYNC_LEAD_MS`); + 20 ms works for slower senders |
 | `frame.index` increases across the whole headset session (also across host restarts) | `timed out waiting for new decode frame index`, nothing shown |
 | Per-topic `seq` continues across host restarts | same as above |
 | All `slices` strips of every frame sent (CONFIG `slices` = 5) | 1–4 strips per frame: nothing shown, **no error**; recovers once full frames arrive again |
@@ -830,14 +830,14 @@ rectify mesh id 1001, which the HELLO doesn't carry):
 
 | Use | Source |
 |---|---|
-| CONFIG v3 refresh (data word 2, low u32) | `ql_config.refresh_hz` / `XRSP_REFRESH` if the HELLO's refresh list has it, else the description's default refresh (72 → Meta's bytes) |
-| Frame pacing (qlhost replay, texture encoder rate) | the CONFIG v3 refresh |
-| EncodedSlice `yOffsetInPixels` / `heightInMacroBlocks` | encode height split into equal macroblock-row strips (last takes the rest): 2240 / 5 = 448 px, 28 MB = Meta's values. `ql_frame_info.picture_height` overrides it (qlhost takes it from the clip's headers) |
+| CONFIG v3 refresh (data word 2, low u32) | `qb_config.refresh_hz` / `XRSP_REFRESH` if the HELLO's refresh list has it, else the description's default refresh (72 → Meta's bytes) |
+| Frame pacing (qbhost replay, texture encoder rate) | the CONFIG v3 refresh |
+| EncodedSlice `yOffsetInPixels` / `heightInMacroBlocks` | encode height split into equal macroblock-row strips (last takes the rest): 2240 / 5 = 448 px, 28 MB = Meta's values. `qb_frame_info.picture_height` overrides it (qbhost takes it from the clip's headers) |
 | Eye render target (Unity) | encode width × height |
 | Per-eye `FovPort` | each eye's own angles (tangents), not a mirror of the left eye |
 | Eye separation | IPD |
 
-C API: `ql_get_device_info` / `ql_host_get_device_info` fill `ql_device_info` (API version 3,
+C API: `qb_get_device_info` / `qb_host_get_device_info` fill `qb_device_info` (API version 3,
 240 B): encode size, default refresh, IPD, both FOVs, panel size, refresh list, the session's
 `stream_refresh_hz`, codec and feature bitmasks, HELLO version, product, manufacturer, firmware.
 

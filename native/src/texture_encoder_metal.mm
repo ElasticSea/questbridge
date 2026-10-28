@@ -49,7 +49,7 @@ extern "C" __attribute__((visibility("default"))) void UnityPluginLoad(IUnityInt
 
 extern "C" __attribute__((visibility("default"))) void UnityPluginUnload() { g_unity_metal = nullptr; }
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -62,13 +62,13 @@ const char* kShader = R"(
 #include <metal_stdlib>
 using namespace metal;
 struct V { float4 pos [[position]]; };
-vertex V ql_strip_vs(uint vid [[vertex_id]]) {
+vertex V qb_strip_vs(uint vid [[vertex_id]]) {
     float2 p = float2((vid << 1) & 2, vid & 2);
     V o;
     o.pos = float4(p * 2.0 - 1.0, 0.0, 1.0);
     return o;
 }
-fragment half4 ql_strip_fs(V in [[stage_in]], texture2d<half> src [[texture(0)]], constant uint& y0 [[buffer(0)]]) {
+fragment half4 qb_strip_fs(V in [[stage_in]], texture2d<half> src [[texture(0)]], constant uint& y0 [[buffer(0)]]) {
     return src.read(uint2(in.pos.xy) + uint2(0, y0));
 }
 )";
@@ -216,8 +216,8 @@ private:
         }
         const MTLPixelFormat fmt = srgb_ ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatBGRA8Unorm;
         MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
-        pd.vertexFunction = [lib newFunctionWithName:@"ql_strip_vs"];
-        pd.fragmentFunction = [lib newFunctionWithName:@"ql_strip_fs"];
+        pd.vertexFunction = [lib newFunctionWithName:@"qb_strip_vs"];
+        pd.fragmentFunction = [lib newFunctionWithName:@"qb_strip_fs"];
         pd.colorAttachments[0].pixelFormat = fmt;
         pipeline_ = [dev newRenderPipelineStateWithDescriptor:pd error:&err];
         if (!pipeline_) {
@@ -328,4 +328,4 @@ std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfi
     return std::make_unique<MetalTextureEncoder>(cfg);
 }
 
-}  // namespace ql
+}  // namespace qb

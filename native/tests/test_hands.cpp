@@ -6,13 +6,13 @@
 #include "harness.hpp"
 #include "session.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
 std::vector<Bytes> raws(const char* key) {
     std::vector<Bytes> out;
-    for (const auto& h : qltest::fixture("hands", "messages")[key].items()) out.push_back(h.as_hex());
+    for (const auto& h : qbtest::fixture("hands", "messages")[key].items()) out.push_back(h.as_hex());
     return out;
 }
 

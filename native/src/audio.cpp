@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace ql::audio {
+namespace qb::audio {
 
 namespace {
 constexpr uint8_t kRootPointer[8] = {0, 0, 0, 0, 1, 0, 1, 0};  // struct: 1 data word, 1 pointer
@@ -170,4 +170,4 @@ int Pacer::due(int64_t now) {
     return n;
 }
 
-}  // namespace ql::audio
+}  // namespace qb::audio

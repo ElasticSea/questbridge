@@ -9,7 +9,7 @@
 #include <optional>
 #include <span>
 
-namespace ql {
+namespace qb {
 
 constexpr size_t kHeadPoseSegment = 272;  // without controllers
 
@@ -51,4 +51,4 @@ struct Pose2 {
 std::optional<Pose2> parse_pose2(std::span<const uint8_t> segment);
 std::optional<HeadPose> parse_head_pose(std::span<const uint8_t> segment);
 
-}  // namespace ql
+}  // namespace qb

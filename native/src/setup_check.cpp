@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-namespace ql::setup {
+namespace qb::setup {
 
 namespace {
 
@@ -15,7 +15,7 @@ Check make(const char* id, const char* title, Status s, std::string detail, std:
 Check os_check(const Probe& p) {
     if (p.os == Os::Other)
         return make("os", "Operating system", Status::Fail, p.os_version.empty() ? "unsupported" : p.os_version,
-                    "QuestLink runs on Windows 10/11 (x64) and on macOS with Apple silicon.");
+                    "QuestBridge runs on Windows 10/11 (x64) and on macOS with Apple silicon.");
     return make("os", "Operating system", Status::Ok, p.os_version);
 }
 
@@ -25,7 +25,7 @@ Check link_app_check(const Probe& p) {
     if (p.link_app) return make("link_app", title, Status::Ok, "installed");
     if (p.xrsp) return make("link_app", title, Status::Ok, "not installed, but its USB driver is");
     return make("link_app", title, Status::Fail, "not installed",
-                "Install the Meta Quest Link app (Meta Horizon Link) from meta.com/help/quest/pcvr. QuestLink only "
+                "Install the Meta Quest Link app (Meta Horizon Link) from meta.com/help/quest/pcvr. QuestBridge only "
                 "needs the USB driver it installs; you don't have to sign in or keep it open. Then unplug and "
                 "replug the Quest.");
 }
@@ -63,7 +63,7 @@ Check service_check(const Probe& p) {
         case ServiceState::NotInstalled: return make("ovr_service", title, Status::Skip, "not installed");
         case ServiceState::Stopped:
             return make("ovr_service", title, Status::Ok,
-                        p.helper == HelperState::Stopped ? "stopped by QuestLink; it starts again when this app exits"
+                        p.helper == HelperState::Stopped ? "stopped by QuestBridge; it starts again when this app exits"
                                                          : "stopped");
         case ServiceState::Pending:
             return make("ovr_service", title, Status::Warn, "starting or stopping", "Check again in a few seconds.");
@@ -72,22 +72,22 @@ Check service_check(const Probe& p) {
         case ServiceState::Running: break;
     }
     if (!p.auto_stop)
-        return make("ovr_service", title, Status::Fail, "running, and QL_OVR_STOP=0 keeps QuestLink from stopping it",
-                    "It holds the Quest's Link interface: " + std::string(kServices) + ", or unset QL_OVR_STOP.");
+        return make("ovr_service", title, Status::Fail, "running, and QB_OVR_STOP=0 keeps QuestBridge from stopping it",
+                    "It holds the Quest's Link interface: " + std::string(kServices) + ", or unset QB_OVR_STOP.");
     switch (p.helper) {
         case HelperState::Prompting:
             return make("ovr_service", title, Status::Warn, "running; waiting for you to answer the admin prompt",
-                        "Allow the Windows prompt (Windows PowerShell) so QuestLink can stop it.");
+                        "Allow the Windows prompt (Windows PowerShell) so QuestBridge can stop it.");
         case HelperState::Declined:
             return make("ovr_service", title, Status::Fail, "running; the admin prompt was declined",
                         "Use Stop OVRService (or restart Unity) and allow the prompt, or " + std::string(kServices) + ".");
         case HelperState::Failed:
-            return make("ovr_service", title, Status::Fail, "running; QuestLink couldn't stop it",
+            return make("ovr_service", title, Status::Fail, "running; QuestBridge couldn't stop it",
                         std::string(kServices) + ".");
         default:
             return make("ovr_service", title, Status::Warn,
                         "running (Meta Link holds the Quest while it runs)",
-                        "Nothing to do: once the Quest is plugged in, QuestLink asks once for admin rights (a Windows "
+                        "Nothing to do: once the Quest is plugged in, QuestBridge asks once for admin rights (a Windows "
                         "prompt for Windows PowerShell), stops it and starts it again when this app exits. To skip "
                         "the prompt, " + std::string(kServices) + " before you start.");
     }
@@ -99,7 +99,7 @@ Check claim_check(const Probe& p) {
     switch (p.claim) {
         case Claim::NotTried: return make("xrsp_claim", title, Status::Skip, "skipped on request");
         case Claim::Ok: return make("xrsp_claim", title, Status::Ok, "free");
-        case Claim::Self: return make("xrsp_claim", title, Status::Ok, "in use by this app (QuestLink has the Quest)");
+        case Claim::Self: return make("xrsp_claim", title, Status::Ok, "in use by this app (QuestBridge has the Quest)");
         case Claim::Failed:
             return make("xrsp_claim", title, Status::Fail, p.claim_detail.empty() ? "couldn't open it" : p.claim_detail,
                         "Unplug and replug the Quest, then check again.");
@@ -109,7 +109,7 @@ Check claim_check(const Probe& p) {
         return make("xrsp_claim", title, p.auto_stop ? Status::Warn : Status::Fail, "held by Meta's OVRService",
                     "See Meta OVRService above.");
     return make("xrsp_claim", title, Status::Fail, "another program has it open",
-                "Close other QuestLink apps (a second Unity Editor in Play mode, a QuestLink player, qlhost) and "
+                "Close other QuestBridge apps (a second Unity Editor in Play mode, a QuestBridge player, qbhost) and "
                 "Meta Horizon Link, then check again.");
 }
 
@@ -141,4 +141,4 @@ Status overall(const std::vector<Check>& checks) {
     return worst;
 }
 
-}  // namespace ql::setup
+}  // namespace qb::setup

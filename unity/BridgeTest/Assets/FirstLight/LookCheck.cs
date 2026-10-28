@@ -1,7 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // "-sequence-look": one bench part with a single question about the picture (launcher focus
     // check, encoder fallbacks; tools/bench_slot.ps1). "-look-label <text>" names the part and
@@ -10,7 +10,7 @@ namespace ElasticSea.QuestLink.BridgeTest
     // player quits, so the next part's host can take over.
     public class LookCheck : MonoBehaviour
     {
-        public QuestLinkRig rig;
+        public QuestBridgeRig rig;
         public TextMesh board;
 
         IEnumerator Start()
@@ -18,7 +18,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             var label = Arg("-look-label", "PICTURE CHECK");
             var next = Arg("-look-next", "Take the headset off.");
             board.text = "Waiting for Link...";
-            while (rig.State != QuestLinkState.Streaming)
+            while (rig.State != QuestBridgeState.Streaming)
                 yield return null;
             Debug.Log($"[Look] streaming: {label.Replace('\n', ' ')}");
             yield return Continue($"{label}\nLook around for a few seconds:\nfloor grid and cubes.");
@@ -28,8 +28,8 @@ namespace ElasticSea.QuestLink.BridgeTest
             yield return Continue($"Thanks.\nNEXT: {next}");
             board.text = next;
             yield return new WaitForSecondsRealtime(1f);
-            if (rig.Backend is NativeQuestLink)
-                NativeQuestLink.Shutdown();
+            if (rig.Backend is NativeQuestBridge)
+                NativeQuestBridge.Shutdown();
             Debug.Log("[Look] done, quitting");
             Application.Quit();
         }
@@ -45,7 +45,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         void Buttons(out bool a, out bool b)
         {
             a = b = false;
-            foreach (var h in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
+            foreach (var h in new[] { QuestBridgeHand.Left, QuestBridgeHand.Right })
                 if (rig.Backend != null && rig.Backend.TryGetController(h, out var c))
                 {
                     a |= c.primaryButton;

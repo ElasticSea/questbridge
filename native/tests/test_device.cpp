@@ -11,14 +11,14 @@
 #include "harness.hpp"
 #include "session.hpp"
 
-using namespace ql;
-namespace es = ql::encoded_slice;
+using namespace qb;
+namespace es = qb::encoded_slice;
 
 namespace {
 
 std::vector<std::filesystem::path> device_files() {
     std::vector<std::filesystem::path> out;
-    for (const auto& e : std::filesystem::directory_iterator(qltest::repo("tests/fixtures/devices")))
+    for (const auto& e : std::filesystem::directory_iterator(qbtest::repo("tests/fixtures/devices")))
         if (e.path().extension() == ".json") out.push_back(e.path());
     std::sort(out.begin(), out.end());
     return out;
@@ -39,7 +39,7 @@ std::vector<T> numbers(const json::Value& v) {
 
 // The Quest's HELLO v1 / v3 from the recorded handshake, raw
 Bytes quest_hello(uint16_t version) {
-    for (const auto& e : qltest::fixture("handshake", "control").items())
+    for (const auto& e : qbtest::fixture("handshake", "control").items())
         if (e["dir"].as_string() == "quest_to_pc" && e.has("capnp") && e["inner"]["type"].as_u64() == control::kHello &&
             (e["capnp"]["tree"]["s"][0].as_u64() & 0xFFFF) == version)
             return e["raw"].as_hex();
@@ -75,7 +75,7 @@ struct Run {
         : s(std::make_unique<Session>(cfg, [this] { return now += 1'000'000; })) {
         s->start();
         Bytes v3 = quest_hello(3);
-        for (const auto& e : qltest::fixture("handshake", "control").items()) {
+        for (const auto& e : qbtest::fixture("handshake", "control").items()) {
             if (e["dir"].as_string() != "quest_to_pc") continue;
             Bytes raw = e["raw"].as_hex();
             if (patch_hello_v3 && raw == v3) raw = patch_hello_v3(raw);
@@ -95,7 +95,7 @@ struct Run {
 
 // Meta's recorded CONFIG v3 as sent (PC->Quest raw)
 Bytes meta_config_v3() {
-    for (const auto& e : qltest::fixture("handshake", "control").items())
+    for (const auto& e : qbtest::fixture("handshake", "control").items())
         if (e["dir"].as_string() == "pc_to_quest" && e.has("capnp") && e["inner"]["type"].as_u64() == control::kConfig &&
             (e["capnp"]["tree"]["s"][0].as_u64() & 0xFFFF) == 3)
             return e["raw"].as_hex();

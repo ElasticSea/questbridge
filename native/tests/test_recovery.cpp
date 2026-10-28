@@ -10,10 +10,10 @@
 
 #include "fake_headset.hpp"
 #include "harness.hpp"
-#include "questlink.h"
+#include "questbridge.h"
 #include "texture_encoder.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
@@ -71,11 +71,11 @@ uint32_t headset_streams() {
     return g_hs.streams;
 }
 
-ql_session* g_s = nullptr;
+qb_session* g_s = nullptr;
 
-ql_link_status link() {
-    ql_link_status st{};
-    ql_get_link_status(g_s, &st);
+qb_link_status link() {
+    qb_link_status st{};
+    qb_get_link_status(g_s, &st);
     return st;
 }
 
@@ -89,13 +89,13 @@ struct Game {
             int tex = 0;
             std::vector<float> audio(2 * 480, 0.25f);
             while (run) {
-                ql_frame_submit f{};
+                qb_frame_submit f{};
                 f.session = g_s;
                 f.native_texture = &tex;
                 f.render_pose = {0, 0, 0, 1, 0, 1.6f, 0, 0};
                 f.frame_index = ++index;
-                ql_get_render_event_func()(QL_EVENT_SUBMIT_FRAME, &f);
-                if (index % 2 == 0) ql_submit_audio(g_s, audio.data(), 480, 48000);
+                qb_get_render_event_func()(QB_EVENT_SUBMIT_FRAME, &f);
+                if (index % 2 == 0) qb_submit_audio(g_s, audio.data(), 480, 48000);
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
         });
@@ -109,7 +109,7 @@ Game* g_game = nullptr;
 
 // Back to streaming with new frames flowing; returns the frames since `from`
 std::vector<Frame> recovered(size_t from, uint32_t connects_before) {
-    bool ok = wait_for([&] { return link().state == QL_LINK_STREAMING && link().connects > connects_before; }, 8000);
+    bool ok = wait_for([&] { return link().state == QB_LINK_STREAMING && link().connects > connects_before; }, 8000);
     if (!ok) return {};
     size_t at = mark();
     wait_for([&] { return frames_since(at).size() >= 3; }, 3000);
@@ -127,20 +127,20 @@ void set_env(const char* name, const char* value) {
 }  // namespace
 
 // Texture backend for this test binary (USB: fake_headset.hpp)
-namespace ql {
+namespace qb {
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig&, std::string*) {
     return std::make_unique<FakeTextureEncoder>();
 }
-}  // namespace ql
+}  // namespace qb
 
 TEST(recovery_connects) {
     // Short limits so the cases run fast (defaults: silence 3 s, resume window 500 ms)
-    set_env("QL_SILENCE_MS", "400");
-    set_env("QL_RESUME_MS", "300");
-    set_env("QL_RESUME_TIMEOUT_MS", "300");
-    g_s = ql_open();
+    set_env("QB_SILENCE_MS", "400");
+    set_env("QB_RESUME_MS", "300");
+    set_env("QB_RESUME_TIMEOUT_MS", "300");
+    g_s = qb_open();
     REQUIRE(g_s);
-    CHECK_EQ(link().state, int32_t(QL_LINK_NO_DEVICE));
+    CHECK_EQ(link().state, int32_t(QB_LINK_NO_DEVICE));
     g_game = new Game;
     {
         std::lock_guard<std::mutex> l(g_hs.mu);
@@ -151,7 +151,7 @@ TEST(recovery_connects) {
     CHECK(f.front().intra);
     CHECK_EQ(f.front().index, uint64_t(1));
     CHECK_EQ(f.front().seq, uint16_t(0));
-    ql_link_status st = link();
+    qb_link_status st = link();
     CHECK_EQ(st.connects, uint32_t(1));
     CHECK_EQ(st.disconnects, uint32_t(0));
 }
@@ -160,7 +160,7 @@ TEST(recovery_usb_glitch_resumes_stream) {
     size_t from;
     Frame before;
     uint32_t streams = headset_streams();
-    ql_link_status st0 = link();
+    qb_link_status st0 = link();
     {
         std::lock_guard<std::mutex> l(g_hs.mu);
         from = g_hs.written.size();
@@ -169,9 +169,9 @@ TEST(recovery_usb_glitch_resumes_stream) {
     before = frames_since(0).back();
     auto f = recovered(from, st0.connects);
     REQUIRE(!f.empty());
-    ql_link_status st = link();
+    qb_link_status st = link();
     CHECK_EQ(st.disconnects, st0.disconnects + 1);
-    CHECK_EQ(st.last_loss, int32_t(QL_LOSS_USB));
+    CHECK_EQ(st.last_loss, int32_t(QB_LOSS_USB));
     CHECK_EQ(st.resumes, st0.resumes + 1);
     // Same headset stream, numbering continues (a frame the broken link swallowed leaves a gap),
     // the first frame on the new USB link is an IDR
@@ -191,21 +191,21 @@ namespace {
 void check_new_stream(const char* what, int32_t loss, void (*disturb)(), int max_ms = 8000) {
     size_t from = mark();
     uint32_t streams = headset_streams();
-    ql_link_status st0 = link();
+    qb_link_status st0 = link();
     {
         std::lock_guard<std::mutex> l(g_hs.mu);
         disturb();
     }
     // Lost: no stale pose while the link is down
     REQUIRE(wait_for([&] { return link().disconnects > st0.disconnects; }, max_ms));
-    if (link().state != QL_LINK_STREAMING) {
-        ql_pose p;
-        CHECK(ql_get_head_pose(g_s, &p) != 0 || link().state == QL_LINK_STREAMING);
+    if (link().state != QB_LINK_STREAMING) {
+        qb_pose p;
+        CHECK(qb_get_head_pose(g_s, &p) != 0 || link().state == QB_LINK_STREAMING);
     }
     auto f = recovered(from, st0.connects);
     if (f.empty()) std::printf("  %s: not recovered\n", what);
     REQUIRE(!f.empty());
-    ql_link_status st = link();
+    qb_link_status st = link();
     CHECK_EQ(st.disconnects, st0.disconnects + 1);
     CHECK_EQ(st.last_loss, loss);
     CHECK_EQ(st.resumes, st0.resumes);
@@ -221,37 +221,37 @@ void check_new_stream(const char* what, int32_t loss, void (*disturb)(), int max
     // Hands turned on and audio flowing in the new stream; a haptic goes out
     size_t at = mark();
     CHECK(count_since(from, topic::kInputControl) >= 2);
-    CHECK_EQ(ql_haptic(g_s, 1, 0.5f, 0.05f), int(QL_OK));
+    CHECK_EQ(qb_haptic(g_s, 1, 0.5f, 0.05f), int(QB_OK));
     CHECK(wait_for([&] { return count_since(at, topic::kAudio) > 0 && count_since(at, topic::kRuntimeIpc) > 0; }));
-    ql_pose p;
-    CHECK(wait_for([&] { return ql_get_head_pose(g_s, &p) == 0; }));
+    qb_pose p;
+    CHECK(wait_for([&] { return qb_get_head_pose(g_s, &p) == 0; }));
 }
 
 }  // namespace
 
 TEST(recovery_usb_drop_new_handshake) {
     // Link quit, cable pull, headset reboot: the USB function is gone longer than the resume window
-    check_new_stream("usb drop", QL_LOSS_USB, [] { g_hs.usb_drop(800); });
+    check_new_stream("usb drop", QB_LOSS_USB, [] { g_hs.usb_drop(800); });
 }
 
 TEST(recovery_headset_bye) {
-    check_new_stream("headset bye", QL_LOSS_HEADSET_BYE, [] { g_hs.headset_bye(); });
+    check_new_stream("headset bye", QB_LOSS_HEADSET_BYE, [] { g_hs.headset_bye(); });
 }
 
 TEST(recovery_new_hello_mid_stream) {
-    check_new_stream("new hello", QL_LOSS_NEW_HELLO, [] { g_hs.new_hello(); });
+    check_new_stream("new hello", QB_LOSS_NEW_HELLO, [] { g_hs.new_hello(); });
 }
 
 TEST(recovery_silence) {
     // Headset asleep (proximity) with USB up: silence ends the stream, waking brings it back
-    check_new_stream("silence", QL_LOSS_SILENCE, [] { g_hs.sleep_for(1200); });
+    check_new_stream("silence", QB_LOSS_SILENCE, [] { g_hs.sleep_for(1200); });
 }
 
 TEST(recovery_glitch_then_drop_falls_back) {
     // USB back at once but the headset's stream is gone: the resume times out, BYE, new handshake
     size_t from = mark();
     uint32_t streams = headset_streams();
-    ql_link_status st0 = link();
+    qb_link_status st0 = link();
     {
         std::lock_guard<std::mutex> l(g_hs.mu);
         g_hs.usb_glitch();
@@ -265,15 +265,15 @@ TEST(recovery_glitch_then_drop_falls_back) {
 }
 
 TEST(recovery_soak) {
-    // Random disturbances back to back, each must recover; QL_SOAK_CYCLES overrides the count
-    const char* env = std::getenv("QL_SOAK_CYCLES");
+    // Random disturbances back to back, each must recover; QB_SOAK_CYCLES overrides the count
+    const char* env = std::getenv("QB_SOAK_CYCLES");
     int cycles = env && *env ? std::atoi(env) : 12;
     std::mt19937 rng(1234);
     int recovered_n = 0;
     for (int c = 0; c < cycles; ++c) {
         int kind = int(rng() % 5);
         size_t from = mark();
-        ql_link_status st0 = link();
+        qb_link_status st0 = link();
         {
             std::lock_guard<std::mutex> l(g_hs.mu);
             switch (kind) {
@@ -300,11 +300,11 @@ TEST(recovery_soak) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20 + rng() % 200));
     }
     CHECK_EQ(recovered_n, cycles);
-    ql_link_status st = link();
-    CHECK_EQ(st.state, int32_t(QL_LINK_STREAMING));
+    qb_link_status st = link();
+    CHECK_EQ(st.state, int32_t(QB_LINK_STREAMING));
     CHECK(st.connects >= st.disconnects);
 
     delete g_game;
-    ql_close(g_s);
-    ql_shutdown();
+    qb_close(g_s);
+    qb_shutdown();
 }

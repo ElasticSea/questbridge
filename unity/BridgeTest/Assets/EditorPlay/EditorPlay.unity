@@ -129,7 +129,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 6073691053943952398, guid: 8bb72341f9963e6469c2bc02479cecb7, type: 3}
       propertyPath: m_Name
-      value: QuestLink Rig
+      value: QuestBridge Rig
       objectReference: {fileID: 0}
     - target: {fileID: 6661831038123617753, guid: 8bb72341f9963e6469c2bc02479cecb7, type: 3}
       propertyPath: m_LocalPosition.x
@@ -186,7 +186,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b938d242dfc67a34db5719c41d477972, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: ElasticSea.QuestLink::ElasticSea.QuestLink.QuestLinkHands
+  m_EditorClassIdentifier: ElasticSea.QuestBridge::ElasticSea.QuestBridge.QuestBridgeHands
 --- !u!114 &273867353 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 137329077749742663, guid: 8bb72341f9963e6469c2bc02479cecb7, type: 3}
@@ -197,7 +197,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9d9160b84d6dc68469a182774d61f03b, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: ElasticSea.QuestLink::ElasticSea.QuestLink.QuestLinkRig
+  m_EditorClassIdentifier: ElasticSea.QuestBridge::ElasticSea.QuestBridge.QuestBridgeRig
 --- !u!1 &518555630
 GameObject:
   m_ObjectHideFlags: 0
@@ -226,7 +226,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e48832c7ece8e984595326c19a6f2f67, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ElasticSea.QuestLink.BridgeTest.EditorPlayBoard
+  m_EditorClassIdentifier: Assembly-CSharp::ElasticSea.QuestBridge.BridgeTest.EditorPlayBoard
   rig: {fileID: 273867353}
   hands: {fileID: 273867352}
   standingHeight: 1.6

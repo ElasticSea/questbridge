@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // Audio check by ear, with its instructions in the headset. A 12 s loop:
     //   0-4 s  a soft beep every 2 s (game audio -> headset)
@@ -11,10 +11,10 @@ namespace ElasticSea.QuestLink.BridgeTest
     public class AudioBench : MonoBehaviour
     {
         const float Loop = 12f, RecordStart = 4f, PlayStart = 8f, BeepEvery = 2f;
-        const int Rate = QuestLinkMicrophone.SampleRate;
+        const int Rate = QuestBridgeMicrophone.SampleRate;
 
-        public QuestLinkAudio output;
-        public QuestLinkMicrophone mic;
+        public QuestBridgeAudio output;
+        public QuestBridgeMicrophone mic;
         public TextMesh label;
         public bool once;
 

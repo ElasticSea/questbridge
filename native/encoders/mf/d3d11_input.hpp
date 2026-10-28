@@ -10,7 +10,7 @@
 #include "../encoder.hpp"
 #include "../strips.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 class D3D11Input {
 public:
@@ -30,4 +30,4 @@ private:
 GpuInput d3d11_split_input(int strips);
 GpuInput d3d11_read_back_input();
 
-}  // namespace ql::enc
+}  // namespace qb::enc

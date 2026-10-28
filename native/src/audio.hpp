@@ -15,7 +15,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql::audio {
+namespace qb::audio {
 
 constexpr uint8_t kTopic = 6;
 constexpr uint32_t kRate = 48000;
@@ -97,4 +97,4 @@ private:
     uint64_t skipped_ = 0;
 };
 
-}  // namespace ql::audio
+}  // namespace qb::audio

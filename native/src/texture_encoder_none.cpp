@@ -2,11 +2,11 @@
 // CVPixelBuffer + VideoToolbox, roadmap M3/M6).
 #include "texture_encoder.hpp"
 
-namespace ql {
+namespace qb {
 
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig&, std::string* error) {
     if (error) *error = "texture encoding not implemented on this platform yet";
     return nullptr;
 }
 
-}  // namespace ql
+}  // namespace qb

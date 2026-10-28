@@ -1,7 +1,7 @@
 // Byte-exact XRSP framing against Meta's traffic (mirrors tests/test_roundtrip.py XrspFraming).
 #include "harness.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
@@ -20,8 +20,8 @@ std::vector<Bytes> split_messages(const Bytes& data) {
 
 TEST(control_messages_reencode) {
     size_t n = 0;
-    for (const auto& sc : qltest::scenarios()) {
-        for (const auto& e : qltest::fixture(sc, "control").items()) {
+    for (const auto& sc : qbtest::scenarios()) {
+        for (const auto& e : qbtest::fixture(sc, "control").items()) {
             Bytes raw = e["raw"].as_hex();
             Message m;
             REQUIRE(decode_message(raw, m));
@@ -34,8 +34,8 @@ TEST(control_messages_reencode) {
 
 TEST(stream_samples_reencode) {
     size_t n = 0;
-    for (const auto& sc : qltest::scenarios()) {
-        for (const auto& group : qltest::fixture(sc, "streams").items()) {
+    for (const auto& sc : qbtest::scenarios()) {
+        for (const auto& group : qbtest::fixture(sc, "streams").items()) {
             for (const auto& s : group["samples"].items()) {
                 Bytes raw = s["raw"].as_hex();
                 Message m;
@@ -51,8 +51,8 @@ TEST(stream_samples_reencode) {
 
 TEST(transfers_repack) {
     size_t n = 0;
-    for (const auto& sc : qltest::scenarios()) {
-        for (const auto& x : qltest::fixture(sc, "transfers").items()) {
+    for (const auto& sc : qbtest::scenarios()) {
+        for (const auto& x : qbtest::fixture(sc, "transfers").items()) {
             Bytes raw = x["raw"].as_hex();
             std::vector<Bytes> msgs;
             for (auto& m : split_messages(raw))
@@ -85,8 +85,8 @@ TEST(padded_stream_bodies_unpad) {
     // Every 0x18 message Meta sent ends with a pad count byte preceded by 0xDE filler. Video and
     // topic 31 pad to 4 bytes; audio (6) and telemetry (33) pad the message to 1 KiB.
     size_t n = 0;
-    for (const auto& sc : qltest::scenarios()) {
-        for (const auto& group : qltest::fixture(sc, "streams").items()) {
+    for (const auto& sc : qbtest::scenarios()) {
+        for (const auto& group : qbtest::fixture(sc, "streams").items()) {
             for (const auto& s : group["samples"].items()) {
                 Message m;
                 REQUIRE(decode_message(s["raw"].as_hex(), m));
@@ -109,11 +109,11 @@ TEST(padded_stream_bodies_unpad) {
 
 TEST(reassembly_across_transfers) {
     // Feed every recorded transfer byte-split at awkward points; messages must come out whole
-    for (const auto& sc : qltest::scenarios()) {
+    for (const auto& sc : qbtest::scenarios()) {
         for (const char* dir : {"pc_to_quest", "quest_to_pc"}) {
             std::vector<Bytes> expected;
             Bytes stream;
-            for (const auto& x : qltest::fixture(sc, "transfers").items()) {
+            for (const auto& x : qbtest::fixture(sc, "transfers").items()) {
                 if (x["dir"].as_string() != dir) continue;
                 Bytes raw = x["raw"].as_hex();
                 for (auto& m : split_messages(raw))

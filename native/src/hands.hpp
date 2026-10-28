@@ -12,7 +12,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 constexpr size_t kHandsBody = 1320;
 constexpr size_t kHandBones = 24;           // OVR hand bone order (WristRoot .. PinkyTip)
@@ -81,4 +81,4 @@ std::array<JointPose, kHandBones> hand_bones(const HandRecord& r, const HandSkel
 // still in Link tracking space. Palm and index/middle/ring metacarpals are synthesized.
 std::array<JointPose, kHandJoints> hand_joints(int hand, const HandRecord& r, const HandSkeleton& sk);
 
-}  // namespace ql
+}  // namespace qb

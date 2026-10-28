@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // "-sequence-recovery": the live recovery check (docs/testing.md), about one
     // minute, every step on the board. The player keeps running; tools/recovery_check.py reads
@@ -15,8 +15,8 @@ namespace ElasticSea.QuestLink.BridgeTest
         const float LossWait = 20f, BackWait = 60f;
         static readonly string[] Drops = { "sleep", "linkquit" };
 
-        public QuestLinkRig rig;
-        public QuestLinkConnectionStatus status;
+        public QuestBridgeRig rig;
+        public QuestBridgeConnectionStatus status;
         public TextMesh board;
 
         readonly List<string> results = new List<string>();
@@ -24,7 +24,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         IEnumerator Start()
         {
             board.text = "Waiting for Link...";
-            while (rig.State != QuestLinkState.Streaming)
+            while (rig.State != QuestBridgeState.Streaming)
                 yield return null;
             Debug.Log("[Recovery] streaming");
             yield return Continue("RECOVERY TEST (1 min)\nKeep the headset on.\nThe picture goes away twice.\nWhen the Link dialog shows\nLaunch, press Launch.");
@@ -44,8 +44,8 @@ namespace ElasticSea.QuestLink.BridgeTest
             yield return Continue($"Recovery test done.\nNEXT: {next}");
             board.text = next;
             yield return new WaitForSecondsRealtime(1f);
-            if (rig.Backend is NativeQuestLink)
-                NativeQuestLink.Shutdown();
+            if (rig.Backend is NativeQuestBridge)
+                NativeQuestBridge.Shutdown();
             Application.Quit();
         }
 
@@ -68,10 +68,10 @@ namespace ElasticSea.QuestLink.BridgeTest
                 yield break;
             }
             var lostAt = Time.realtimeSinceStartup;
-            while (status.Status.state != QuestLinkLinkState.Streaming && Time.realtimeSinceStartup - lostAt < BackWait)
+            while (status.Status.state != QuestBridgeLinkState.Streaming && Time.realtimeSinceStartup - lostAt < BackWait)
                 yield return null;
             var s = status.Status;
-            var back = s.state == QuestLinkLinkState.Streaming;
+            var back = s.state == QuestBridgeLinkState.Streaming;
             var took = Time.realtimeSinceStartup - lostAt;
             results.Add($"{kind}={(back ? $"back_{took:F1}s" : "not_back")}");
             Debug.Log($"[Recovery] back {n} {kind}: {(back ? "streaming" : "NOT back")} {took:F1} s after the loss " +
@@ -83,7 +83,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         void Buttons(out bool a, out bool b)
         {
             a = b = false;
-            foreach (var h in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
+            foreach (var h in new[] { QuestBridgeHand.Left, QuestBridgeHand.Right })
                 if (rig.Backend != null && rig.Backend.TryGetController(h, out var c))
                 {
                     a |= c.primaryButton;

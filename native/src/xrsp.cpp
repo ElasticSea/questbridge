@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace ql {
+namespace qb {
 
 Bytes encode_message(uint8_t flags, uint8_t topic, uint16_t seq, std::span<const uint8_t> body, uint16_t reserved) {
     if (body.size() % 4) throw std::invalid_argument("XRSP body must be a multiple of 4 bytes");
@@ -90,4 +90,4 @@ bool Reassembler::next(Bytes& raw) {
     return false;
 }
 
-}  // namespace ql
+}  // namespace qb

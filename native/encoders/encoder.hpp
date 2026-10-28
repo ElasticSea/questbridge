@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace ql::enc {
+namespace qb::enc {
 
 using Bytes = std::vector<uint8_t>;
 
@@ -38,7 +38,7 @@ struct EncoderConfig {
     Codec codec = Codec::H264;
     Layout layout = Layout::Slices;    // VideoToolbox has no slice-count control: use Strips
     size_t max_slice_bytes = 100'000;  // per slice NAL; the headset ends the session on messages over
-                                       // its limit (per headset: ql::message_cap; this default is the Pro's). encode() guarantees it: a frame with a larger slice
+                                       // its limit (per headset: qb::message_cap; this default is the Pro's). encode() guarantees it: a frame with a larger slice
                                        // is re-encoded as an IDR under a QP floor, else encode() fails.
     uint32_t bitrate = 100'000'000;    // bits/s
     bool cbr = true;                   // false = peak-constrained VBR (peak 1.5x)
@@ -46,7 +46,7 @@ struct EncoderConfig {
     bool hardware = true;              // try the GPU encoder first
     bool allow_software = true;        // fall back to a software encoder
     std::string backend = "auto";      // Windows: auto | nvidia | amd | intel | mf-software | openh264
-                                       // (QL_ENCODER in the runtime); others: ignored
+                                       // (QB_ENCODER in the runtime); others: ignored
     bool low_latency_rc = false;       // VideoToolbox: low-latency RC (h264.rtvc: long-term refs, MMCO)
     void* gpu_device = nullptr;        // ID3D11Device* (Windows) for texture input; null = CPU input only
                                        // (macOS: unused, GpuFrame takes a CVPixelBuffer)
@@ -105,4 +105,4 @@ public:
 // Create the platform backend. Returns null and sets *error on failure.
 std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string* error);
 
-}  // namespace ql::enc
+}  // namespace qb::enc

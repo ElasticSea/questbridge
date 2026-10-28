@@ -16,7 +16,7 @@
 
 #include "ovr_service.hpp"
 
-namespace ql::ovr {
+namespace qb::ovr {
 
 namespace {
 
@@ -80,7 +80,7 @@ void start_helper() {
 }  // namespace
 
 bool enabled() {
-    const char* v = std::getenv("QL_OVR_STOP");
+    const char* v = std::getenv("QB_OVR_STOP");
     return !(v && *v && std::atoi(v) == 0);
 }
 
@@ -144,4 +144,4 @@ bool request_stop() {
     return true;
 }
 
-}  // namespace ql::ovr
+}  // namespace qb::ovr

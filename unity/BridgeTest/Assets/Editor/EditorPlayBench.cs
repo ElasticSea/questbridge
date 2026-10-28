@@ -7,16 +7,16 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.TestTools;
 
-namespace ElasticSea.QuestLink.BridgeTest.Editor
+namespace ElasticSea.QuestBridge.BridgeTest.Editor
 {
     // Editor Play-mode bench, the tester's path: Assets/EditorPlay/EditorPlay.unity is a scene
-    // with its Main Camera and the package's QuestLink Rig prefab dropped in. Press Play once:
+    // with its Main Camera and the package's QuestBridge Rig prefab dropped in. Press Play once:
     // round 1 runs until EditorPlayBoard is done, the board stops Play, Replay() starts it again
     // 3 s later (domain reload, same native runtime and headset session) for round 2.
     // Hands-off run: the TwoPlayRounds test in a real, minimized Editor on the hidden desktop
     // (unity/run-editorplay.ps1; a non-batchmode Editor started with -executeMethod hangs before
-    // it logs anything, -runTests doesn't). QL_BENCH_MOCK=1: mock headset dry run.
-    // Regenerate the scene: -batchmode -nographics -quit -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.EditorPlayBench.BuildScene
+    // it logs anything, -runTests doesn't). QB_BENCH_MOCK=1: mock headset dry run.
+    // Regenerate the scene: -batchmode -nographics -quit -executeMethod ElasticSea.QuestBridge.BridgeTest.Editor.EditorPlayBench.BuildScene
     [InitializeOnLoad]
     public class EditorPlayBench
     {
@@ -40,11 +40,11 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
         public static void BuildScene()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.elasticsea.questlink/Runtime/Prefabs/QuestLink Rig.prefab");
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Packages/com.elasticsea.questbridge/Runtime/Prefabs/QuestBridge Rig.prefab");
             var rigObject = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             var bench = new GameObject("Editor Play Bench").AddComponent<EditorPlayBoard>();
-            bench.rig = rigObject.GetComponent<QuestLinkRig>();
-            bench.hands = rigObject.GetComponent<QuestLinkHands>();
+            bench.rig = rigObject.GetComponent<QuestBridgeRig>();
+            bench.hands = rigObject.GetComponent<QuestBridgeHands>();
             System.IO.Directory.CreateDirectory("Assets/EditorPlay");
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log($"[EditorPlay] wrote {ScenePath}");

@@ -31,7 +31,7 @@
 #include "wels/codec_api.h"
 #include "wels/codec_ver.h"
 
-namespace ql::enc {
+namespace qb::enc {
 
 namespace {
 
@@ -77,11 +77,11 @@ void* symbol(void* lib, const char* name) {
 #endif
 }
 
-// Candidate paths: QL_OPENH264, next to the module holding this code (questlink.dll, qlenc.exe),
+// Candidate paths: QB_OPENH264, next to the module holding this code (questbridge.dll, qbenc.exe),
 // then where fetch.ps1 puts it.
 std::vector<std::string> search_paths() {
     std::vector<std::string> out;
-    if (const char* p = std::getenv("QL_OPENH264"); p && *p) out.push_back(p);
+    if (const char* p = std::getenv("QB_OPENH264"); p && *p) out.push_back(p);
 #ifdef _WIN32
     HMODULE self = nullptr;
     wchar_t buf[MAX_PATH];
@@ -96,7 +96,7 @@ std::vector<std::string> search_paths() {
         out.push_back(s + dll_name());
     }
     if (const char* la = std::getenv("LOCALAPPDATA"); la && *la)
-        out.push_back(std::string(la) + "\\QuestLink\\openh264\\" + dll_name());
+        out.push_back(std::string(la) + "\\QuestBridge\\openh264\\" + dll_name());
 #endif
     return out;
 }
@@ -427,4 +427,4 @@ std::unique_ptr<Encoder> create_openh264(const EncoderConfig& config, std::strin
     return enc;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

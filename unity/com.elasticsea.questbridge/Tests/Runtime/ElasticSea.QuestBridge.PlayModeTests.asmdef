@@ -1,0 +1,30 @@
+{
+    "name": "ElasticSea.QuestBridge.PlayModeTests",
+    "rootNamespace": "ElasticSea.QuestBridge.Tests",
+    "references": [
+        "ElasticSea.QuestBridge",
+        "ElasticSea.QuestBridge.XRHands",
+        "Unity.XR.Hands",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.hands",
+            "expression": "1.3.0",
+            "define": "QUESTBRIDGE_XR_HANDS"
+        }
+    ],
+    "noEngineReferences": false
+}

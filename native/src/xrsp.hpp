@@ -13,7 +13,7 @@
 #include <span>
 #include <vector>
 
-namespace ql {
+namespace qb {
 
 using Bytes = std::vector<uint8_t>;
 
@@ -78,4 +78,4 @@ inline void wr16(uint8_t* p, uint16_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >
 inline void wr32(uint8_t* p, uint32_t v) { wr16(p, uint16_t(v)); wr16(p + 2, uint16_t(v >> 16)); }
 inline void wr64(uint8_t* p, uint64_t v) { wr32(p, uint32_t(v)); wr32(p + 4, uint32_t(v >> 32)); }
 
-}  // namespace ql
+}  // namespace qb

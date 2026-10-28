@@ -1,5 +1,5 @@
-# Build questlink.dll (Release) and install it as the Unity package's Windows x64 native plugin:
-# com.elasticsea.questlink/Runtime/Plugins/Windows/x86_64/questlink.dll (committed, so UPM git installs
+# Build questbridge.dll (Release) and install it as the Unity package's Windows x64 native plugin:
+# com.elasticsea.questbridge/Runtime/Plugins/Windows/x86_64/questbridge.dll (committed, so UPM git installs
 # get it: commit the new binary after a native change that the package needs).
 # Close every Unity Editor that loaded the plugin first: Windows keeps a loaded DLL locked.
 # Usage: unity\install-native.ps1 [-NoBuild]
@@ -10,15 +10,15 @@ if (-not $NoBuild) {
     & "$repo\native\build.ps1" -Config Release
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
 }
-$dll = "$repo\native\build\bin\Release\questlink.dll"
+$dll = "$repo\native\build\bin\Release\questbridge.dll"
 if (-not (Test-Path $dll)) { throw "$dll not found; run native\build.ps1" }
 
-$dest = "$PSScriptRoot\com.elasticsea.questlink\Runtime\Plugins\Windows\x86_64"
+$dest = "$PSScriptRoot\com.elasticsea.questbridge\Runtime\Plugins\Windows\x86_64"
 New-Item -ItemType Directory -Force $dest | Out-Null
 try {
-    Copy-Item $dll "$dest\questlink.dll" -Force
+    Copy-Item $dll "$dest\questbridge.dll" -Force
 } catch {
-    throw "Could not replace $dest\questlink.dll; close the Unity Editor that has it loaded. ($_)"
+    throw "Could not replace $dest\questbridge.dll; close the Unity Editor that has it loaded. ($_)"
 }
 
 # Import settings: Editor and Standalone, Windows x64 only. Fixed GUID so reinstalls keep references.
@@ -61,5 +61,5 @@ PluginImporter:
   assetBundleName: 
   assetBundleVariant: 
 "@
-[IO.File]::WriteAllText("$dest\questlink.dll.meta", $meta.Replace("`r`n", "`n"))
-Write-Host "Installed $dest\questlink.dll"
+[IO.File]::WriteAllText("$dest\questbridge.dll.meta", $meta.Replace("`r`n", "`n"))
+Write-Host "Installed $dest\questbridge.dll"

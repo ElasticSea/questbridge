@@ -1,5 +1,5 @@
 // Fake Quest behind open_usb() for the Session API tests: replays the Quest's side of the
-// recorded handshake and records what the runtime writes. Defines ql::open_usb, so include it
+// recorded handshake and records what the runtime writes. Defines qb::open_usb, so include it
 // in exactly one file per test binary.
 #pragma once
 
@@ -12,7 +12,7 @@
 
 namespace {
 
-using namespace ql;
+using namespace qb;
 
 // Plays the Quest's side of the recorded session, records what we send
 struct FakeQuest {
@@ -63,9 +63,9 @@ void plug_recorded_quest() {
         Bytes x = pack_transfer(std::vector<Bytes>{raw});
         g_quest.rx.insert(g_quest.rx.end(), x.begin(), x.end());
     };
-    for (const auto& e : qltest::fixture("handshake", "control").items())
+    for (const auto& e : qbtest::fixture("handshake", "control").items())
         if (e["dir"].as_string() == "quest_to_pc") add(e["raw"].as_hex());
-    for (const auto& g : qltest::fixture("handshake", "streams").items())
+    for (const auto& g : qbtest::fixture("handshake", "streams").items())
         if (g["topic"].as_u64() == 34 || (g["topic"].as_u64() == 6 && g["dir"].as_string() == "quest_to_pc"))
             for (const auto& s : g["samples"].items()) add(s["raw"].as_hex());
     g_quest_plugged = true;
@@ -73,7 +73,7 @@ void plug_recorded_quest() {
 
 }  // namespace
 
-namespace ql {
+namespace qb {
 std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     std::lock_guard<std::mutex> l(g_quest.mu);
     if (!g_quest_plugged) {
@@ -85,4 +85,4 @@ std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     err = OpenError::None;
     return std::make_unique<FakeTransport>();
 }
-}  // namespace ql
+}  // namespace qb

@@ -8,7 +8,7 @@
 #include "select.hpp"
 #include "strips.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string* error) {
     if (config.codec != Codec::H264) {
@@ -37,4 +37,4 @@ std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string
     return enc;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

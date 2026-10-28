@@ -7,7 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace ql::json {
+namespace qb::json {
 
 namespace {
 const Value kNull;
@@ -218,4 +218,4 @@ Bytes from_hex(std::string_view hex) {
     return out;
 }
 
-}  // namespace ql::json
+}  // namespace qb::json

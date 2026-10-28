@@ -2,7 +2,7 @@
 // with the recorded Quest messages (BYE -> HELLO v1, CONFIG/CONFIRM/START -> ACK/CONFIRM_ACK/
 // READY, Launch -> BYE + HELLO v3), streams clock pings and head poses once a stream runs, and
 // can be disturbed: USB glitch, USB function drop (Link quit, cable, reboot), headset BYE, new
-// HELLO, silence. Defines ql::open_usb, so include it in exactly one file per test binary.
+// HELLO, silence. Defines qb::open_usb, so include it in exactly one file per test binary.
 #pragma once
 
 #include <chrono>
@@ -17,7 +17,7 @@
 
 namespace {
 
-using namespace ql;
+using namespace qb;
 
 int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -37,7 +37,7 @@ bool wait_for(F cond, int ms = 5000) {
 }
 
 Bytes recorded_quest(uint8_t type, int version) {
-    for (const auto& e : qltest::fixture("handshake", "control").items()) {
+    for (const auto& e : qbtest::fixture("handshake", "control").items()) {
         if (e["dir"].as_string() != "quest_to_pc") continue;
         Bytes raw = e["raw"].as_hex();
         if (raw.size() > 0x22 && raw[8] == type && raw[9] != control::kClockFlags && rd16(&raw[0x20]) == version)
@@ -133,7 +133,7 @@ struct FakeHeadset {
         }
         if (phase != Phase::Streaming) return;
         for (; next_pose <= now; next_pose += 10 * kMs)
-            for (const auto& g : qltest::fixture("handshake", "streams").items())
+            for (const auto& g : qbtest::fixture("handshake", "streams").items())
                 if (g["topic"].as_u64() == topic::kHeadPose)
                     for (const auto& s : g["samples"].items()) add(s["raw"].as_hex());
         for (; next_ping <= now; next_ping += 250 * kMs) {
@@ -214,7 +214,7 @@ private:
 
 }  // namespace
 
-namespace ql {
+namespace qb {
 std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     std::lock_guard<std::mutex> l(g_hs.mu);
     if (!g_hs.present && g_hs.back_at && now_ns() >= g_hs.back_at) g_hs.present = true;
@@ -231,4 +231,4 @@ std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     detail.clear();
     return std::make_unique<HeadsetTransport>(g_hs.conn);
 }
-}  // namespace ql
+}  // namespace qb

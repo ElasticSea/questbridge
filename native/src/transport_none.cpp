@@ -1,7 +1,7 @@
 // Fallback when no USB backend is available at build time (e.g. libusb not installed).
 #include "transport.hpp"
 
-namespace ql {
+namespace qb {
 
 std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     err = OpenError::Unsupported;
@@ -18,4 +18,4 @@ OpenError try_claim(std::string& detail) {
 
 int open_transport_count() { return 0; }
 
-}  // namespace ql
+}  // namespace qb

@@ -16,7 +16,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace raw_button {  // topic 35 entry buttons word
 constexpr uint32_t kA = 0x1, kB = 0x2, kRightStick = 0x4, kX = 0x100, kY = 0x200, kLeftStick = 0x400,
@@ -73,4 +73,4 @@ SetupState from_setup();
 
 }  // namespace ripc
 
-}  // namespace ql
+}  // namespace qb

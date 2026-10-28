@@ -5,13 +5,13 @@
 #include "pose.hpp"
 #include "session.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
 std::vector<Bytes> pose_samples() {
     std::vector<Bytes> out;
-    for (const auto& g : qltest::fixture("handshake", "streams").items())
+    for (const auto& g : qbtest::fixture("handshake", "streams").items())
         if (g["topic"].as_u64() == topic::kHeadPose && g["dir"].as_string() == "quest_to_pc")
             for (const auto& s : g["samples"].items()) out.push_back(s["raw"].as_hex());
     return out;

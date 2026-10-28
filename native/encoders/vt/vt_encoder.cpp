@@ -25,7 +25,7 @@
 #include "../encoder.hpp"
 #include "../h264.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 namespace {
 
@@ -567,4 +567,4 @@ std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string
     return enc;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

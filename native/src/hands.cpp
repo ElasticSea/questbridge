@@ -4,7 +4,7 @@
 #include <cstring>
 #include <vector>
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -273,4 +273,4 @@ std::array<JointPose, kHandJoints> hand_joints(int hand, const HandRecord& r, co
     return out;
 }
 
-}  // namespace ql
+}  // namespace qb

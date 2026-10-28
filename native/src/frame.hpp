@@ -16,7 +16,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 struct Pose {
     float orientation[4];  // quaternion x, y, z, w
@@ -87,4 +87,4 @@ std::vector<StreamMessage> build_frame(std::span<const SliceData> slices, const 
 // Patch one EncodedSlice header segment in place (exposed for tests).
 void patch_slice_header(Bytes& header, size_t slice, size_t count, const SliceData& s, const FrameParams& p);
 
-}  // namespace ql
+}  // namespace qb

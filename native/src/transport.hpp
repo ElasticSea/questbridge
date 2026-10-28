@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace ql {
+namespace qb {
 
 constexpr uint16_t kQuestVid = 0x2833;
 constexpr uint16_t kQuestPids[] = {0x5010, 0x5011, 0x5012, 0x5013, 0x5017, 0x5018, 0x5019, 0x501A};
@@ -41,4 +41,4 @@ OpenError try_claim(std::string& detail);
 // XRSP transports this process holds open right now
 int open_transport_count();
 
-}  // namespace ql
+}  // namespace qb

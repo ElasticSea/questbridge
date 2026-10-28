@@ -3,7 +3,7 @@
 #include "ovr_service.hpp"
 #include "setup_check.hpp"
 
-using namespace ql;
+using namespace qb;
 using setup::Check;
 using setup::Claim;
 using setup::Encoder;
@@ -200,7 +200,7 @@ TEST(setup_overall_ignores_skip) {
 
 TEST(ovr_should_stop) {
     CHECK(ovr::should_stop(true, ServiceState::Running, true, false));
-    CHECK(!ovr::should_stop(false, ServiceState::Running, true, false));  // QL_OVR_STOP=0
+    CHECK(!ovr::should_stop(false, ServiceState::Running, true, false));  // QB_OVR_STOP=0
     CHECK(!ovr::should_stop(true, ServiceState::Stopped, true, false));
     CHECK(!ovr::should_stop(true, ServiceState::NotInstalled, true, false));
     CHECK(!ovr::should_stop(true, ServiceState::Running, false, false));  // no Quest: no prompt

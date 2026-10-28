@@ -1,19 +1,19 @@
-// Session API (ql_open, ql_poll, ql_submit_frame_texture, ...) over one process-wide Link
-// runtime. The runtime is created on first ql_open and never destroyed: the Unity Editor keeps
+// Session API (qb_open, qb_poll, qb_submit_frame_texture, ...) over one process-wide Link
+// runtime. The runtime is created on first qb_open and never destroyed: the Unity Editor keeps
 // native plugins loaded across Play mode, and the headset session should survive with it.
 //
-// Threads: I/O (opens USB when the Quest appears, drives ql_host_poll, reopens after a drop),
+// Threads: I/O (opens USB when the Quest appears, drives qb_host_poll, reopens after a drop),
 // encode (encodes captured textures and sends them) and audio (one 10 ms block every 10 ms
 // from the game-audio queue while streaming, silence when it runs dry). Textures are captured
-// on the caller's render thread inside ql_submit_frame_texture / the render event.
+// on the caller's render thread inside qb_submit_frame_texture / the render event.
 //
-// ql_session* values are registry tokens, never dereferenced, so render events still queued
+// qb_session* values are registry tokens, never dereferenced, so render events still queued
 // for a closed session find nothing and are ignored.
 //
-// Recovery: a USB error while streaming reopens the same host within QL_RESUME_MS and resumes
+// Recovery: a USB error while streaming reopens the same host within QB_RESUME_MS and resumes
 // the stream with its numbering if the headset still has it; otherwise (device gone longer,
 // headset BYE / new HELLO / silence inside the session) a new handshake runs and the user
-// presses Launch. Every new stream or resume starts with an IDR. ql_get_link_status reports it.
+// presses Launch. Every new stream or resume starts with an IDR. qb_get_link_status reports it.
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -32,7 +32,7 @@
 #include "audio.hpp"
 #include "fake_quest.hpp"
 #include "frame.hpp"
-#include "questlink.h"
+#include "questbridge.h"
 #include "texture_encoder.hpp"
 
 #if defined(_WIN32)
@@ -41,29 +41,29 @@
 #  include <windows.h>
 #endif
 
-// Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
-static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
-static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 256 && offsetof(ql_device_info, features) == 104 &&
-              offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240 &&
-              offsetof(ql_device_info, max_slice_bytes) == 244 && offsetof(ql_device_info, max_message_bytes) == 248 &&
-              offsetof(ql_device_info, default_bitrate) == 252);
-static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
-static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
-static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
-static_assert(sizeof(void*) != 8 || (sizeof(ql_frame_submit) == 64 && offsetof(ql_frame_submit, frame_index) == 56));
-static_assert(sizeof(ql_link_status) == 192 && offsetof(ql_link_status, state_since_ns) == 24 &&
-              offsetof(ql_link_status, encoder) == 32);
+// Layouts the C# side marshals (Runtime/Native/QuestBridgeNative.cs, LayoutKind.Sequential)
+static_assert(sizeof(qb_pose) == 40 && offsetof(qb_pose, time_ns) == 32);
+static_assert(sizeof(qb_fov) == 16 && sizeof(qb_device_info) == 256 && offsetof(qb_device_info, features) == 104 &&
+              offsetof(qb_device_info, firmware) == 176 && offsetof(qb_device_info, stream_codec) == 240 &&
+              offsetof(qb_device_info, max_slice_bytes) == 244 && offsetof(qb_device_info, max_message_bytes) == 248 &&
+              offsetof(qb_device_info, default_bitrate) == 252);
+static_assert(sizeof(qb_controller) == 68 + 4 && offsetof(qb_controller, flags) == 64);
+static_assert(sizeof(qb_hand_joint) == 32 && sizeof(qb_hand) == 944 && offsetof(qb_hand, joints) == 112);
+static_assert(sizeof(qb_hands) == 1896 && offsetof(qb_hands, count) == 1888);
+static_assert(sizeof(void*) != 8 || (sizeof(qb_frame_submit) == 64 && offsetof(qb_frame_submit, frame_index) == 56));
+static_assert(sizeof(qb_link_status) == 192 && offsetof(qb_link_status, state_since_ns) == 24 &&
+              offsetof(qb_link_status, encoder) == 32);
 
 namespace {
 
-using namespace ql;
+using namespace qb;
 
 // rectifyMeshId of Meta's game frames; 0 (its loading screen) disables reprojection
 constexpr uint32_t kRectifyMeshId = 1001;
 
 struct Job {
     int slot;
-    ql_pose render_pose;
+    qb_pose render_pose;
 };
 
 struct Client {
@@ -76,19 +76,19 @@ int env_int(const char* name, int fallback) {
     return v && *v ? std::atoi(v) : fallback;
 }
 
-// QL_CODEC: h264 | hevc | auto, or a raw CONFIG value
+// QB_CODEC: h264 | hevc | auto, or a raw CONFIG value
 int env_codec() {
-    const char* v = std::getenv("QL_CODEC");
+    const char* v = std::getenv("QB_CODEC");
     std::string s = v ? v : "";
-    if (s == "h264" || s == "avc") return QL_CODEC_H264;
-    if (s == "hevc" || s == "h265") return QL_CODEC_HEVC;
-    return !s.empty() && s[0] >= '0' && s[0] <= '9' ? std::atoi(s.c_str()) : QL_CODEC_AUTO;
+    if (s == "h264" || s == "avc") return QB_CODEC_H264;
+    if (s == "hevc" || s == "h265") return QB_CODEC_HEVC;
+    return !s.empty() && s[0] >= '0' && s[0] <= '9' ? std::atoi(s.c_str()) : QB_CODEC_AUTO;
 }
 
-// Sleep until a ql_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
+// Sleep until a qb_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
 // 15.6 ms, more than the 10 ms audio period)
 void sleep_until_ns(int64_t deadline) {
-    int64_t wait = deadline - ql_now_ns();
+    int64_t wait = deadline - qb_now_ns();
     if (wait <= 0) return;
 #if defined(_WIN32)
     thread_local HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
@@ -105,19 +105,19 @@ void sleep_until_ns(int64_t deadline) {
     std::this_thread::sleep_for(std::chrono::nanoseconds(wait));
 }
 
-// stderr, or the file QL_LOG_FILE names (the Unity Editor on Windows drops plugin stderr)
+// stderr, or the file QB_LOG_FILE names (the Unity Editor on Windows drops plugin stderr)
 void stderr_log(void*, const char* dir, const char* what, int seq) {
     static std::FILE* out = [] {
-        const char* path = std::getenv("QL_LOG_FILE");
+        const char* path = std::getenv("QB_LOG_FILE");
         std::FILE* f = path && *path ? std::fopen(path, "a") : nullptr;
         return f ? f : stderr;
     }();
     static std::mutex mu;
     std::lock_guard<std::mutex> l(mu);
     if (seq >= 0)
-        std::fprintf(out, "[questlink] %-6s %s seq=%d\n", dir, what, seq);
+        std::fprintf(out, "[questbridge] %-6s %s seq=%d\n", dir, what, seq);
     else
-        std::fprintf(out, "[questlink] %-6s %s\n", dir, what);
+        std::fprintf(out, "[questbridge] %-6s %s\n", dir, what);
     std::fflush(out);
 }
 
@@ -128,24 +128,24 @@ public:
         return *rt;
     }
 
-    ql_session* open() {
+    qb_session* open() {
         std::lock_guard<std::mutex> l(mu_);
         uint64_t id = next_id_++;
         clients_[id];
-        return reinterpret_cast<ql_session*>(uintptr_t(id));
+        return reinterpret_cast<qb_session*>(uintptr_t(id));
     }
 
-    void close(ql_session* s) {
+    void close(qb_session* s) {
         std::lock_guard<std::mutex> l(mu_);
         clients_.erase(id(s));
     }
 
-    bool known(ql_session* s) {
+    bool known(qb_session* s) {
         std::lock_guard<std::mutex> l(mu_);
         return clients_.count(id(s)) != 0;
     }
 
-    std::shared_ptr<ql_host> host() {
+    std::shared_ptr<qb_host> host() {
         std::lock_guard<std::mutex> l(mu_);
         return host_;
     }
@@ -153,7 +153,7 @@ public:
     // Stop sending, log the numbers another host needs to continue the headset's session
     // (handshake.py XRSP_ATTACH), then close USB. The io thread ends; nothing reopens.
     void shutdown() {
-        std::shared_ptr<ql_host> h;
+        std::shared_ptr<qb_host> h;
         {
             std::lock_guard<std::mutex> l(mu_);
             if (stopping_) return;
@@ -164,8 +164,8 @@ public:
         // Frames or audio blocks already in flight still hold the host
         for (int i = 0; i < 100 && h && h.use_count() > 1; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        ql_info info;
-        if (!h || ql_host_get_info(h.get(), &info) != QL_OK || info.state != QL_STATE_STREAMING) {
+        qb_info info;
+        if (!h || qb_host_get_info(h.get(), &info) != QB_OK || info.state != QB_STATE_STREAMING) {
             stderr_log(nullptr, "info", "shutdown: no streaming session", -1);
             return;
         }
@@ -183,19 +183,19 @@ public:
         stderr_log(nullptr, "info", what.c_str(), -1);
     }
 
-    ql_link_status link() {
+    qb_link_status link() {
         std::lock_guard<std::mutex> l(mu_);
         return link_;
     }
 
-    int submit(ql_session* s, void* texture, const ql_pose* pose) {
-        if (!texture || !pose) return QL_ERR_ARGUMENT;
+    int submit(qb_session* s, void* texture, const qb_pose* pose) {
+        if (!texture || !pose) return QB_ERR_ARGUMENT;
         auto h = host();
-        if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) return QL_ERR_NOT_STREAMING;
+        if (!h || qb_host_get_state(h.get()) != QB_STATE_STREAMING) return QB_ERR_NOT_STREAMING;
         TextureEncoder* enc = encoder(h.get());
-        if (!enc) return QL_ERR_UNSUPPORTED;
+        if (!enc) return QB_ERR_UNSUPPORTED;
         int slot = enc->capture(texture);  // copies now, on the caller's render thread
-        if (slot < 0) return QL_ERR_NOT_STREAMING;
+        if (slot < 0) return QB_ERR_NOT_STREAMING;
         (void)s;
         std::lock_guard<std::mutex> l(mu_);
         if (jobs_.size() >= 2) {  // encoder is behind: drop the oldest frame
@@ -204,20 +204,20 @@ public:
         }
         jobs_.push_back({slot, *pose});
         cv_.notify_one();
-        return QL_OK;
+        return QB_OK;
     }
 
     int submit_audio(const float* stereo, uint32_t frames, uint32_t rate) {
-        if (!audio_enabled_) return QL_ERR_UNSUPPORTED;
+        if (!audio_enabled_) return QB_ERR_UNSUPPORTED;
         auto h = host();
-        if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) return QL_ERR_NOT_STREAMING;
+        if (!h || qb_host_get_state(h.get()) != QB_STATE_STREAMING) return QB_ERR_NOT_STREAMING;
         playback_.write(stereo, frames, rate);
-        return QL_OK;
+        return QB_OK;
     }
 
-    // Unity restarts frame_index every Play session (every ql_session); accept only increasing
+    // Unity restarts frame_index every Play session (every qb_session); accept only increasing
     // indices per session. The headset's frame.index comes from the host's session-wide counter.
-    bool accept_index(ql_session* s, uint64_t index) {
+    bool accept_index(qb_session* s, uint64_t index) {
         std::lock_guard<std::mutex> l(mu_);
         auto it = clients_.find(id(s));
         if (it == clients_.end()) return false;
@@ -233,7 +233,7 @@ private:
     std::condition_variable cv_;
     std::map<uint64_t, Client> clients_;
     uint64_t next_id_ = 1;
-    std::shared_ptr<ql_host> host_;
+    std::shared_ptr<qb_host> host_;
     uint64_t host_generation_ = 0;
     std::deque<Job> jobs_;
     std::unique_ptr<TextureEncoder> encoder_;
@@ -241,18 +241,18 @@ private:
     std::thread io_, encode_, audio_;
     std::atomic<bool> stopping_{false};
     audio::PlaybackBuffer playback_;
-    const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
+    const bool audio_enabled_ = env_int("QB_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
     uint64_t refits_ = 0;   // encode thread only
     uint64_t failed_ = 0;   // encode thread only
     std::shared_ptr<FakeQuest> fake_quest_;  // io thread only
     bool fake_failed_ = false;
     std::string encoder_name_;  // encode thread only
-    const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
+    const int64_t vsync_lead_ns_ = int64_t(env_int("QB_VSYNC_LEAD_MS", 16)) * 1'000'000;
     // USB back within this long after an error while streaming: try to resume (0 = never)
-    const int64_t resume_window_ns_ = int64_t(env_int("QL_RESUME_MS", 500)) * 1'000'000;
-    ql_link_status link_{};    // mu_
-    uint32_t seen_losses_ = 0;  // io thread: host's ql_info.losses already counted
+    const int64_t resume_window_ns_ = int64_t(env_int("QB_RESUME_MS", 500)) * 1'000'000;
+    qb_link_status link_{};    // mu_
+    uint32_t seen_losses_ = 0;  // io thread: host's qb_info.losses already counted
 
     Runtime() {
         io_ = std::thread([this] { io_loop(); });
@@ -260,31 +260,31 @@ private:
         if (audio_enabled_) audio_ = std::thread([this] { audio_loop(); });
     }
 
-    static uint64_t id(ql_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
+    static uint64_t id(qb_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
 
     // Created on the first frame of the first streaming session, at that session's rate and codec
-    TextureEncoder* encoder(ql_host* h) {
-        ql_device_info dev{};
-        bool known = ql_host_get_device_info(h, &dev) == QL_OK;
+    TextureEncoder* encoder(qb_host* h) {
+        qb_device_info dev{};
+        bool known = qb_host_get_device_info(h, &dev) == QB_OK;
         uint32_t hz = known ? dev.stream_refresh_hz : 0;
         std::lock_guard<std::mutex> l(mu_);
         if (!encoder_tried_) {
             encoder_tried_ = true;
             TextureEncoderConfig cfg;
             if (hz) cfg.fps = int(hz);
-            cfg.hevc = known && dev.stream_codec == QL_CODEC_HEVC;
+            cfg.hevc = known && dev.stream_codec == QB_CODEC_HEVC;
             if (known && dev.max_slice_bytes) cfg.max_slice_bytes = dev.max_slice_bytes;
 #ifdef __APPLE__
             // All-intra VideoToolbox runs ~3x over the bitrate (~90 KB per strip per frame) and
             // the Quest Pro ends the session within seconds ("buffer too small"); P frames are
             // what played on the Pro from the Mac (gop 72 clip)
-            cfg.gop = env_int("QL_GOP", 72);
+            cfg.gop = env_int("QB_GOP", 72);
 #else
-            cfg.gop = env_int("QL_GOP", 1);
+            cfg.gop = env_int("QB_GOP", 1);
 #endif
-            // QL_MBPS overrides the headset's default (ql_device_info.default_bitrate)
+            // QB_MBPS overrides the headset's default (qb_device_info.default_bitrate)
             cfg.bitrate = known && dev.default_bitrate ? dev.default_bitrate : 100'000'000u;
-            if (int mbps = env_int("QL_MBPS", 0); mbps > 0) cfg.bitrate = uint32_t(mbps) * 1'000'000u;
+            if (int mbps = env_int("QB_MBPS", 0); mbps > 0) cfg.bitrate = uint32_t(mbps) * 1'000'000u;
             std::string err;
             encoder_ = create_texture_encoder(cfg, &err);
             if (!encoder_) stderr_log(nullptr, "info", ("no texture encoder: " + err).c_str(), -1);
@@ -292,99 +292,99 @@ private:
         return encoder_.get();
     }
 
-    // Link state transitions; loss = why a stream ended (QL_LOSS_USB unless the session says)
+    // Link state transitions; loss = why a stream ended (QB_LOSS_USB unless the session says)
     void set_link(int32_t state, int32_t loss) {
         std::lock_guard<std::mutex> l(mu_);
         if (state == link_.state) return;
         int32_t prev = link_.state;
-        if (prev == QL_LINK_STREAMING) {
+        if (prev == QB_LINK_STREAMING) {
             ++link_.disconnects;
-            link_.last_loss = loss ? loss : QL_LOSS_USB;
+            link_.last_loss = loss ? loss : QB_LOSS_USB;
         }
-        if (state == QL_LINK_STREAMING) {
+        if (state == QB_LINK_STREAMING) {
             ++link_.connects;
-            if (prev == QL_LINK_RESUMING) ++link_.resumes;
+            if (prev == QB_LINK_RESUMING) ++link_.resumes;
         }
         link_.state = state;
-        link_.state_since_ns = ql_now_ns();
+        link_.state_since_ns = qb_now_ns();
         static const char* names[] = {"no device", "connecting", "waiting for Launch", "streaming", "resuming"};
         static const char* losses[] = {"", "USB", "headset BYE", "new HELLO", "silence"};
         std::string what = std::string("link: ") + names[prev] + " -> " + names[state];
-        if (prev == QL_LINK_STREAMING) what += std::string(" (lost: ") + losses[link_.last_loss] + ")";
+        if (prev == QB_LINK_STREAMING) what += std::string(" (lost: ") + losses[link_.last_loss] + ")";
         stderr_log(nullptr, "info", what.c_str(), -1);
     }
 
-    void track(ql_host* h) {
-        ql_info info;
-        if (ql_host_get_info(h, &info) != QL_OK) return;
-        int32_t loss = info.losses != seen_losses_ ? info.last_loss : QL_LOSS_NONE;
+    void track(qb_host* h) {
+        qb_info info;
+        if (qb_host_get_info(h, &info) != QB_OK) return;
+        int32_t loss = info.losses != seen_losses_ ? info.last_loss : QB_LOSS_NONE;
         seen_losses_ = info.losses;
-        int32_t state = info.state == QL_STATE_STREAMING ? (info.resuming ? QL_LINK_RESUMING : QL_LINK_STREAMING)
-                        : info.state == QL_STATE_WAIT_LINK_REQUEST ? QL_LINK_WAIT_LAUNCH
-                                                                   : QL_LINK_CONNECTING;
+        int32_t state = info.state == QB_STATE_STREAMING ? (info.resuming ? QB_LINK_RESUMING : QB_LINK_STREAMING)
+                        : info.state == QB_STATE_WAIT_LINK_REQUEST ? QB_LINK_WAIT_LAUNCH
+                                                                   : QB_LINK_CONNECTING;
         set_link(state, loss);
     }
 
-    ql_config host_config() const {
-        ql_config cfg;
-        ql_config_init(&cfg);
-        if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
-        cfg.hands = env_int("QL_HANDS", 1);
-        cfg.haptics = env_int("QL_HAPTICS", 1);
+    qb_config host_config() const {
+        qb_config cfg;
+        qb_config_init(&cfg);
+        if (env_int("QB_LOG", 0)) cfg.log = stderr_log;
+        cfg.hands = env_int("QB_HANDS", 1);
+        cfg.haptics = env_int("QB_HAPTICS", 1);
         cfg.codec = env_codec();
-        cfg.silence_timeout_ms = env_int("QL_SILENCE_MS", cfg.silence_timeout_ms);
-        cfg.resume_timeout_ms = env_int("QL_RESUME_TIMEOUT_MS", cfg.resume_timeout_ms);
+        cfg.silence_timeout_ms = env_int("QB_SILENCE_MS", cfg.silence_timeout_ms);
+        cfg.resume_timeout_ms = env_int("QB_RESUME_TIMEOUT_MS", cfg.resume_timeout_ms);
         return cfg;
     }
 
-    // QL_FAKE_QUEST=<file>: the offline bench headset (fake_quest.hpp) instead of USB
-    ql_status open_host(const ql_config& cfg, ql_host** out) {
-        const char* fake = std::getenv("QL_FAKE_QUEST");
-        if (!fake || !*fake) return ql_host_open(&cfg, out);
-        if (fake_quest_ || fake_failed_) return QL_ERR_NO_DEVICE;  // one session, one try
+    // QB_FAKE_QUEST=<file>: the offline bench headset (fake_quest.hpp) instead of USB
+    qb_status open_host(const qb_config& cfg, qb_host** out) {
+        const char* fake = std::getenv("QB_FAKE_QUEST");
+        if (!fake || !*fake) return qb_host_open(&cfg, out);
+        if (fake_quest_ || fake_failed_) return QB_ERR_NO_DEVICE;  // one session, one try
         std::string err;
         fake_quest_ = load_fake_quest(fake, kConservativeCap.message,
                                       [](const std::string& s) { stderr_log(nullptr, "info", s.c_str(), -1); }, &err);
         if (!fake_quest_) {
-            stderr_log(nullptr, "info", ("QL_FAKE_QUEST: " + err).c_str(), -1);
+            stderr_log(nullptr, "info", ("QB_FAKE_QUEST: " + err).c_str(), -1);
             fake_failed_ = true;
-            return QL_ERR_NO_DEVICE;
+            return QB_ERR_NO_DEVICE;
         }
-        stderr_log(nullptr, "info", (std::string("QL_FAKE_QUEST: offline bench headset from ") + fake).c_str(), -1);
-        ql_transport t = fake_quest_transport(fake_quest_);
-        return ql_host_open_transport(&cfg, &t, out);
+        stderr_log(nullptr, "info", (std::string("QB_FAKE_QUEST: offline bench headset from ") + fake).c_str(), -1);
+        qb_transport t = fake_quest_transport(fake_quest_);
+        return qb_host_open_transport(&cfg, &t, out);
     }
 
     void io_loop() {
-        // QL_USB=0: never touch USB (Unity tests load the real library with a headset plugged in)
-        if (env_int("QL_USB", 1) == 0) {
-            stderr_log(nullptr, "info", "QL_USB=0: not opening USB", -1);
+        // QB_USB=0: never touch USB (Unity tests load the real library with a headset plugged in)
+        if (env_int("QB_USB", 1) == 0) {
+            stderr_log(nullptr, "info", "QB_USB=0: not opening USB", -1);
             while (!stopping_) std::this_thread::sleep_for(std::chrono::milliseconds(50));
             return;
         }
-        std::shared_ptr<ql_host> lost;  // lost USB while streaming: reopen it to resume the stream
+        std::shared_ptr<qb_host> lost;  // lost USB while streaming: reopen it to resume the stream
         int64_t lost_ns = 0, resumed_ns = 0;
         while (!stopping_) {
-            std::shared_ptr<ql_host> h;
-            if (lost && ql_now_ns() - lost_ns > resume_window_ns_) {
+            std::shared_ptr<qb_host> h;
+            if (lost && qb_now_ns() - lost_ns > resume_window_ns_) {
                 // Gone this long, the headset restarted its Link stack (Link quit, replug): start over
                 stderr_log(nullptr, "info", "USB not back in time; starting a new session", -1);
                 lost.reset();
-                set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
+                set_link(QB_LINK_NO_DEVICE, QB_LOSS_USB);
             }
             if (lost) {
-                if (ql_host_reopen(lost.get(), nullptr) == QL_OK) {
+                if (qb_host_reopen(lost.get(), nullptr) == QB_OK) {
                     h = std::move(lost);
-                    resumed_ns = ql_now_ns();
+                    resumed_ns = qb_now_ns();
                 }
             } else {
-                ql_config cfg = host_config();
-                ql_host* raw = nullptr;
-                if (open_host(cfg, &raw) == QL_OK) {
-                    h.reset(raw, ql_host_close);
+                qb_config cfg = host_config();
+                qb_host* raw = nullptr;
+                if (open_host(cfg, &raw) == QB_OK) {
+                    h.reset(raw, qb_host_close);
                     seen_losses_ = 0;
                 } else {
-                    set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
+                    set_link(QB_LINK_NO_DEVICE, QB_LOSS_USB);
                 }
             }
             if (!h) {
@@ -399,11 +399,11 @@ private:
                 host_ = h;
                 ++host_generation_;  // the next frame is an IDR
             }
-            ql_status st = QL_OK;
+            qb_status st = QB_OK;
             while (!stopping_) {
-                st = ql_host_poll(h.get(), 50);
+                st = qb_host_poll(h.get(), 50);
                 track(h.get());
-                if (st == QL_ERR_TRANSPORT || st == QL_ERR_FAILED) break;
+                if (st == QB_ERR_TRANSPORT || st == QB_ERR_FAILED) break;
             }
             if (stopping_) return;  // shutdown() owns the host now
             {
@@ -413,18 +413,18 @@ private:
             // USB error mid-stream: try the same session once more (not again right after a
             // resume, so a stream the headset keeps rejecting falls back to a new handshake).
             // Otherwise (unplugged, handshake failed) start over with a fresh one.
-            ql_info info;
-            bool streaming = ql_host_get_info(h.get(), &info) == QL_OK && info.state == QL_STATE_STREAMING &&
+            qb_info info;
+            bool streaming = qb_host_get_info(h.get(), &info) == QB_OK && info.state == QB_STATE_STREAMING &&
                              !info.resuming;
-            if (st == QL_ERR_TRANSPORT && streaming && resume_window_ns_ > 0 &&
-                (!resumed_ns || ql_now_ns() - resumed_ns > 5'000'000'000)) {
+            if (st == QB_ERR_TRANSPORT && streaming && resume_window_ns_ > 0 &&
+                (!resumed_ns || qb_now_ns() - resumed_ns > 5'000'000'000)) {
                 stderr_log(nullptr, "info", "USB lost while streaming; reopening to resume", -1);
                 lost = std::move(h);
-                lost_ns = ql_now_ns();
-                set_link(QL_LINK_RESUMING, QL_LOSS_USB);
+                lost_ns = qb_now_ns();
+                set_link(QB_LINK_RESUMING, QB_LOSS_USB);
                 continue;
             }
-            set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
+            set_link(QB_LINK_NO_DEVICE, QB_LOSS_USB);
             h.reset();
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -437,10 +437,10 @@ private:
         // frames not sent (failed encodes, slices over the cap)
         uint64_t rate_bytes = 0, second_bytes = 0, peak_second_bytes = 0, rate_frames = 0;
         size_t rate_largest = 0;
-        int64_t rate_since = ql_now_ns(), second_since = rate_since;
+        int64_t rate_since = qb_now_ns(), second_since = rate_since;
         for (;;) {
             Job job;
-            std::shared_ptr<ql_host> h;
+            std::shared_ptr<qb_host> h;
             uint64_t gen;
             {
                 std::unique_lock<std::mutex> l(mu_);
@@ -456,8 +456,8 @@ private:
                 continue;
             }
             // A new streaming session (Link relaunched, same USB link) also needs an IDR
-            ql_info info;
-            bool have_info = ql_host_get_info(h.get(), &info) == QL_OK;
+            qb_info info;
+            bool have_info = qb_host_get_info(h.get(), &info) == QB_OK;
             if (have_info) gen = (gen << 32) | info.streams;
             EncodedSlices out;
             if (!enc->encode(job.slot, gen != idr_generation, out)) {
@@ -488,24 +488,24 @@ private:
                             " B, csd " + std::to_string(std::max(csd, out.csd.size())) + " B, QP " + std::to_string(out.qp)).c_str(),
                            -1);
             }
-            std::vector<ql_slice> slices;
+            std::vector<qb_slice> slices;
             for (size_t i = 0; i < out.slices.size(); ++i) {
                 const Bytes& csd = i < out.slice_csd.size() ? out.slice_csd[i] : out.csd;
                 slices.push_back({csd.data(), csd.size(), out.slices[i].data(), out.slices[i].size()});
             }
-            ql_frame_info fi{};
+            qb_frame_info fi{};
             fi.has_render_pose = 1;
             fi.render_pose = job.render_pose;
             fi.is_intra = out.idr ? 1 : 0;
             // Mesh 1001 + the FOV the eyes were rendered with (the device's) turn on timewarp.
             // The HELLO doesn't name a mesh; 1001 is what Meta's game frames use on Quest 3
             fi.rectify_mesh_id = kRectifyMeshId;
-            // Target vsync = now + lead in the Quest clock. 20 ms (qlhost's default) made the
+            // Target vsync = now + lead in the Quest clock. 20 ms (qbhost's default) made the
             // headset log "Frame arrived ~7.6 ms before deadline, frame drop", so aim ~4 ms closer
             if (have_info && info.has_clock_offset)
-                fi.target_vsync_quest_ns = ql_now_ns() + info.quest_clock_offset_ns + vsync_lead_ns_;
-            ql_device_info dev;
-            if (ql_host_get_device_info(h.get(), &dev) == QL_OK) {
+                fi.target_vsync_quest_ns = qb_now_ns() + info.quest_clock_offset_ns + vsync_lead_ns_;
+            qb_device_info dev;
+            if (qb_host_get_device_info(h.get(), &dev) == QB_OK) {
                 fi.has_fov = 1;
                 fi.fov_left = dev.fov_left;
                 fi.fov_right = dev.fov_right;
@@ -516,7 +516,7 @@ private:
                 rate_largest = std::max({rate_largest, sl.csd_len, sl.video_len});
             }
             ++rate_frames;
-            if (int64_t now = ql_now_ns(); now - second_since >= 1'000'000'000) {
+            if (int64_t now = qb_now_ns(); now - second_since >= 1'000'000'000) {
                 peak_second_bytes = std::max(peak_second_bytes, second_bytes * 1'000'000'000 / uint64_t(now - second_since));
                 second_bytes = 0;
                 second_since = now;
@@ -535,9 +535,9 @@ private:
                     rate_since = now;
                 }
             }
-            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT)
+            if (qb_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QB_ERR_ARGUMENT)
                 stderr_log(nullptr, "info",
-                           (std::string(ql_host_get_error(h.get())) + " (" + std::to_string(++dropped_) + " so far)").c_str(), -1);
+                           (std::string(qb_host_get_error(h.get())) + " (" + std::to_string(++dropped_) + " so far)").c_str(), -1);
         }
     }
 
@@ -550,20 +550,20 @@ private:
         float peak = 0.f;
         for (;;) {
             auto h = host();
-            if (!h || ql_host_get_state(h.get()) != QL_STATE_STREAMING) {
+            if (!h || qb_host_get_state(h.get()) != QB_STATE_STREAMING) {
                 h.reset();
                 pacer.reset();
                 playback_.clear();
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
-            for (int n = pacer.due(ql_now_ns()); n > 0; --n) {
+            for (int n = pacer.due(qb_now_ns()); n > 0; --n) {
                 if (playback_.read(block, audio::kBlockFrames) > 0) ++real;
                 float p = 0.f;
                 for (float s : block) p = std::max(p, std::abs(s));
                 if (p > 1e-4f) ++audible;
                 peak = std::max(peak, p);
-                if (ql_host_send_audio(h.get(), block, 0) != QL_OK) break;
+                if (qb_host_send_audio(h.get(), block, 0) != QB_OK) break;
                 if (++blocks % 1000 == 0) {  // every 10 s
                     std::string what = "audio: " + std::to_string(blocks) + " blocks, " + std::to_string(real) +
                                        " from the game, " + std::to_string(audible) + " audible, peak " +
@@ -579,17 +579,17 @@ private:
     }
 };
 
-void QL_UNITY_CALL on_render_event(int event_id, void* data) {
-    if (event_id != QL_EVENT_SUBMIT_FRAME || !data) return;
-    const auto* f = static_cast<const ql_frame_submit*>(data);
-    ql_submit_frame_texture(f->session, f->native_texture, &f->render_pose, f->frame_index);
+void QB_UNITY_CALL on_render_event(int event_id, void* data) {
+    if (event_id != QB_EVENT_SUBMIT_FRAME || !data) return;
+    const auto* f = static_cast<const qb_frame_submit*>(data);
+    qb_submit_frame_texture(f->session, f->native_texture, &f->render_pose, f->frame_index);
 }
 
 }  // namespace
 
 extern "C" {
 
-ql_session* ql_open(void) {
+qb_session* qb_open(void) {
     try {
         return Runtime::get().open();
     } catch (...) {
@@ -597,89 +597,89 @@ ql_session* ql_open(void) {
     }
 }
 
-void ql_close(ql_session* session) {
+void qb_close(qb_session* session) {
     if (session) Runtime::get().close(session);
 }
 
-void ql_shutdown(void) { Runtime::get().shutdown(); }
+void qb_shutdown(void) { Runtime::get().shutdown(); }
 
-int ql_poll(ql_session* session) {
+int qb_poll(qb_session* session) {
     auto& rt = Runtime::get();
     if (!rt.known(session)) return 0;
     auto h = rt.host();
     if (!h) return 0;
-    return ql_host_get_state(h.get()) == QL_STATE_STREAMING ? 2 : 1;
+    return qb_host_get_state(h.get()) == QB_STATE_STREAMING ? 2 : 1;
 }
 
-int ql_get_link_status(ql_session* session, ql_link_status* out) {
+int qb_get_link_status(qb_session* session, qb_link_status* out) {
     auto& rt = Runtime::get();
-    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!out || !rt.known(session)) return QB_ERR_ARGUMENT;
     *out = rt.link();
     std::string enc = encoder_info();
     std::memset(out->encoder, 0, sizeof out->encoder);
     std::strncpy(out->encoder, enc.c_str(), sizeof out->encoder - 1);
-    return QL_OK;
+    return QB_OK;
 }
 
-int ql_get_device_info(ql_session* session, ql_device_info* out) {
+int qb_get_device_info(qb_session* session, qb_device_info* out) {
     auto& rt = Runtime::get();
-    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!out || !rt.known(session)) return QB_ERR_ARGUMENT;
     auto h = rt.host();
-    return h ? ql_host_get_device_info(h.get(), out) : QL_ERR_NO_DATA;
+    return h ? qb_host_get_device_info(h.get(), out) : QB_ERR_NO_DATA;
 }
 
-int ql_get_head_pose(ql_session* session, ql_pose* out) {
+int qb_get_head_pose(qb_session* session, qb_pose* out) {
     auto& rt = Runtime::get();
-    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!out || !rt.known(session)) return QB_ERR_ARGUMENT;
     auto h = rt.host();
-    ql_head_pose p;
-    if (!h || ql_host_get_head_pose(h.get(), &p) != QL_OK) return QL_ERR_NO_DATA;
+    qb_head_pose p;
+    if (!h || qb_host_get_head_pose(h.get(), &p) != QB_OK) return QB_ERR_NO_DATA;
     *out = p.pose;
-    return QL_OK;
+    return QB_OK;
 }
 
-int ql_get_hands(ql_session* session, ql_hands* out) {
+int qb_get_hands(qb_session* session, qb_hands* out) {
     auto& rt = Runtime::get();
-    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!out || !rt.known(session)) return QB_ERR_ARGUMENT;
     auto h = rt.host();
-    return h ? ql_host_get_hands(h.get(), out) : QL_ERR_NO_DATA;
+    return h ? qb_host_get_hands(h.get(), out) : QB_ERR_NO_DATA;
 }
 
-int ql_get_controller(ql_session* session, int hand, ql_controller* out) {
+int qb_get_controller(qb_session* session, int hand, qb_controller* out) {
     auto& rt = Runtime::get();
-    if (!out || (hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!out || (hand != 0 && hand != 1) || !rt.known(session)) return QB_ERR_ARGUMENT;
     std::memset(out, 0, sizeof *out);
     auto h = rt.host();
-    return h ? ql_host_get_controller(h.get(), hand, out) : QL_ERR_NO_DATA;
+    return h ? qb_host_get_controller(h.get(), hand, out) : QB_ERR_NO_DATA;
 }
 
-int ql_haptic(ql_session* session, int hand, float amplitude, float duration_s) {
+int qb_haptic(qb_session* session, int hand, float amplitude, float duration_s) {
     auto& rt = Runtime::get();
-    if ((hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if ((hand != 0 && hand != 1) || !rt.known(session)) return QB_ERR_ARGUMENT;
     auto h = rt.host();
-    return h ? ql_host_haptic(h.get(), hand, amplitude, duration_s) : QL_ERR_NOT_STREAMING;
+    return h ? qb_host_haptic(h.get(), hand, amplitude, duration_s) : QB_ERR_NOT_STREAMING;
 }
 
-int ql_submit_frame_texture(ql_session* session, void* native_texture, const ql_pose* render_pose,
+int qb_submit_frame_texture(qb_session* session, void* native_texture, const qb_pose* render_pose,
                             uint64_t frame_index) {
     auto& rt = Runtime::get();
-    if (!rt.accept_index(session, frame_index)) return QL_ERR_ARGUMENT;  // closed session or stale index
+    if (!rt.accept_index(session, frame_index)) return QB_ERR_ARGUMENT;  // closed session or stale index
     return rt.submit(session, native_texture, render_pose);
 }
 
-ql_render_event_fn ql_get_render_event_func(void) { return on_render_event; }
+qb_render_event_fn qb_get_render_event_func(void) { return on_render_event; }
 
-int ql_submit_audio(ql_session* session, const float* interleaved_stereo, uint32_t frames, uint32_t sample_rate) {
+int qb_submit_audio(qb_session* session, const float* interleaved_stereo, uint32_t frames, uint32_t sample_rate) {
     auto& rt = Runtime::get();
-    if (!interleaved_stereo || !sample_rate || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if (!interleaved_stereo || !sample_rate || !rt.known(session)) return QB_ERR_ARGUMENT;
     return rt.submit_audio(interleaved_stereo, frames, sample_rate);
 }
 
-int ql_read_mic(ql_session* session, int16_t* out, uint32_t max_frames) {
+int qb_read_mic(qb_session* session, int16_t* out, uint32_t max_frames) {
     auto& rt = Runtime::get();
-    if ((!out && max_frames) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    if ((!out && max_frames) || !rt.known(session)) return QB_ERR_ARGUMENT;
     auto h = rt.host();
-    return h ? ql_host_read_mic(h.get(), out, max_frames) : 0;
+    return h ? qb_host_read_mic(h.get(), out, max_frames) : 0;
 }
 
 }  // extern "C"

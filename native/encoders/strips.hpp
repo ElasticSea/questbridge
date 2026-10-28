@@ -10,7 +10,7 @@
 
 #include "encoder.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 // Creates the encoder for one strip; `config` has the strip's size, slices 1, Layout::Slices.
 using StripFactory = std::function<std::unique_ptr<Encoder>(const EncoderConfig& config, int strip, std::string* error)>;
@@ -25,4 +25,4 @@ struct GpuInput {
 std::unique_ptr<Encoder> make_strip_encoder(const EncoderConfig& config, const StripFactory& factory,
                                             GpuInput gpu, std::string* error);
 
-}  // namespace ql::enc
+}  // namespace qb::enc

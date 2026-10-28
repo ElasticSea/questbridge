@@ -7,10 +7,10 @@
 
 #include "fake_quest.hpp"
 #include "harness.hpp"
-#include "questlink.h"
+#include "questbridge.h"
 #include "texture_encoder.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
@@ -96,40 +96,40 @@ int audio_blocks(bool loud) {
     return n;
 }
 
-void submit(ql_session* s, int* tex, uint64_t index, float qw) {
-    ql_frame_submit f{};
+void submit(qb_session* s, int* tex, uint64_t index, float qw) {
+    qb_frame_submit f{};
     f.session = s;
     f.native_texture = tex;
     f.render_pose = {0, 0, 0, qw, 0, 1.6f, 0, 0};
     f.frame_index = index;
-    ql_get_render_event_func()(QL_EVENT_SUBMIT_FRAME, &f);
+    qb_get_render_event_func()(QB_EVENT_SUBMIT_FRAME, &f);
 }
 
 }  // namespace
 
 // Texture backend for this test binary (USB: fake_quest.hpp)
-namespace ql {
+namespace qb {
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig&, std::string*) {
     return std::make_unique<FakeTextureEncoder>();
 }
-}  // namespace ql
+}  // namespace qb
 
 TEST(runtime_unity_flow) {
     // Before the Quest is plugged in: a session is idle
-    ql_session* s1 = ql_open();
+    qb_session* s1 = qb_open();
     REQUIRE(s1);
-    CHECK_EQ(ql_poll(s1), 0);
-    ql_pose pose;
-    CHECK(ql_get_head_pose(s1, &pose) != 0);
-    ql_device_info dev;
-    CHECK(ql_get_device_info(s1, &dev) != 0);
+    CHECK_EQ(qb_poll(s1), 0);
+    qb_pose pose;
+    CHECK(qb_get_head_pose(s1, &pose) != 0);
+    qb_device_info dev;
+    CHECK(qb_get_device_info(s1, &dev) != 0);
 
     plug_recorded_quest();
     // Handshake, then ~0.7 s of paced stream setup
-    REQUIRE(wait_for([&] { return ql_poll(s1) == 2; }));
-    REQUIRE(ql_get_device_info(s1, &dev) == 0);
+    REQUIRE(wait_for([&] { return qb_poll(s1) == 2; }));
+    REQUIRE(qb_get_device_info(s1, &dev) == 0);
     CHECK_EQ(dev.encode_width, uint32_t(4096));
-    REQUIRE(wait_for([&] { return ql_get_head_pose(s1, &pose) == 0; }));
+    REQUIRE(wait_for([&] { return qb_get_head_pose(s1, &pose) == 0; }));
     CHECK_EQ(pose.time_ns, uint64_t(344814707924000));
 
     // Play session 1: frames 1, 1 (duplicate, dropped), 2
@@ -140,14 +140,14 @@ TEST(runtime_unity_flow) {
     REQUIRE(wait_for([] { return sent_frames().size() == 2; }));
 
     // Exit Play mode with a submit event still queued for the closed session: ignored
-    ql_close(s1);
+    qb_close(s1);
     submit(s1, &tex[3], 3, 1.0f);
-    CHECK_EQ(ql_poll(s1), 0);
+    CHECK_EQ(qb_poll(s1), 0);
 
     // Play session 2: Unity's frame_index restarts at 1, the runtime and headset session stay up
-    ql_session* s2 = ql_open();
+    qb_session* s2 = qb_open();
     REQUIRE(s2 && s2 != s1);
-    CHECK_EQ(ql_poll(s2), 2);
+    CHECK_EQ(qb_poll(s2), 2);
     submit(s2, &tex[4], 1, 0.75f);
     REQUIRE(wait_for([] { return sent_frames().size() == 3; }));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -165,32 +165,32 @@ TEST(runtime_unity_flow) {
     CHECK_EQ(frames[2].qw, 0.75f);
     CHECK(frames[0].intra);         // first frame of the connection forced to IDR
     CHECK(!frames[1].intra);
-    ql_link_status link{};
-    CHECK_EQ(ql_get_link_status(s2, &link), int(QL_OK));
+    qb_link_status link{};
+    CHECK_EQ(qb_get_link_status(s2, &link), int(QB_OK));
     CHECK_EQ(std::string(link.encoder), std::string("fake: test encoder"));  // backend reported once encoding
 
     // Audio: a 10 ms block every 10 ms while streaming (silence so far), game audio when queued
     REQUIRE(wait_for([] { return audio_blocks(false) >= 5; }));
     std::vector<float> tone(2 * 4410, 0.25f);  // 100 ms at 44.1 kHz
-    CHECK_EQ(ql_submit_audio(s2, tone.data(), 4410, 44100), int(QL_OK));
-    CHECK_EQ(ql_submit_audio(s1, tone.data(), 4410, 44100), int(QL_ERR_ARGUMENT));  // closed
+    CHECK_EQ(qb_submit_audio(s2, tone.data(), 4410, 44100), int(QB_OK));
+    CHECK_EQ(qb_submit_audio(s1, tone.data(), 4410, 44100), int(QB_ERR_ARGUMENT));  // closed
     REQUIRE(wait_for([] { return audio_blocks(true) >= 3; }));
     // Mic: the recorded Quest block
     int16_t mic[2000];
-    CHECK_EQ(ql_read_mic(s2, mic, 2000), int(480));
-    CHECK_EQ(ql_read_mic(s2, mic, 2000), 0);
+    CHECK_EQ(qb_read_mic(s2, mic, 2000), int(480));
+    CHECK_EQ(qb_read_mic(s2, mic, 2000), 0);
 
     // Controllers: the head-only pose stream has no controller list; haptics go out on topic 31
-    ql_controller c;
-    CHECK_EQ(ql_get_controller(s2, 0, &c), int(QL_OK));
+    qb_controller c;
+    CHECK_EQ(qb_get_controller(s2, 0, &c), int(QB_OK));
     CHECK_EQ(c.flags, uint32_t(0));
-    CHECK_EQ(ql_haptic(s2, 1, 0.5f, 0.1f), int(QL_OK));
+    CHECK_EQ(qb_haptic(s2, 1, 0.5f, 0.1f), int(QB_OK));
     REQUIRE(wait_for([] { return haptic_calls() == 1; }));
-    CHECK_EQ(ql_haptic(s1, 1, 0.5f, 0.1f), int(QL_ERR_ARGUMENT));  // closed
+    CHECK_EQ(qb_haptic(s1, 1, 0.5f, 0.1f), int(QB_ERR_ARGUMENT));  // closed
 
     // Shutdown hands the headset's session to another host: nothing more is sent, no reopen
-    ql_shutdown();
-    CHECK_EQ(ql_poll(s2), 0);
+    qb_shutdown();
+    CHECK_EQ(qb_poll(s2), 0);
     size_t written;
     {
         std::lock_guard<std::mutex> l(g_quest.mu);
@@ -201,5 +201,5 @@ TEST(runtime_unity_flow) {
         std::lock_guard<std::mutex> l(g_quest.mu);
         CHECK_EQ(g_quest.written.size(), written);
     }
-    ql_close(s2);
+    qb_close(s2);
 }

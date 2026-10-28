@@ -1,26 +1,26 @@
 using System.Collections;
 using System.Collections.Generic;
-using ElasticSea.QuestLink.Input;
+using ElasticSea.QuestBridge.Input;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // One guided pass once streaming starts, every step and question on the board, answers in
     // the log as "[Sequence] ..." lines. Controllers down first: answers are a raised hand
     // (left = yes, right = no) because controller input isn't decoded yet. Steps: volume up
     // with a looping tone, one AudioBench pass, questions, then either hands (full) or a
     // handover (audioOnly): the board says the video test comes next, and the native runtime
-    // stops sending and logs the resume numbers so another host can attach (ql_shutdown).
+    // stops sending and logs the resume numbers so another host can attach (qb_shutdown).
     // controllersOnly: pick up the controllers, buttons, analog, motion, one buzz per controller,
     // answered with the controllers (A/X = yes, B/Y = no).
     public class BenchSequence : MonoBehaviour
     {
         const float AnswerTime = 20f, HoldTime = 1f, HandsTime = 30f, VolumeTime = 15f;
 
-        public QuestLinkRig rig;
-        public QuestLinkHands hands;
+        public QuestBridgeRig rig;
+        public QuestBridgeHands hands;
         public AudioBench bench;
-        public QuestLinkAudio output;
+        public QuestBridgeAudio output;
         public TextMesh board;
         public bool audioOnly;
         public bool controllersOnly;
@@ -30,7 +30,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         IEnumerator Start()
         {
             board.text = "Waiting for Link...";
-            while (rig.State != QuestLinkState.Streaming)
+            while (rig.State != QuestBridgeState.Streaming)
                 yield return null;
             Debug.Log($"[Sequence] streaming{(audioOnly ? ", audio only" : controllersOnly ? ", controllers only" : "")}");
             if (controllersOnly)
@@ -66,8 +66,8 @@ namespace ElasticSea.QuestLink.BridgeTest
         void Handover()
         {
             board.text = "Video test next:\njust watch, keep the\nheadset on.";
-            if (rig.Backend is NativeQuestLink)
-                NativeQuestLink.Shutdown();
+            if (rig.Backend is NativeQuestBridge)
+                NativeQuestBridge.Shutdown();
             Debug.Log("[Sequence] handover: native sending stopped, quitting");
             Application.Quit();
         }
@@ -121,7 +121,7 @@ namespace ElasticSea.QuestLink.BridgeTest
 
         const float PickUpTime = 15f, ButtonsTime = 20f, AnalogTime = 12f, MotionTime = 8f;
 
-        QuestLinkControllerState Pad(QuestLinkHand h) =>
+        QuestBridgeControllerState Pad(QuestBridgeHand h) =>
             rig.Backend != null && rig.Backend.TryGetController(h, out var s) ? s : default;
 
         IEnumerator Controllers()
@@ -129,13 +129,13 @@ namespace ElasticSea.QuestLink.BridgeTest
             Debug.Log("[Sequence] controllers step");
             for (var end = Time.realtimeSinceStartup + PickUpTime; Time.realtimeSinceStartup < end;)
             {
-                bool l = Pad(QuestLinkHand.Left).connected, r = Pad(QuestLinkHand.Right).connected;
+                bool l = Pad(QuestBridgeHand.Left).connected, r = Pad(QuestBridgeHand.Right).connected;
                 if (l && r)
                     break;
                 board.text = $"CONTROLLER TEST ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nPick up both controllers.\nleft {(l ? "OK" : "--")}   right {(r ? "OK" : "--")}\nNot OK? Press its Meta button\nor pull its trigger.";
                 yield return null;
             }
-            bool hasL = Pad(QuestLinkHand.Left).connected, hasR = Pad(QuestLinkHand.Right).connected;
+            bool hasL = Pad(QuestBridgeHand.Left).connected, hasR = Pad(QuestBridgeHand.Right).connected;
             Debug.Log($"[Sequence] controllers connected: left {hasL}, right {hasR}");
             answers.Add($"controllers={(hasL ? "L" : "")}{(hasR ? "R" : "")}");
             // A missing controller (dead battery, asleep) is skipped; the other one answers
@@ -153,8 +153,8 @@ namespace ElasticSea.QuestLink.BridgeTest
             if (hasL) pending.AddRange(new[] { "X", "Y", "L-stick", "Menu" });
             for (var end = Time.realtimeSinceStartup + ButtonsTime; Time.realtimeSinceStartup < end && pending.Count > 0;)
             {
-                var l = Pad(QuestLinkHand.Left);
-                var r = Pad(QuestLinkHand.Right);
+                var l = Pad(QuestBridgeHand.Left);
+                var r = Pad(QuestBridgeHand.Right);
                 if (r.primaryButton) pending.Remove("A");
                 if (r.secondaryButton) pending.Remove("B");
                 if (l.primaryButton) pending.Remove("X");
@@ -172,8 +172,8 @@ namespace ElasticSea.QuestLink.BridgeTest
             var max = new float[8];  // trigger, grip, |stick x|, |stick y| per hand
             for (var end = Time.realtimeSinceStartup + AnalogTime; Time.realtimeSinceStartup < end;)
             {
-                var l = Pad(QuestLinkHand.Left);
-                var r = Pad(QuestLinkHand.Right);
+                var l = Pad(QuestBridgeHand.Left);
+                var r = Pad(QuestBridgeHand.Right);
                 Track(max, 0, l);
                 Track(max, 4, r);
                 board.text = $"ANALOG ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nSqueeze triggers + grips fully,\ncircle both sticks.\nL {Analog(l)}\nR {Analog(r)}";
@@ -184,7 +184,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             int frames = 0, tracked = 0;
             var lo = Vector3.one * 1e9f;
             var hi = -lo;
-            var moving = hasR ? QuestLinkHand.Right : QuestLinkHand.Left;
+            var moving = hasR ? QuestBridgeHand.Right : QuestBridgeHand.Left;
             var movingName = hasR ? "RIGHT" : "LEFT";
             for (var end = Time.realtimeSinceStartup + MotionTime; Time.realtimeSinceStartup < end;)
             {
@@ -202,30 +202,30 @@ namespace ElasticSea.QuestLink.BridgeTest
             }
             Debug.Log($"[Sequence] motion: {tracked}/{frames} frames tracked, {movingName.ToLowerInvariant()} span {(tracked > 0 ? (hi - lo).ToString("F2") : "-")}");
 
-            foreach (var hand in new[] { QuestLinkHand.Left, QuestLinkHand.Right })
+            foreach (var hand in new[] { QuestBridgeHand.Left, QuestBridgeHand.Right })
             {
-                var name = hand == QuestLinkHand.Left ? "LEFT" : "RIGHT";
-                if (!(hand == QuestLinkHand.Left ? hasL : hasR))
+                var name = hand == QuestBridgeHand.Left ? "LEFT" : "RIGHT";
+                if (!(hand == QuestBridgeHand.Left ? hasL : hasR))
                 {
                     answers.Add($"buzz_{name.ToLowerInvariant()}=skipped");
                     Debug.Log($"[Sequence] haptic {name} skipped (not detected)");
                     continue;
                 }
                 // Through the Input System, as XRI sends it
-                var device = hand == QuestLinkHand.Left ? QuestLinkInput.LeftController : QuestLinkInput.RightController;
+                var device = hand == QuestBridgeHand.Left ? QuestBridgeInput.LeftController : QuestBridgeInput.RightController;
                 Debug.Log($"[Sequence] haptic {name}");
                 device?.SendImpulse(1f, 1f);
                 yield return Show($"{name} controller\nbuzzes now (1 s)", 2f);
                 // Answered on the other controller: the one under test may be the broken one
-                var other = hand == QuestLinkHand.Left ? QuestLinkHand.Right : QuestLinkHand.Left;
+                var other = hand == QuestBridgeHand.Left ? QuestBridgeHand.Right : QuestBridgeHand.Left;
                 yield return AskButtons($"buzz_{name.ToLowerInvariant()}", $"Did the {name}\ncontroller buzz?", other);
             }
         }
 
-        static string Analog(in QuestLinkControllerState s) =>
+        static string Analog(in QuestBridgeControllerState s) =>
             $"{s.trigger:F2} {s.grip:F2} {s.thumbstick.x:+0.0;-0.0} {s.thumbstick.y:+0.0;-0.0}";
 
-        static void Track(float[] max, int at, in QuestLinkControllerState s)
+        static void Track(float[] max, int at, in QuestBridgeControllerState s)
         {
             max[at] = Mathf.Max(max[at], s.trigger);
             max[at + 1] = Mathf.Max(max[at + 1], s.grip);
@@ -235,13 +235,13 @@ namespace ElasticSea.QuestLink.BridgeTest
 
         // Answer on controller `with` (A/X = yes, B/Y = no; buttons released first) or, without
         // it, a raised hand held for HoldTime (left = yes, right = no)
-        IEnumerator AskButtons(string key, string question, QuestLinkHand with)
+        IEnumerator AskButtons(string key, string question, QuestBridgeHand with)
         {
             var armed = false;
             var held = 0f;
             bool? holding = null;
             var buttons = !Pad(with).connected ? "(other controller not detected)"
-                : with == QuestLinkHand.Right ? "RIGHT controller: A = YES, B = NO" : "LEFT controller: X = YES, Y = NO";
+                : with == QuestBridgeHand.Right ? "RIGHT controller: A = YES, B = NO" : "LEFT controller: X = YES, Y = NO";
             for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
             {
                 var c = Pad(with);
@@ -272,34 +272,34 @@ namespace ElasticSea.QuestLink.BridgeTest
             Debug.Log($"[Sequence] answer {key}=none (timeout)");
         }
 
-        static string Hand(QuestLinkHandState h, float pinch) => h.tracked ? $"pinch {pinch:F2}" : "--";
+        static string Hand(QuestBridgeHandState h, float pinch) => h.tracked ? $"pinch {pinch:F2}" : "--";
 
-        static float Pinch(QuestLinkHandState h) => h.tracked ? h.Pinch(QuestLinkFinger.Index) : 0f;
+        static float Pinch(QuestBridgeHandState h) => h.tracked ? h.Pinch(QuestBridgeFinger.Index) : 0f;
 
         // Wait for both hands down, then a raised hand held for HoldTime
         IEnumerator Ask(string key, string question)
         {
             var armed = false;
             var held = 0f;
-            QuestLinkHand? holding = null;
+            QuestBridgeHand? holding = null;
             for (var end = Time.realtimeSinceStartup + AnswerTime; Time.realtimeSinceStartup < end;)
             {
                 var l = Raised(hands.Left);
                 var r = Raised(hands.Right);
                 if (!l && !r)
                     armed = true;
-                QuestLinkHand? now = armed && l != r ? (l ? QuestLinkHand.Left : QuestLinkHand.Right) : (QuestLinkHand?)null;
+                QuestBridgeHand? now = armed && l != r ? (l ? QuestBridgeHand.Left : QuestBridgeHand.Right) : (QuestBridgeHand?)null;
                 held = now != null && now == holding ? held + Time.unscaledDeltaTime : 0f;
                 holding = now;
                 if (held >= HoldTime)
                 {
-                    var answer = holding == QuestLinkHand.Left ? "YES" : "NO";
+                    var answer = holding == QuestBridgeHand.Left ? "YES" : "NO";
                     answers.Add($"{key}={answer}");
                     Debug.Log($"[Sequence] answer {key}={answer}");
                     yield return Show($"{question.Replace('\n', ' ')}\n{answer}\n\nhands down", 2f);
                     yield break;
                 }
-                var hint = !armed ? "put both hands down first" : holding != null ? $"keep it up... {(holding == QuestLinkHand.Left ? "YES" : "NO")}" : "";
+                var hint = !armed ? "put both hands down first" : holding != null ? $"keep it up... {(holding == QuestBridgeHand.Left ? "YES" : "NO")}" : "";
                 board.text = $"{question} ({Mathf.CeilToInt(end - Time.realtimeSinceStartup)})\nLEFT hand up = YES\nRIGHT hand up = NO\n{hint}";
                 yield return null;
             }
@@ -308,7 +308,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         }
 
         // Wrist above the head (both in tracking space)
-        bool Raised(QuestLinkHandState h) =>
-            h.tracked && rig.Head != null && h[QuestLinkHandJoint.Wrist].position.y > rig.Head.localPosition.y;
+        bool Raised(QuestBridgeHandState h) =>
+            h.tracked && rig.Head != null && h[QuestBridgeHandJoint.Wrist].position.y > rig.Head.localPosition.y;
     }
 }

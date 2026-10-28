@@ -17,7 +17,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -140,12 +140,12 @@ private:
             ec.max_slice_bytes = cfg_.max_slice_bytes;
             ec.gpu_device = device_.Get();
             ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;  // HEVC: refused below
-            // Backend and layout per machine (GPU vendor, probe frame); QL_ENCODER forces one:
-            // nvidia | amd | intel | mf | mf-software | openh264 | software; QL_LAYOUT forces
+            // Backend and layout per machine (GPU vendor, probe frame); QB_ENCODER forces one:
+            // nvidia | amd | intel | mf | mf-software | openh264 | software; QB_LAYOUT forces
             // strips | slices (bench checks of the fallback layouts)
             ec.layout = enc::Layout::Auto;
-            if (const char* b = std::getenv("QL_ENCODER"); b && *b) ec.backend = b;
-            if (const char* l = std::getenv("QL_LAYOUT"); l && *l)
+            if (const char* b = std::getenv("QB_ENCODER"); b && *b) ec.backend = b;
+            if (const char* l = std::getenv("QB_LAYOUT"); l && *l)
                 ec.layout = std::string(l) == "strips" ? enc::Layout::Strips
                             : std::string(l) == "slices" ? enc::Layout::Slices : enc::Layout::Auto;
             std::string err;
@@ -195,4 +195,4 @@ std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfi
     return std::make_unique<D3D11TextureEncoder>(cfg);
 }
 
-}  // namespace ql
+}  // namespace qb

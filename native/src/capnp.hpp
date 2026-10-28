@@ -17,7 +17,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql::capnp {
+namespace qb::capnp {
 
 struct Node;
 
@@ -122,4 +122,4 @@ private:
     uint16_t dwords_ = 0, pwords_ = 0;
 };
 
-}  // namespace ql::capnp
+}  // namespace qb::capnp

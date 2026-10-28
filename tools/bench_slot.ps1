@@ -1,8 +1,8 @@
 # One headset slot, back to back, every step on the board (A to continue, questions A yes / B no):
 #   1 player check   FirstLight via start_player.ps1 (minimized, no focus), "picture OK?"
 #   2 recovery       FirstLight -sequence-recovery + tools\recovery_check.py (sleep, Link quit)
-#   3 encoder strips FirstLight with QL_ENCODER=mf QL_LAYOUT=strips, "picture OK?"
-#   4 encoder sw     FirstLight with QL_ENCODER=openh264, "picture OK?"
+#   3 encoder strips FirstLight with QB_ENCODER=mf QB_LAYOUT=strips, "picture OK?"
+#   4 encoder sw     FirstLight with QB_ENCODER=openh264, "picture OK?"
 #   5 passthrough    OVRService on, Meta Link, SensorProbe player (passthrough + env depth)
 # Between parts the board says "press Launch when you see it". A focus watcher runs throughout.
 # Needs tools\capture\bench_elevated.ps1 running (one UAC: capture + OVRService triggers) before the
@@ -38,12 +38,12 @@ function Player($exe, [string]$argLine) {
 function FirstLight($name, [string]$flags, [hashtable]$envs) {
     $d = Join-Path $dir $name
     New-Item -ItemType Directory -Force $d | Out-Null
-    foreach ($k in "QL_ENCODER", "QL_LAYOUT") { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
+    foreach ($k in "QB_ENCODER", "QB_LAYOUT") { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
     foreach ($k in $envs.Keys) { Set-Item "env:$k" $envs[$k] }
-    $env:QL_LOG = "1"
-    $env:QL_LOG_FILE = Join-Path $d "ql.log"
+    $env:QB_LOG = "1"
+    $env:QB_LOG_FILE = Join-Path $d "qb.log"
     $argLine = "$flags -screen-fullscreen 0 -screen-width 320 -screen-height 180 -logFile `"$(Join-Path $d 'player.log')`""
-    $ql = Join-Path $d "ql.log"
+    $qb = Join-Path $d "qb.log"
     for ($try = 0; ; $try++) {
         Say "part $name start ($($envs.Keys | ForEach-Object { "$_=$($envs[$_])" }))$(if ($script:noMinimize) { ' -NoMinimize' })"
         $job = Player $firstLight $argLine
@@ -52,8 +52,8 @@ function FirstLight($name, [string]$flags, [hashtable]$envs) {
         while ($job.State -eq "Running") {
             Start-Sleep -Milliseconds 500
             if (-not $script:noMinimize -and $try -eq 0) {
-                if (-not $streamingAt -and (Grep $ql "-> streaming")) { $streamingAt = Get-Date }
-                if ($streamingAt -and -not (Grep $ql "encoder:") -and ((Get-Date) - $streamingAt).TotalSeconds -gt 8) {
+                if (-not $streamingAt -and (Grep $qb "-> streaming")) { $streamingAt = Get-Date }
+                if ($streamingAt -and -not (Grep $qb "encoder:") -and ((Get-Date) - $streamingAt).TotalSeconds -gt 8) {
                     Say "part $name streaming but no frame encoded while minimized: restarting with -NoMinimize"
                     Get-Process FirstLight -ErrorAction SilentlyContinue | Stop-Process -Force
                     $restart = $true
@@ -66,10 +66,10 @@ function FirstLight($name, [string]$flags, [hashtable]$envs) {
         Remove-Job $job -Force
         if (-not $restart) { break }
         $script:noMinimize = $true
-        Rename-Item $ql "ql-minimized.log" -ErrorAction SilentlyContinue
+        Rename-Item $qb "qb-minimized.log" -ErrorAction SilentlyContinue
     }
     Say "part $name done; $((Grep (Join-Path $d 'player.log') '\[Look\] answer|\[Recovery\] done') -join '; ')"
-    Say "part $name encoder: $((Grep $ql 'encoder' | Select-Object -First 2) -join ' / ')"
+    Say "part $name encoder: $((Grep $qb 'encoder' | Select-Object -First 2) -join ' / ')"
     return $d
 }
 
@@ -79,8 +79,8 @@ if (1 -in $Parts) {
 if (2 -in $Parts) {
     $d = Join-Path $dir "2-recovery"
     New-Item -ItemType Directory -Force $d | Out-Null
-    $rec = Start-Job -ScriptBlock { param($r, $p, $q) Set-Location $r; py tools\recovery_check.py --log $p --qllog $q --timeout 1800 2>&1 } `
-        -ArgumentList $repo, (Join-Path $d "player.log"), (Join-Path $d "ql.log")
+    $rec = Start-Job -ScriptBlock { param($r, $p, $q) Set-Location $r; py tools\recovery_check.py --log $p --qblog $q --timeout 1800 2>&1 } `
+        -ArgumentList $repo, (Join-Path $d "player.log"), (Join-Path $d "qb.log")
     FirstLight "2-recovery" "-sequence-recovery -look-next `"PART 3: encoder test (strips).|$launch`"" @{} | Out-Null
     Wait-Job $rec -Timeout 30 | Out-Null
     Receive-Job $rec *> (Join-Path $d "recovery_check.log")
@@ -88,10 +88,10 @@ if (2 -in $Parts) {
     Say "part 2-recovery recovery_check: $((Get-Content (Join-Path $d 'recovery_check.log') -Tail 3) -join ' | ')"
 }
 if (3 -in $Parts) {
-    FirstLight "3-mf-strips" "-sequence-look -look-label `"PART 3 of 5|Encoder: Media Foundation strips`" -look-next `"PART 4: encoder test (software).|$launch`"" @{ QL_ENCODER = "mf"; QL_LAYOUT = "strips" } | Out-Null
+    FirstLight "3-mf-strips" "-sequence-look -look-label `"PART 3 of 5|Encoder: Media Foundation strips`" -look-next `"PART 4: encoder test (software).|$launch`"" @{ QB_ENCODER = "mf"; QB_LAYOUT = "strips" } | Out-Null
 }
 if (4 -in $Parts) {
-    FirstLight "4-openh264" "-sequence-look -look-label `"PART 4 of 5|Encoder: OpenH264 (software)`" -look-next `"PART 5: passthrough on Meta Link.|$launch`"" @{ QL_ENCODER = "openh264" } | Out-Null
+    FirstLight "4-openh264" "-sequence-look -look-label `"PART 4 of 5|Encoder: OpenH264 (software)`" -look-next `"PART 5: passthrough on Meta Link.|$launch`"" @{ QB_ENCODER = "openh264" } | Out-Null
 }
 if (5 -in $Parts) {
     $d = Join-Path $dir "5-passthrough"

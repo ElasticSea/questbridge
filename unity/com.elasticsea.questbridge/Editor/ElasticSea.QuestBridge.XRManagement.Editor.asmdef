@@ -1,0 +1,28 @@
+{
+    "name": "ElasticSea.QuestBridge.XRManagement.Editor",
+    "rootNamespace": "ElasticSea.QuestBridge.XRManagement.Editor",
+    "references": [
+        "ElasticSea.QuestBridge.XRManagement",
+        "Unity.XR.Management",
+        "Unity.XR.Management.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "QUESTBRIDGE_XR_MANAGEMENT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.management",
+            "expression": "4.0.0",
+            "define": "QUESTBRIDGE_XR_MANAGEMENT"
+        }
+    ],
+    "noEngineReferences": false
+}

@@ -3,14 +3,14 @@ using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest.Editor
+namespace ElasticSea.QuestBridge.BridgeTest.Editor
 {
     // Windows player of the FirstLight scene for hands-off bench runs (small window; run it with
     // unity\run-firstlight.ps1, which keeps it on tools\unity_hidden.ps1's hidden desktop). Build:
-    // tools\unity_hidden.ps1 -ArgLine "-batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build -logFile build.log"
-    // Run unity\install-native.ps1 first so questlink.dll is in the package.
+    // tools\unity_hidden.ps1 -ArgLine "-batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestBridge.BridgeTest.Editor.BuildFirstLight.Build -logFile build.log"
+    // Run unity\install-native.ps1 first so questbridge.dll is in the package.
     // macOS (arm64 .app, Metal), after unity/install-native.sh:
-    // Unity -batchmode -nographics -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.BuildMac -logFile build.log
+    // Unity -batchmode -nographics -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestBridge.BridgeTest.Editor.BuildFirstLight.BuildMac -logFile build.log
     public static class BuildFirstLight
     {
         public const string Output = "Build/FirstLight/FirstLight.exe";
@@ -19,18 +19,18 @@ namespace ElasticSea.QuestLink.BridgeTest.Editor
         public static void Build()
         {
             SetPlayerSettings();
-            Run(BuildTarget.StandaloneWindows64, Output, "questlink.dll");
+            Run(BuildTarget.StandaloneWindows64, Output, "questbridge.dll");
         }
 
         public static void BuildMac()
         {
             SetPlayerSettings();
-            // Apple silicon only: libquestlink.dylib is arm64 (same key as OSXStandalone.UserBuildSettings.architecture)
+            // Apple silicon only: libquestbridge.dylib is arm64 (same key as OSXStandalone.UserBuildSettings.architecture)
             EditorUserBuildSettings.SetPlatformSettings(BuildPipeline.GetBuildTargetName(BuildTarget.StandaloneOSX),
                 "Architecture", "ARM64");
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneOSX, false);
             PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneOSX, new[] { UnityEngine.Rendering.GraphicsDeviceType.Metal });
-            Run(BuildTarget.StandaloneOSX, MacOutput, "libquestlink.dylib");
+            Run(BuildTarget.StandaloneOSX, MacOutput, "libquestbridge.dylib");
         }
 
         static void SetPlayerSettings()

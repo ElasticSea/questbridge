@@ -15,7 +15,7 @@
 #include "json.hpp"
 #include "xrsp.hpp"
 
-namespace qltest {
+namespace qbtest {
 
 struct Case {
     const char* name;
@@ -36,7 +36,7 @@ struct Register {
     Register(const char* name, std::function<void()> fn) { registry().push_back({name, std::move(fn)}); }
 };
 
-inline std::string hex(const ql::Bytes& b, size_t max = 64) {
+inline std::string hex(const qb::Bytes& b, size_t max = 64) {
     static const char* d = "0123456789abcdef";
     std::string s;
     for (size_t i = 0; i < b.size() && i < max; ++i) {
@@ -49,7 +49,7 @@ inline std::string hex(const ql::Bytes& b, size_t max = 64) {
 
 template <class T>
 std::string show(const T& v) {
-    if constexpr (std::is_same_v<T, ql::Bytes>) {
+    if constexpr (std::is_same_v<T, qb::Bytes>) {
         return hex(v) + " (" + std::to_string(v.size()) + " B)";
     } else if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
         return std::to_string(+v);
@@ -68,13 +68,13 @@ inline void fail(const char* file, int line, const std::string& msg) {
 }
 
 // Repo root and fixtures, set by CMake
-inline std::string repo(const std::string& rel) { return std::string(QL_REPO_ROOT) + "/" + rel; }
+inline std::string repo(const std::string& rel) { return std::string(QB_REPO_ROOT) + "/" + rel; }
 // Parsed once and cached, so range-for over fixture(...).items() is safe
-inline const ql::json::Value& fixture(const std::string& scenario, const std::string& name) {
-    static std::map<std::string, ql::json::Value> cache;
+inline const qb::json::Value& fixture(const std::string& scenario, const std::string& name) {
+    static std::map<std::string, qb::json::Value> cache;
     std::string path = repo("tests/fixtures/" + scenario + "/" + name + ".json");
     auto it = cache.find(path);
-    if (it == cache.end()) it = cache.emplace(path, ql::json::parse_file(path)).first;
+    if (it == cache.end()) it = cache.emplace(path, qb::json::parse_file(path)).first;
     return it->second;
 }
 
@@ -84,18 +84,18 @@ inline const std::vector<std::string>& scenarios() {
     return s;
 }
 
-}  // namespace qltest
+}  // namespace qbtest
 
-#define QL_CAT2(a, b) a##b
-#define QL_CAT(a, b) QL_CAT2(a, b)
+#define QB_CAT2(a, b) a##b
+#define QB_CAT(a, b) QB_CAT2(a, b)
 #define TEST(name)                                                             \
     static void name();                                                        \
-    static qltest::Register QL_CAT(reg_, name)(#name, name);                   \
+    static qbtest::Register QB_CAT(reg_, name)(#name, name);                   \
     static void name()
 
 #define CHECK(cond)                                                            \
     do {                                                                       \
-        if (!(cond)) qltest::fail(__FILE__, __LINE__, #cond);                  \
+        if (!(cond)) qbtest::fail(__FILE__, __LINE__, #cond);                  \
     } while (0)
 
 #define CHECK_EQ(a, b)                                                         \
@@ -103,16 +103,16 @@ inline const std::vector<std::string>& scenarios() {
         auto&& qa_ = (a);                                                      \
         auto&& qb_ = (b);                                                      \
         if (!(qa_ == qb_))                                                     \
-            qltest::fail(__FILE__, __LINE__,                                   \
-                         std::string(#a " == " #b "\n  left:  ") + qltest::show(qa_) + \
-                             "\n  right: " + qltest::show(qb_));               \
+            qbtest::fail(__FILE__, __LINE__,                                   \
+                         std::string(#a " == " #b "\n  left:  ") + qbtest::show(qa_) + \
+                             "\n  right: " + qbtest::show(qb_));               \
     } while (0)
 
 // Stop the current test after a failed precondition
 #define REQUIRE(cond)                                                          \
     do {                                                                       \
         if (!(cond)) {                                                         \
-            qltest::fail(__FILE__, __LINE__, "required: " #cond);              \
+            qbtest::fail(__FILE__, __LINE__, "required: " #cond);              \
             return;                                                            \
         }                                                                      \
     } while (0)

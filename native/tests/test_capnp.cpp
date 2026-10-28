@@ -3,8 +3,8 @@
 #include "capnp.hpp"
 #include "harness.hpp"
 
-using namespace ql;
-using namespace ql::capnp;
+using namespace qb;
+using namespace qb::capnp;
 
 namespace {
 
@@ -51,8 +51,8 @@ std::vector<std::string> order_of(const json::Value& c) {
 template <class F>
 size_t each_capnp(F f) {
     size_t n = 0;
-    for (const auto& sc : qltest::scenarios())
-        for (const auto& e : qltest::fixture(sc, "control").items())
+    for (const auto& sc : qbtest::scenarios())
+        for (const auto& e : qbtest::fixture(sc, "control").items())
             if (e.has("capnp")) {
                 f(e, e["raw"].as_hex());
                 ++n;
@@ -118,8 +118,8 @@ TEST(inner_header_size_field) {
 }
 
 TEST(inner_header_reencode) {
-    for (const auto& sc : qltest::scenarios()) {
-        for (const auto& e : qltest::fixture(sc, "control").items()) {
+    for (const auto& sc : qbtest::scenarios()) {
+        for (const auto& e : qbtest::fixture(sc, "control").items()) {
             Bytes raw = e["raw"].as_hex();
             const auto& i = e["inner"];
             Bytes inner(8);

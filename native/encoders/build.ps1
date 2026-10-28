@@ -1,5 +1,5 @@
-# Build the encoder library and qlenc with the VS 2026 toolchain (CMake + Ninja bundled with VS).
-# Usage: native\encoders\build.ps1   -> native\encoders\build\qlenc.exe
+# Build the encoder library and qbenc with the VS 2026 toolchain (CMake + Ninja bundled with VS).
+# Usage: native\encoders\build.ps1   -> native\encoders\build\qbenc.exe
 $ErrorActionPreference = 'Stop'
 $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
 $env:PATH = "$installer;$env:PATH"  # vcvars64.bat calls vswhere

@@ -15,7 +15,7 @@
 
 #include "encoder.hpp"
 
-namespace ql::enc {
+namespace qb::enc {
 
 enum class Vendor { Unknown, Nvidia, Amd, Intel, Microsoft, Apple };
 
@@ -50,7 +50,7 @@ struct Attempt {
     Layout layout = Layout::Slices;
     VendorSettings settings;
     EncoderConfig config;  // the caller's, with layout resolved
-    std::string tag;       // short backend id for logs and ql_info: "mf-nvidia", "openh264", ...
+    std::string tag;       // short backend id for logs and qb_info: "mf-nvidia", "openh264", ...
 };
 
 // Attempts in order: hardware on the device's adapter first (NVIDIA, AMD, Intel, others),
@@ -74,4 +74,4 @@ using Factory = std::function<std::unique_ptr<Encoder>(const Attempt& a, std::st
 // frame (the probe was the encoder's first) and reports the attempt's tag in name().
 std::unique_ptr<Encoder> select(const std::vector<Attempt>& attempts, const Factory& factory, std::string* error);
 
-}  // namespace ql::enc
+}  // namespace qb::enc

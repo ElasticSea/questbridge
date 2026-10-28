@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "com.elasticsea.questlink": {
-      "version": "file:../../com.elasticsea.questlink",
+    "com.elasticsea.questbridge": {
+      "version": "file:../../com.elasticsea.questbridge",
       "depth": 0,
       "source": "local",
       "dependencies": {

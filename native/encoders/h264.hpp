@@ -8,7 +8,7 @@
 
 #include "encoder.hpp"
 
-namespace ql::enc::h264 {
+namespace qb::enc::h264 {
 
 enum NalType : uint8_t { kSlice = 1, kIdr = 5, kSei = 6, kSps = 7, kPps = 8, kAud = 9 };
 
@@ -88,4 +88,4 @@ bool parse_csd(std::span<const uint8_t> csd, Sps& sps, Pps& pps);
 // Append 00 00 00 01 + nal.
 void append_annexb(Bytes& out, std::span<const uint8_t> nal);
 
-}  // namespace ql::enc::h264
+}  // namespace qb::enc::h264

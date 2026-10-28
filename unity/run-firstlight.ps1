@@ -26,8 +26,8 @@ if ($vol) {
     Write-Host "headset media volume: adb not reachable"
 }
 
-$env:QL_LOG = "1"
-$env:QL_LOG_FILE = Join-Path $dir "native.log"
+$env:QB_LOG = "1"
+$env:QB_LOG_FILE = Join-Path $dir "native.log"
 $argList = "$Flags -seconds $Seconds -screen-fullscreen 0 -screen-width 320 -screen-height 180 -logFile `"$(Join-Path $dir 'player.log')`""
 Write-Host "FirstLight logs in $dir"
 & (Join-Path $root "tools\start_player.ps1") -Exe $exe -ArgLine $argList -TimeoutS ($Seconds + 60) -NoMinimize:$NoMinimize

@@ -1,7 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // Editor Play bench scene (EditorPlay.unity): floor, cubes and a board with the round's steps
     // and yes/no questions (A/X = yes, B/Y = no). Nothing times out: each step waits for A/X, each
@@ -9,8 +9,8 @@ namespace ElasticSea.QuestLink.BridgeTest
     // stops Play itself and Editor/EditorPlayBench.cs starts it again 3 s later for round 2.
     public class EditorPlayBoard : MonoBehaviour
     {
-        public QuestLinkRig rig;
-        public QuestLinkHands hands;
+        public QuestBridgeRig rig;
+        public QuestBridgeHands hands;
         public float standingHeight = 1.6f;
 
         public const string Key = "EditorPlayBench.";
@@ -37,12 +37,12 @@ namespace ElasticSea.QuestLink.BridgeTest
         IEnumerator Start()
         {
             // Dry run of the bench, after the rig's OnEnable (unity/run-editorplay.ps1 -Mock)
-            if (System.Environment.GetEnvironmentVariable("QL_BENCH_MOCK") == "1")
-                rig.Initialize(new MockQuestLink());
+            if (System.Environment.GetEnvironmentVariable("QB_BENCH_MOCK") == "1")
+                rig.Initialize(new MockQuestBridge());
             var round = Round;
             var t0 = Time.realtimeSinceStartup;
             Debug.Log($"[EditorPlay] round {round}: Play, backend {rig.Backend?.Name}");
-            while (rig.State != QuestLinkState.Streaming)
+            while (rig.State != QuestBridgeState.Streaming)
                 yield return null;
             Debug.Log($"[EditorPlay] round {round}: streaming {Time.realtimeSinceStartup - t0:F1} s after Play");
 
@@ -97,7 +97,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         }
 
         // Current head yaw faces +Z, head over the origin (as FirstLightScene)
-        void Recentre(QuestLinkPose head)
+        void Recentre(QuestBridgePose head)
         {
             recentred = true;
             var yaw = Quaternion.Euler(0f, -head.rotation.eulerAngles.y, 0f);
@@ -141,10 +141,10 @@ namespace ElasticSea.QuestLink.BridgeTest
             }
         }
 
-        bool Yes() => Pad(QuestLinkHand.Left).primaryButton || Pad(QuestLinkHand.Right).primaryButton;
-        bool No() => Pad(QuestLinkHand.Left).secondaryButton || Pad(QuestLinkHand.Right).secondaryButton;
+        bool Yes() => Pad(QuestBridgeHand.Left).primaryButton || Pad(QuestBridgeHand.Right).primaryButton;
+        bool No() => Pad(QuestBridgeHand.Left).secondaryButton || Pad(QuestBridgeHand.Right).secondaryButton;
 
-        QuestLinkControllerState Pad(QuestLinkHand h) =>
+        QuestBridgeControllerState Pad(QuestBridgeHand h) =>
             rig.Backend != null && rig.Backend.TryGetController(h, out var s) ? s : default;
 
         static int Get(string key, int fallback)

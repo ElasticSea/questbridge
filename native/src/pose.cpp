@@ -5,7 +5,7 @@
 #include "capnp.hpp"
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -72,4 +72,4 @@ std::optional<HeadPose> parse_head_pose(std::span<const uint8_t> segment) {
     return p->head;
 }
 
-}  // namespace ql
+}  // namespace qb

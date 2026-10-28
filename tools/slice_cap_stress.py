@@ -1,11 +1,11 @@
-"""Slice cap stress test: high-entropy clips through qlenc, every slice must fit one XRSP message.
+"""Slice cap stress test: high-entropy clips through qbenc, every slice must fit one XRSP message.
 
-Runs qlenc (the platform encoder: Media Foundation on Windows, VideoToolbox on macOS) on the
+Runs qbenc (the platform encoder: Media Foundation on Windows, VideoToolbox on macOS) on the
 noise / motion / cuts patterns, all intra and with P frames, and fails if any slice NAL is over
-the cap (qlenc exits 4) or the encoder gives up. Prints the largest slice, how many frames needed
+the cap (qbenc exits 4) or the encoder gives up. Prints the largest slice, how many frames needed
 the re-encode fallback, the QP it cost and the slowest encode() call.
 
-Usage: py tools/slice_cap_stress.py [--frames 72] [--qlenc PATH] [--cap 100000] [-- extra qlenc args]
+Usage: py tools/slice_cap_stress.py [--frames 72] [--qbenc PATH] [--cap 100000] [-- extra qbenc args]
        e.g. -- --codec hevc   or   -- --size 2880x1600
 """
 import argparse
@@ -18,17 +18,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = [(p, g) for p in ("cuts", "motion", "noise") for g in (1, 72)]
 
 
-def find_qlenc():
-    for rel in ("native/build/bin/Release/qlenc.exe", "native/build/bin/qlenc", "native/encoders/build/qlenc.exe"):
+def find_qbenc():
+    for rel in ("native/build/bin/Release/qbenc.exe", "native/build/bin/qbenc", "native/encoders/build/qbenc.exe"):
         path = os.path.join(ROOT, rel)
         if os.path.exists(path):
             return os.path.normpath(path)
-    sys.exit("qlenc not found; build native/ first")
+    sys.exit("qbenc not found; build native/ first")
 
 
-def run_case(qlenc, pattern, gop, frames, cap, extra):
+def run_case(qbenc, pattern, gop, frames, cap, extra):
     name = f"slicecap-{pattern}-gop{gop}"
-    cmd = [qlenc, "--frames", str(frames), "--name", name, "--pattern", pattern, "--gop", str(gop),
+    cmd = [qbenc, "--frames", str(frames), "--name", name, "--pattern", pattern, "--gop", str(gop),
            "--max-slice-bytes", str(cap), "--root", ROOT] + extra
     p = subprocess.run(cmd, capture_output=True, text=True)
     out = p.stdout + p.stderr
@@ -53,17 +53,17 @@ def run_case(qlenc, pattern, gop, frames, cap, extra):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", type=int, default=72)
-    ap.add_argument("--qlenc")
+    ap.add_argument("--qbenc")
     ap.add_argument("--cap", type=int, default=100_000)
-    ap.add_argument("extra", nargs="*", help="extra qlenc arguments (after --)")
+    ap.add_argument("extra", nargs="*", help="extra qbenc arguments (after --)")
     a = ap.parse_args()
-    qlenc = a.qlenc or find_qlenc()
-    print(f"qlenc {qlenc} {' '.join(a.extra)}, {a.frames} frames, cap {a.cap} B")
+    qbenc = a.qbenc or find_qbenc()
+    print(f"qbenc {qbenc} {' '.join(a.extra)}, {a.frames} frames, cap {a.cap} B")
     print(f"{'case':<14}{'largest':>9}{'rejected':>10}{'refit fr':>9}{'encodes':>8}{'QP':>6}{'refit QP':>9}"
           f"{'ms mean':>8}{'ms max':>8}  result")
     failed = 0
     for pattern, gop in CASES:
-        r = run_case(qlenc, pattern, gop, a.frames, a.cap, a.extra)
+        r = run_case(qbenc, pattern, gop, a.frames, a.cap, a.extra)
         qp = f"{r['qp']:.1f}" if "qp" in r else "-"
         rqp = f"{r['refit_qp']:.1f}" if r.get("refit_frames") and "refit_qp" in r else "-"
         print(f"{r['case']:<14}{r.get('largest', '-'):>9}{r.get('rejected', '-'):>10}{r.get('refit_frames', '-'):>9}"

@@ -6,7 +6,7 @@ Layout: docs/protocol/spec.md §8. The same parse lives in native/src/session.cp
 Input (first argument):
   control.json          a fixture's control messages (the last Quest HELLO wins)
   <file>.txt | <hex>    hex of one HELLO: the topic-1 body (starts 81) or the whole
-                        XRSP message; qlhost / QL_LOG=1 print it as "info HELLO <hex>"
+                        XRSP message; qbhost / QB_LOG=1 print it as "info HELLO <hex>"
   <file>.pcap <device>  a USBPcap capture
 
 Usage:

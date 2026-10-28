@@ -5,7 +5,7 @@
 #include <map>
 #include <stdexcept>
 
-namespace ql::capnp {
+namespace qb::capnp {
 
 Ptr::Ptr(Node n) : p_(std::make_unique<Node>(std::move(n))) {}
 Ptr::Ptr(const Ptr& o) : p_(o.p_ ? std::make_unique<Node>(*o.p_) : nullptr) {}
@@ -343,4 +343,4 @@ size_t View::list(size_t i, View* out, size_t max_out) const {
     return count;
 }
 
-}  // namespace ql::capnp
+}  // namespace qb::capnp

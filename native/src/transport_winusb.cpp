@@ -15,7 +15,7 @@
 #include "ovr_service.hpp"
 #include "transport.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -193,4 +193,4 @@ OpenError try_claim(std::string& detail) {
     return err;
 }
 
-}  // namespace ql
+}  // namespace qb

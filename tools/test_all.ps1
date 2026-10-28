@@ -2,10 +2,10 @@
 # Usage: tools\test_all.ps1 [-Quick] [-Only py|native|unity] [-UnityTimeout <s>]
 #   -Quick  Python + native only (before each commit). Full run (with Unity) before merging to main.
 # Suites: py (unittest), native (native\build.ps1: Release build incl. encoders, then CTest; the full
-#         run adds tools\slice_cap_stress.py: high-entropy clips through qlenc, slices under the cap),
+#         run adds tools\slice_cap_stress.py: high-entropy clips through qbenc, slices under the cap),
 #         unity (BridgeTest EditMode + PlayMode in batchmode, PlayMode again in a minimized
 #         non-batchmode Editor; skipped if Unity is missing). Unity runs
-#         with QL_USB=0 (questlink.dll never opens the headset) and a D3D11 device (Editor Play tests).
+#         with QB_USB=0 (questbridge.dll never opens the headset) and a D3D11 device (Editor Play tests).
 # Logs: out\runs\test_all\<stamp>\<step>.log. Exit code 0 only if no step failed.
 param(
     [switch]$Quick,
@@ -81,14 +81,14 @@ function Test-Native {
     Add-Result "native" $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
 }
 
-# Full run: high-entropy clips through qlenc on the GPU encoder; every slice must fit one XRSP message.
+# Full run: high-entropy clips through qbenc on the GPU encoder; every slice must fit one XRSP message.
 function Test-SliceCap {
     $log = "$logDir\slicecap.log"; $t = Get-Date
     $code = Invoke-Logged "py" "tools\slice_cap_stress.py" $log
     $text = Get-Content $log -Raw
-    $detail = if ($text -match "all (\d+) cases under the cap") { "$($Matches[1]) qlenc cases under the cap" }
+    $detail = if ($text -match "all (\d+) cases under the cap") { "$($Matches[1]) qbenc cases under the cap" }
               elseif ($text -match "FAILED: (\d+) of (\d+)") { "$($Matches[1]) of $($Matches[2]) cases over the cap" }
-              else { "qlenc did not run (exit $code)" }
+              else { "qbenc did not run (exit $code)" }
     Add-Result "slicecap" $(if ($code -eq 0) { "PASS" } else { "FAIL" }) ((Get-Date) - $t).TotalSeconds $detail $log
 }
 
@@ -129,10 +129,10 @@ function Test-UnityCompile($project) {
 
 function Test-Unity {
     if (-not (Test-Path $unityExe)) { Add-Result "unity" "SKIP" 0 "Unity 6000.3.11f1 not installed at $unityExe" $null; return }
-    $env:QL_USB = "0"
-    Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestLink.Tests;ElasticSea.QuestLink.XRManagement.Tests"
-    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests;ElasticSea.QuestLink.XRManagement.PlayModeTests"
-    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestLink.PlayModeTests" -Window
+    $env:QB_USB = "0"
+    Test-UnityTests "BridgeTest" "EditMode" "ElasticSea.QuestBridge.Tests;ElasticSea.QuestBridge.XRManagement.Tests"
+    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestBridge.PlayModeTests;ElasticSea.QuestBridge.XRManagement.PlayModeTests"
+    Test-UnityTests "BridgeTest" "PlayMode" "ElasticSea.QuestBridge.PlayModeTests" -Window
 }
 
 $total = Get-Date

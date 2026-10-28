@@ -6,7 +6,7 @@
 #include "harness.hpp"
 #include "session.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
@@ -15,7 +15,7 @@ struct Recorded {
     Bytes table, seg;
 };
 Recorded recorded(const char* dir) {
-    for (const auto& g : qltest::fixture("handshake", "streams").items())
+    for (const auto& g : qbtest::fixture("handshake", "streams").items())
         if (g["topic"].as_u64() == 6 && g["dir"].as_string() == dir)
             return {g["samples"].items()[0]["raw"].as_hex(), g["samples"].items()[1]["raw"].as_hex()};
     return {};

@@ -1,14 +1,14 @@
-using ElasticSea.QuestLink.XRHands;
+using ElasticSea.QuestBridge.XRHands;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // First live scene for the headset: sky colour, a 1 m floor grid, cubes 1-3 m away and big
-    // instructions, rendered through a QuestLinkRig on the real libquestlink backend. On the
+    // instructions, rendered through a QuestBridgeRig on the real libquestbridge backend. On the
     // first head pose the rig is recentred so the instructions are straight ahead and, if the
     // Link origin is at eye level, the floor drops below the head. Tracked hands show as joint
-    // spheres (QuestLinkHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
+    // spheres (QuestBridgeHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
     // the hand instructions instead of the audio test. "-sequence" runs BenchSequence (guided
     // volume, audio, hands and yes/no questions on the board), "-sequence-audio" its audio part
     // plus a handover to the next host, "-sequence-controllers" a controller and haptics pass
@@ -19,34 +19,34 @@ namespace ElasticSea.QuestLink.BridgeTest
         const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nHold up both hands, open and\nclose them and pinch:\nspheres follow your fingers.\n\nThen take the headset off.";
         const string AudioInstructions = "Look around:\nobjects should stay still, in 3D.\n\nAudio test below.\nThen take the headset off.";
 
-        public QuestLinkRig.BackendMode backend = QuestLinkRig.BackendMode.Native;
+        public QuestBridgeRig.BackendMode backend = QuestBridgeRig.BackendMode.Native;
         public Color sky = new Color(0.55f, 0.75f, 0.95f);
         [Tooltip("Head height used when the Link origin is at eye level.")]
         public float standingHeight = 1.6f;
         [Tooltip("Game audio to the headset (beeps, mic playback) and the headset mic back; AudioBench.")]
         public bool audioTest = true;
 
-        QuestLinkRig rig;
-        QuestLinkHands hands;
-        QuestLinkXRHands xrHands;
+        QuestBridgeRig rig;
+        QuestBridgeHands hands;
+        QuestBridgeXRHands xrHands;
         bool recentred;
         int submitted;
-        QuestLinkState lastState = QuestLinkState.Idle;
+        QuestBridgeState lastState = QuestBridgeState.Idle;
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
         bool sequence, audioOnly, controllersOnly, recovery, look;
         AudioBench bench;
-        QuestLinkAudio output;
+        QuestBridgeAudio output;
         TextMesh board;
 
         void Awake()
         {
-            // "-native-check": log whether libquestlink loads, then quit (exit 1 if not). No USB.
+            // "-native-check": log whether libquestbridge loads, then quit (exit 1 if not). No USB.
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-native-check") >= 0)
             {
-                var ok = NativeQuestLink.LibraryLoads(out var error);
-                Debug.Log(ok ? "[QuestLink] native check: libquestlink loaded" : $"[QuestLink] native check failed: {error}");
+                var ok = NativeQuestBridge.LibraryLoads(out var error);
+                Debug.Log(ok ? "[QuestBridge] native check: libquestbridge loaded" : $"[QuestBridge] native check failed: {error}");
                 Application.Quit(ok ? 0 : 1);
                 enabled = false;
                 return;
@@ -62,7 +62,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             var seconds = SecondsArg();
             if (seconds > 0f)
             {
-                Debug.Log($"[QuestLink] quitting after {seconds} s");
+                Debug.Log($"[QuestBridge] quitting after {seconds} s");
                 Invoke(nameof(Quit), seconds);
             }
             // "-hands": hand-tracking bench (hand instructions instead of the audio test)
@@ -84,7 +84,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-look") >= 0)
                 { sequence = look = true; audioTest = false; }
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
-                backend = QuestLinkRig.BackendMode.Mock;
+                backend = QuestBridgeRig.BackendMode.Mock;
 
             var screen = new GameObject("Screen Camera").AddComponent<Camera>();
             screen.clearFlags = CameraClearFlags.SolidColor;
@@ -108,16 +108,16 @@ namespace ElasticSea.QuestLink.BridgeTest
             Cube(new Vector3(0.3f, 0.2f, -2.0f), 0.4f, new Color(0.3f, 0.85f, 0.85f));
             board = Text(sequence ? "Starting soon..." : audioTest ? AudioInstructions : Instructions, new Vector3(0f, sequence ? 2.1f : 1.9f, 3.2f), sequence ? 1.7f : audioTest ? 1.2f : 2.3f);
 
-            var rigObject = new GameObject("QuestLink Rig");
+            var rigObject = new GameObject("QuestBridge Rig");
             rigObject.SetActive(false);
-            rig = rigObject.AddComponent<QuestLinkRig>();
+            rig = rigObject.AddComponent<QuestBridgeRig>();
             rig.backend = backend;
-            hands = rigObject.AddComponent<QuestLinkHands>();
+            hands = rigObject.AddComponent<QuestBridgeHands>();
             rigObject.AddComponent<HandJointsVisualizer>();
-            xrHands = rigObject.AddComponent<QuestLinkXRHands>();
+            xrHands = rigObject.AddComponent<QuestBridgeXRHands>();
             rigObject.SetActive(true);
             if (rig.Backend != null)
-                Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
+                Debug.Log($"[QuestBridge] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
             if (audioTest && rig.Head != null)
                 AudioTest();
             var snapshotAt = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-snapshot");
@@ -129,7 +129,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             }
             if (recovery)
             {
-                var status = rigObject.AddComponent<QuestLinkConnectionStatus>();
+                var status = rigObject.AddComponent<QuestBridgeConnectionStatus>();
                 status.showOverlay = false;  // the board shows it
                 var check = gameObject.AddComponent<RecoveryCheck>();
                 check.rig = rig;
@@ -158,16 +158,16 @@ namespace ElasticSea.QuestLink.BridgeTest
         // Listener on the head, sent to the headset; beeps and mic record/playback below the instructions
         void AudioTest()
         {
-            output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
+            output = rig.Head.gameObject.AddComponent<QuestBridgeAudio>();
             output.rig = rig;
             bench = new GameObject("Audio Bench").AddComponent<AudioBench>();
             bench.once = sequence;
-            var mic = bench.gameObject.AddComponent<QuestLinkMicrophone>();
+            var mic = bench.gameObject.AddComponent<QuestBridgeMicrophone>();
             mic.rig = rig;
             bench.output = output;
             bench.mic = mic;
             bench.label = Text("", new Vector3(0f, 0.7f, 3.2f), 0.9f);
-            Debug.Log($"[QuestLink] audio test on, output {AudioSettings.outputSampleRate} Hz {AudioSettings.speakerMode}");
+            Debug.Log($"[QuestBridge] audio test on, output {AudioSettings.outputSampleRate} Hz {AudioSettings.speakerMode}");
         }
 
         void Update()
@@ -192,20 +192,20 @@ namespace ElasticSea.QuestLink.BridgeTest
             var state = rig.State;
             if (state != lastState)
             {
-                Debug.Log($"[QuestLink] state {lastState} -> {state} at {Time.realtimeSinceStartup:F1} s");
+                Debug.Log($"[QuestBridge] state {lastState} -> {state} at {Time.realtimeSinceStartup:F1} s");
                 lastState = state;
-                connectingSince = state == QuestLinkState.Connecting ? Time.realtimeSinceStartup : -1f;
+                connectingSince = state == QuestBridgeState.Connecting ? Time.realtimeSinceStartup : -1f;
                 staleLogged = false;
             }
             if (!staleLogged && Stale(hasPose))
             {
                 staleLogged = true;
-                Debug.Log($"[QuestLink] {StaleHint}");
+                Debug.Log($"[QuestBridge] {StaleHint}");
             }
         }
 
         bool Stale(bool hasPose) =>
-            hasPose && rig.State == QuestLinkState.Connecting && connectingSince >= 0f &&
+            hasPose && rig.State == QuestBridgeState.Connecting && connectingSince >= 0f &&
             Time.realtimeSinceStartup - connectingSince > 5f;
 
         // PC window only: the headset shows our frames only once Streaming
@@ -215,8 +215,8 @@ namespace ElasticSea.QuestLink.BridgeTest
                 return;
             GUI.depth = -10; // above the rig's mirror
             statusStyle ??= new GUIStyle(GUI.skin.label) { fontSize = 22, wordWrap = true, normal = { textColor = Color.yellow } };
-            var text = $"QuestLink: {rig.State}, frame {rig.FrameIndex}";
-            if (staleLogged && rig.State == QuestLinkState.Connecting)
+            var text = $"QuestBridge: {rig.State}, frame {rig.FrameIndex}";
+            if (staleLogged && rig.State == QuestBridgeState.Connecting)
                 text += "\n" + StaleHint;
             GUI.Label(new Rect(16, 12, Screen.width - 32, 120), text, statusStyle);
         }
@@ -226,14 +226,14 @@ namespace ElasticSea.QuestLink.BridgeTest
             if (rig != null && rig.FrameIndex > 0 && (int)rig.FrameIndex / 720 != submitted)
             {
                 submitted = (int)rig.FrameIndex / 720;
-                Debug.Log($"[QuestLink] {rig.State}, frame {rig.FrameIndex}, head {rig.RenderPose.position}");
-                Debug.Log($"[QuestLink] hands data {hands.HasData}: {Describe(hands.Left)}; {Describe(hands.Right)}; " +
+                Debug.Log($"[QuestBridge] {rig.State}, frame {rig.FrameIndex}, head {rig.RenderPose.position}");
+                Debug.Log($"[QuestBridge] hands data {hands.HasData}: {Describe(hands.Left)}; {Describe(hands.Right)}; " +
                           $"XR Hands tracked L {xrHands.Subsystem?.leftHand.isTracked} R {xrHands.Subsystem?.rightHand.isTracked}");
             }
         }
 
-        static string Describe(QuestLinkHandState h) => h.tracked
-            ? $"{h.hand} tracked conf {h.confidence:F2} pinch {h.Pinch(QuestLinkFinger.Index):F2} wrist {h[QuestLinkHandJoint.Wrist].position} t {h.timeNs}"
+        static string Describe(QuestBridgeHandState h) => h.tracked
+            ? $"{h.hand} tracked conf {h.confidence:F2} pinch {h.Pinch(QuestBridgeFinger.Index):F2} wrist {h[QuestBridgeHandJoint.Wrist].position} t {h.timeNs}"
             : $"{h.hand} not tracked";
 
         static float SecondsArg()
@@ -247,15 +247,15 @@ namespace ElasticSea.QuestLink.BridgeTest
 
         void Quit()
         {
-            Debug.Log($"[QuestLink] quit: {(rig != null ? rig.State.ToString() : "no rig")}, frame {(rig != null ? rig.FrameIndex : 0)}");
+            Debug.Log($"[QuestBridge] quit: {(rig != null ? rig.State.ToString() : "no rig")}, frame {(rig != null ? rig.FrameIndex : 0)}");
             // Leaves the headset's session up and logs the resume numbers for an attaching host
-            if (rig != null && rig.Backend is NativeQuestLink)
-                NativeQuestLink.Shutdown();
+            if (rig != null && rig.Backend is NativeQuestBridge)
+                NativeQuestBridge.Shutdown();
             Application.Quit();
         }
 
         // Turn the rig so the current head yaw faces +Z and put the head over the origin.
-        void Recentre(QuestLinkPose head)
+        void Recentre(QuestBridgePose head)
         {
             recentred = true;
             var yaw = Quaternion.Euler(0f, -head.rotation.eulerAngles.y, 0f);
@@ -263,7 +263,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             var eyeLevel = head.position.y < 0.8f;
             var y = eyeLevel ? standingHeight - head.position.y : 0f;
             rig.transform.SetPositionAndRotation(new Vector3(-p.x, y, -p.z), yaw);
-            Debug.Log($"[QuestLink] first head pose {head.position}, yaw {head.rotation.eulerAngles.y:F0}; " +
+            Debug.Log($"[QuestBridge] first head pose {head.position}, yaw {head.rotation.eulerAngles.y:F0}; " +
                       (eyeLevel ? $"eye-level origin, head placed at {standingHeight} m" : "floor-level origin"));
         }
 

@@ -3,8 +3,8 @@
 #include "harness.hpp"
 #include "session.hpp"
 
-using namespace ql;
-namespace es = ql::encoded_slice;
+using namespace qb;
+namespace es = qb::encoded_slice;
 
 namespace {
 
@@ -17,7 +17,7 @@ struct Recorded {
 const Recorded& recorded() {
     static Recorded rec = [] {
         Recorded r;
-        auto clip = json::parse_file(qltest::repo("tests/fixtures/replay/idr-frame.json"));
+        auto clip = json::parse_file(qbtest::repo("tests/fixtures/replay/idr-frame.json"));
         for (const auto& m : clip["frame"].items())
             r.msgs.push_back({uint8_t(m["topic"].as_u64()), uint8_t(m["flags"].as_u64()), m["body"].as_hex()});
         // Per slice: table, header, csd, video

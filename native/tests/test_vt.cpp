@@ -12,8 +12,8 @@
 #include "harness.hpp"
 #include "vt_decode.hpp"
 
-using namespace ql;
-namespace es = ql::encoded_slice;
+using namespace qb;
+namespace es = qb::encoded_slice;
 
 namespace {
 

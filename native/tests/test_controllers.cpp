@@ -7,13 +7,13 @@
 #include "pose.hpp"
 #include "session.hpp"
 
-using namespace ql;
+using namespace qb;
 
 namespace {
 
 // Labelled Cap'n Proto message (segment table + segment) -> the segment
 Bytes segment(const char* label) {
-    for (const auto& m : qltest::fixture("sensors", "controllers").items())
+    for (const auto& m : qbtest::fixture("sensors", "controllers").items())
         if (m["label"].as_string() == label) {
             Bytes b = m["capnp"].as_hex();
             return Bytes(b.begin() + 8, b.end());
@@ -29,7 +29,7 @@ const ControllerInput& input(const char* label, int index) {
 }
 
 const json::Value& haptic_frame(const char* label) {
-    for (const auto& f : qltest::fixture("sensors", "haptics").items())
+    for (const auto& f : qbtest::fixture("sensors", "haptics").items())
         if (f["label"].as_string() == label) return f;
     throw std::runtime_error(label);
 }

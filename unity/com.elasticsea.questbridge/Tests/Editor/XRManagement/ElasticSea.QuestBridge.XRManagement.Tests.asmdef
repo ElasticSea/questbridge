@@ -1,0 +1,35 @@
+{
+    "name": "ElasticSea.QuestBridge.XRManagement.Tests",
+    "rootNamespace": "ElasticSea.QuestBridge.Tests",
+    "references": [
+        "ElasticSea.QuestBridge",
+        "ElasticSea.QuestBridge.XRManagement",
+        "Unity.XR.Management",
+        "Unity.XR.Management.Editor",
+        "Unity.XR.CoreUtils",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "QUESTBRIDGE_XR_MANAGEMENT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.management",
+            "expression": "4.0.0",
+            "define": "QUESTBRIDGE_XR_MANAGEMENT"
+        }
+    ],
+    "noEngineReferences": false
+}

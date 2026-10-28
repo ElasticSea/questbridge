@@ -11,7 +11,7 @@
 
 #include "transport.hpp"
 
-namespace ql {
+namespace qb {
 
 namespace {
 
@@ -161,4 +161,4 @@ std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
     return std::make_unique<LibusbTransport>(h);
 }
 
-}  // namespace ql
+}  // namespace qb

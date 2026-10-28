@@ -8,7 +8,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-namespace ql::enc {
+namespace qb::enc {
 
 struct D3D11Input::Impl {
     // split
@@ -144,4 +144,4 @@ GpuInput d3d11_read_back_input() {
     return g;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

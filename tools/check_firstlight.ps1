@@ -10,13 +10,13 @@ if (-not $Out) { $Out = Join-Path $repo "out\runs\firstlight-snapshot.png" }
 $runs = Split-Path $Out
 New-Item -ItemType Directory -Force $runs | Out-Null
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot "unity_hidden.ps1") -WorkingDirectory $repo -ArgLine "-batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestLink.BridgeTest.Editor.BuildFirstLight.Build -logFile `"$runs\firstlight-build.log`""
+    & (Join-Path $PSScriptRoot "unity_hidden.ps1") -WorkingDirectory $repo -ArgLine "-batchmode -quit -projectPath unity/BridgeTest -executeMethod ElasticSea.QuestBridge.BridgeTest.Editor.BuildFirstLight.Build -logFile `"$runs\firstlight-build.log`""
     if ($LASTEXITCODE -ne 0) { Write-Host "build failed ($LASTEXITCODE), see $runs\firstlight-build.log"; exit 1 }
 }
 $log = Join-Path $runs "firstlight-snapshot.log"
 $ppm = [IO.Path]::ChangeExtension($Out, ".ppm")
 Remove-Item $Out, $ppm, $log -ErrorAction SilentlyContinue
-$env:QL_USB = "0"
+$env:QB_USB = "0"
 & (Join-Path $PSScriptRoot "start_player.ps1") -Exe (Join-Path $repo "unity\BridgeTest\Build\FirstLight\FirstLight.exe") `
     -ArgLine "$Mode -mock -snapshot `"$ppm`" -seconds 60 -screen-fullscreen 0 -logFile `"$log`"" -TimeoutS 90 | Out-Null
 $code = $LASTEXITCODE

@@ -1,7 +1,7 @@
 """Recovery live check, PC side: follows the FirstLight player's log during "-sequence-recovery"
 and disturbs the headset over adb when the board announces each drop, then summarises.
 
-Usage: py tools/recovery_check.py --log PLAYER_LOG [--qllog QL_LOG_FILE] [--timeout 600] [--dry-run]
+Usage: py tools/recovery_check.py --log PLAYER_LOG [--qblog QB_LOG_FILE] [--timeout 600] [--dry-run]
 
 The player shows every step in the headset (RecoveryCheck.cs); this script only reacts to its
 "[Recovery] drop N <kind>" lines:
@@ -77,7 +77,7 @@ def run(step, serial, dry_run, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--log", required=True, help="the player's -logFile")
-    ap.add_argument("--qllog", help="QL_LOG_FILE of the player: its link transitions are summarised")
+    ap.add_argument("--qblog", help="QB_LOG_FILE of the player: its link transitions are summarised")
     ap.add_argument("--serial", default=SERIAL)
     ap.add_argument("--timeout", type=float, default=600, help="seconds; the user paces the steps")
     ap.add_argument("--dry-run", action="store_true", help="print the adb steps, don't run them")
@@ -97,8 +97,8 @@ def main():
         if m:
             done = m.group(1)
             break
-    if a.qllog and os.path.exists(a.qllog):
-        with open(a.qllog, encoding="utf-8", errors="replace") as f:
+    if a.qblog and os.path.exists(a.qblog):
+        with open(a.qblog, encoding="utf-8", errors="replace") as f:
             for line in f:
                 if "link:" in line or "resum" in line or "restart" in line or ("BYE" in line and "headset" in line):
                     out("  native " + line.strip())

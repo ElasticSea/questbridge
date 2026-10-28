@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace ql::enc {
+namespace qb::enc {
 
 namespace {
 
@@ -182,4 +182,4 @@ std::unique_ptr<Encoder> make_strip_encoder(const EncoderConfig& config, const S
     return enc;
 }
 
-}  // namespace ql::enc
+}  // namespace qb::enc

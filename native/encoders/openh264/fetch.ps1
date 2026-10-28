@@ -1,12 +1,12 @@
 ﻿# Download Cisco's prebuilt OpenH264 DLL (the software encoder fallback) on this PC.
 # Cisco pays the H.264 patent royalties only for its own binary fetched from ciscobinary.openh264.org
 # by the end user, so it is fetched per machine, never shipped with our builds.
-# Usage: native\encoders\openh264\fetch.ps1  -> %LOCALAPPDATA%\QuestLink\openh264\openh264-<ver>-win64.dll
+# Usage: native\encoders\openh264\fetch.ps1  -> %LOCALAPPDATA%\QuestBridge\openh264\openh264-<ver>-win64.dll
 $ErrorActionPreference = 'Stop'
 $ver = '2.7.0'  # must match include/wels/codec_ver.h
 $sha = '0ef5e7f3b38753b15c13afa0418d4d7805fa228e6adfd3e425bbf758cff1c288'  # openh264-2.7.0-win64.dll.signed.sha256.txt
 $name = "openh264-$ver-win64.dll"
-$dir = Join-Path $env:LOCALAPPDATA 'QuestLink\openh264'
+$dir = Join-Path $env:LOCALAPPDATA 'QuestBridge\openh264'
 $dll = Join-Path $dir $name
 if ((Test-Path $dll) -and (Get-FileHash $dll -Algorithm SHA256).Hash -eq $sha) { Write-Output $dll; exit 0 }
 New-Item -ItemType Directory -Force $dir | Out-Null

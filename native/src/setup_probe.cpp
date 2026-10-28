@@ -1,11 +1,11 @@
-// ql_check_setup: gathers setup_check.hpp's Probe on this machine and evaluates it.
+// qb_check_setup: gathers setup_check.hpp's Probe on this machine and evaluates it.
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 
-#include "questlink.h"
+#include "questbridge.h"
 #include "setup_check.hpp"
 #include "transport.hpp"
 
@@ -23,12 +23,12 @@
 #  include <sys/sysctl.h>
 #endif
 
-// Layout the C# side reads (Editor/QuestLinkCheckSetup.cs)
-static_assert(sizeof(ql_check) == 868 && offsetof(ql_check, fix) == 356);
+// Layout the C# side reads (Editor/QuestBridgeCheckSetup.cs)
+static_assert(sizeof(qb_check) == 868 && offsetof(qb_check, fix) == 356);
 
 namespace {
 
-using namespace ql;
+using namespace qb;
 using setup::Claim;
 using setup::Encoder;
 
@@ -92,9 +92,9 @@ void probe_encoder(setup::Probe& p) {
 #endif
 }
 
-// QL_USB=0 (Unity tests with a headset plugged in): never open the Quest
+// QB_USB=0 (Unity tests with a headset plugged in): never open the Quest
 bool usb_off() {
-    const char* v = std::getenv("QL_USB");
+    const char* v = std::getenv("QB_USB");
     return v && *v && std::atoi(v) == 0;
 }
 
@@ -108,8 +108,8 @@ void copy(char* dst, size_t cap, const std::string& s) {
 
 extern "C" {
 
-int ql_check_setup(uint32_t flags, ql_check* out, int cap) {
-    if (cap > 0 && !out) return QL_ERR_ARGUMENT;
+int qb_check_setup(uint32_t flags, qb_check* out, int cap) {
+    if (cap > 0 && !out) return QB_ERR_ARGUMENT;
     setup::Probe p;
     try {
         probe_os(p);
@@ -123,14 +123,14 @@ int ql_check_setup(uint32_t flags, ql_check* out, int cap) {
         p.xrsp = usb.xrsp;
         if (p.xrsp && open_transport_count() > 0) {
             p.claim = Claim::Self;
-        } else if (p.xrsp && !(flags & QL_CHECK_NO_CLAIM) && !usb_off()) {
+        } else if (p.xrsp && !(flags & QB_CHECK_NO_CLAIM) && !usb_off()) {
             OpenError err = try_claim(p.claim_detail);
             p.claim = err == OpenError::None ? Claim::Ok : err == OpenError::Busy ? Claim::Busy : Claim::Failed;
             if (err == OpenError::NotFound) p.claim_detail = "the Link interface went away (Link restarting?)";
         }
         probe_encoder(p);
     } catch (...) {
-        return QL_ERR_INTERNAL;
+        return QB_ERR_INTERNAL;
     }
     auto checks = setup::evaluate(p);
     for (int i = 0; i < cap && i < int(checks.size()); ++i) {
@@ -144,11 +144,11 @@ int ql_check_setup(uint32_t flags, ql_check* out, int cap) {
     return int(checks.size());
 }
 
-int ql_stop_ovr_service(void) {
+int qb_stop_ovr_service(void) {
 #if defined(_WIN32)
     return ovr::request_stop() ? 1 : 0;
 #else
-    return QL_ERR_UNSUPPORTED;
+    return QB_ERR_UNSUPPORTED;
 #endif
 }
 

@@ -10,7 +10,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql::json {
+namespace qb::json {
 
 class Value {
 public:
@@ -54,4 +54,4 @@ Value parse_file(const std::string& path);
 
 Bytes from_hex(std::string_view hex);
 
-}  // namespace ql::json
+}  // namespace qb::json

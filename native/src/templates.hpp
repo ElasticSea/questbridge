@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace ql::templates {
+namespace qb::templates {
 
 struct Control {
     uint8_t type;
@@ -32,4 +32,4 @@ const std::vector<Control>& controls();
 const std::vector<SetupMessage>& stream_setup();
 const std::vector<SliceTemplate>& slice_headers();
 
-}  // namespace ql::templates
+}  // namespace qb::templates

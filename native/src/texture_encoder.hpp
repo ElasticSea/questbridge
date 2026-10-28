@@ -1,4 +1,4 @@
-// Graphics texture -> H.264 / HEVC slices, for ql_submit_frame_texture.
+// Graphics texture -> H.264 / HEVC slices, for qb_submit_frame_texture.
 //
 // capture() runs on the graphics (render) thread and must finish copying before it returns,
 // because the engine reuses the texture next frame. encode() runs on the runtime's encode
@@ -12,7 +12,7 @@
 
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 struct TextureEncoderConfig {
     int fps = 72;
@@ -20,7 +20,7 @@ struct TextureEncoderConfig {
     uint32_t bitrate = 100'000'000;
     int gop = 1;  // 1 = all intra (what the headset is proven to play); >1 = IDR every gop frames
     bool hevc = false;  // the session's CONFIG codec; VideoToolbox only
-    size_t max_slice_bytes = 100'000;  // the headset's slice cap (ql_device_info.max_slice_bytes)
+    size_t max_slice_bytes = 100'000;  // the headset's slice cap (qb_device_info.max_slice_bytes)
 };
 
 struct EncodedSlices {
@@ -49,11 +49,11 @@ public:
     virtual std::string selection() const { return {}; }
 };
 
-// The texture encoder's backend for ql_info::encoder (process-wide; the runtime sets it).
+// The texture encoder's backend for qb_info::encoder (process-wide; the runtime sets it).
 void set_encoder_info(const std::string& name);
 std::string encoder_info();
 
 // Platform backend; null with *error set when unavailable.
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig& cfg, std::string* error);
 
-}  // namespace ql
+}  // namespace qb

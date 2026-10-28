@@ -9,7 +9,7 @@
 #include "select.hpp"
 #include "strips.hpp"
 
-using namespace ql::enc;
+using namespace qb::enc;
 
 namespace {
 

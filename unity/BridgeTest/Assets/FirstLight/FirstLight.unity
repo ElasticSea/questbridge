@@ -147,7 +147,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4818b5019886ab1488bebbdea66bab37, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ElasticSea.QuestLink.BridgeTest.FirstLightScene
+  m_EditorClassIdentifier: Assembly-CSharp::ElasticSea.QuestBridge.BridgeTest.FirstLightScene
   backend: 1
   sky: {r: 0.55, g: 0.75, b: 0.95, a: 1}
   standingHeight: 1.6

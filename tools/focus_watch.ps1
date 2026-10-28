@@ -8,11 +8,11 @@ param(
     [string]$Forbidden = "^(Unity|Unity Hub|SensorProbe|FirstLight|UnityCrashHandler64)$",
     [int]$IntervalMs = 200
 )
-if (-not ("QuestLink.Focus" -as [type])) {
+if (-not ("QuestBridge.Focus" -as [type])) {
     Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-namespace QuestLink {
+namespace QuestBridge {
 public static class Focus {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
@@ -27,7 +27,7 @@ $end = (Get-Date).AddSeconds($Seconds)
 $last = ""; $stolen = 0; $samples = 0
 "focus_watch start $(Get-Date -Format o) forbidden=$Forbidden" | Set-Content $Out
 while ((Get-Date) -lt $end) {
-    $procId = [QuestLink.Focus]::ForegroundPid()
+    $procId = [QuestBridge.Focus]::ForegroundPid()
     $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
     $samples++
     $bad = $name -match $Forbidden

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <initializer_list>
 
-namespace ql::enc::h264 {
+namespace qb::enc::h264 {
 
 namespace {
 
@@ -356,4 +356,4 @@ void append_annexb(Bytes& out, std::span<const uint8_t> nal) {
     out.insert(out.end(), nal.begin(), nal.end());
 }
 
-}  // namespace ql::enc::h264
+}  // namespace qb::enc::h264

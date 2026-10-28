@@ -13,7 +13,7 @@
 #include "capnp.hpp"
 #include "xrsp.hpp"
 
-namespace ql {
+namespace qb {
 
 struct FakeQuest {
     std::mutex mu;
@@ -162,12 +162,12 @@ std::shared_ptr<FakeQuest> load_fake_quest(const std::string& path, size_t max_m
     return q;
 }
 
-ql_transport fake_quest_transport(const std::shared_ptr<FakeQuest>& quest) {
-    ql_transport t{};
+qb_transport fake_quest_transport(const std::shared_ptr<FakeQuest>& quest) {
+    qb_transport t{};
     t.user = quest.get();
     t.write = fake_write;
     t.read = fake_read;
     return t;
 }
 
-}  // namespace ql
+}  // namespace qb

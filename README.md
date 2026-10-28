@@ -1,4 +1,4 @@
-# Meta Quest Link for Mac
+# QuestBridge
 
 Plug a Quest into a Mac and play PC VR — built from scratch, speaking Meta's own Link (XRSP) protocol so the headset's built-in "Enable Link" works.
 

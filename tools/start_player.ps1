@@ -22,12 +22,12 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-if (-not ("QuestLink.PlayerHost" -as [type])) {
+if (-not ("QuestBridge.PlayerHost" -as [type])) {
     Add-Type -TypeDefinition @"
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-namespace QuestLink {
+namespace QuestBridge {
 public static class PlayerHost {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct STARTUPINFO {
@@ -81,10 +81,10 @@ public static class PlayerHost {
     public static long CreateHost(int w, int h, bool visible) {
         var c = new WNDCLASS();
         c.lpfnWndProc = proc;
-        c.lpszClassName = "QuestLinkPlayerHost";
+        c.lpszClassName = "QuestBridgePlayerHost";
         RegisterClass(ref c);
         int x = visible ? 0 : -10 * w, y = visible ? GetSystemMetrics(1) - h - 48 : -10 * h;
-        host = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, c.lpszClassName, "QuestLink player",
+        host = CreateWindowEx(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, c.lpszClassName, "QuestBridge player",
             WS_POPUP | WS_CLIPCHILDREN, x, y, w, h, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         if (host == IntPtr.Zero) throw new Win32Exception();
         ShowWindow(host, SW_SHOWNOACTIVATE);
@@ -155,23 +155,23 @@ public static class PlayerHost {
 
 $exePath = (Resolve-Path $Exe).Path
 if (-not $NoEmbed) {
-    $hwnd = [QuestLink.PlayerHost]::CreateHost(320, 180, [bool]$NoMinimize)
+    $hwnd = [QuestBridge.PlayerHost]::CreateHost(320, 180, [bool]$NoMinimize)
     $ArgLine = "-parentHWND $hwnd $ArgLine"
 }
-$procId = [QuestLink.PlayerHost]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path, -not $NoMinimize)
+$procId = [QuestBridge.PlayerHost]::Start($exePath, $ArgLine, (Resolve-Path $WorkingDirectory).Path, -not $NoMinimize)
 Write-Host "started $([IO.Path]::GetFileName($exePath)) pid $procId ($(if ($NoEmbed) { "top-level" } else { "embedded" }), no-activate, focus guard on)"
 $started = Get-Date
 $deadline = $started.AddSeconds($TimeoutS)
 $unlocked = $false
 $code = -2
 while ($code -eq -2) {
-    if ((Get-Date) -gt $deadline) { $code = [QuestLink.PlayerHost]::Kill(); break }
-    if ([QuestLink.PlayerHost]::Guard()) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) FOCUS taken by the player, restored" }
+    if ((Get-Date) -gt $deadline) { $code = [QuestBridge.PlayerHost]::Kill(); break }
+    if ([QuestBridge.PlayerHost]::Guard()) { Write-Host "$(Get-Date -Format HH:mm:ss.fff) FOCUS taken by the player, restored" }
     # Keep the foreground lock while the player starts up (window creation, XR init), then release it.
-    if (-not $unlocked -and ((Get-Date) - $started).TotalSeconds -gt 30) { [QuestLink.PlayerHost]::Unlock(); $unlocked = $true }
-    [QuestLink.PlayerHost]::Pump()
-    $code = [QuestLink.PlayerHost]::Poll(20)
+    if (-not $unlocked -and ((Get-Date) - $started).TotalSeconds -gt 30) { [QuestBridge.PlayerHost]::Unlock(); $unlocked = $true }
+    [QuestBridge.PlayerHost]::Pump()
+    $code = [QuestBridge.PlayerHost]::Poll(20)
 }
-[QuestLink.PlayerHost]::DestroyHost()
-if (-not $unlocked) { [QuestLink.PlayerHost]::Unlock() }
+[QuestBridge.PlayerHost]::DestroyHost()
+if (-not $unlocked) { [QuestBridge.PlayerHost]::Unlock() }
 exit $code

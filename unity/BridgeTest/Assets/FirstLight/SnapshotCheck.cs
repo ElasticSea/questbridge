@@ -2,7 +2,7 @@ using System.Collections;
 using System.IO;
 using UnityEngine;
 
-namespace ElasticSea.QuestLink.BridgeTest
+namespace ElasticSea.QuestBridge.BridgeTest
 {
     // "-snapshot <ppm>": after the eyes have rendered for a second, writes the eye texture (both eyes
     // side by side, what the encoder gets) to a binary PPM (no ImageConversion module here) and
@@ -10,7 +10,7 @@ namespace ElasticSea.QuestLink.BridgeTest
     // Use with "-mock" so it needs no headset (tools/check_firstlight.ps1).
     public class SnapshotCheck : MonoBehaviour
     {
-        public QuestLinkRig rig;
+        public QuestBridgeRig rig;
         public string path;
 
         IEnumerator Start()
