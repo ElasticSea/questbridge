@@ -1,7 +1,8 @@
 #!/bin/sh
 # macOS: build libquestlink.dylib (Release, arm64, libusb linked statically) and install it as
 # the Unity package's macOS native plugin:
-# com.elasticsea.questlink/Runtime/Plugins/macOS/libquestlink.dylib (git-ignored).
+# com.elasticsea.questlink/Runtime/Plugins/macOS/libquestlink.dylib (committed, so UPM git installs
+# get it: copy it to the PC and commit it after a native change that the package needs).
 # Usage: unity/install-native.sh [--no-build]
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
