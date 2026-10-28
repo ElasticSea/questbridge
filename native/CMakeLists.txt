@@ -16,6 +16,7 @@ endif()
 add_library(questlink_core STATIC
   src/xrsp.cpp
   src/json.cpp
+  src/capnp.cpp
 )
 target_include_directories(questlink_core PUBLIC include src)
 

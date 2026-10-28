@@ -1,6 +1,7 @@
 // Tiny test harness: TEST(name) { CHECK(...); CHECK_EQ(a, b); }
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <iostream>

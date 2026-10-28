@@ -1,6 +1,7 @@
 add_executable(questlink_tests
   test_main.cpp
   test_xrsp.cpp
+  test_capnp.cpp
 )
 target_link_libraries(questlink_tests PRIVATE questlink_core)
 get_filename_component(QL_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
