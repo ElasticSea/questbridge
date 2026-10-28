@@ -1,8 +1,10 @@
-// Media Foundation H.264 encoder: the GPU's hardware MFT (async) if present, else a software MFT.
+// Media Foundation H.264 encoder: one specific MFT (hardware or software), picked and checked
+// by select.hpp (create_windows.cpp), with that vendor's settings.
 //
 // Slices: CODECAPI_AVEncSliceControlMode/Size. Mode 2 (MB rows) with size = height_mbs / slices
-// is tried first, then mode 0 (MB count). The layout actually produced is checked per frame
-// from first_mb_in_slice; callers see it in Slice::first_mb.
+// is tried first, then mode 0 (MB count). The layout actually produced is checked on a probe
+// frame by select.hpp, and per frame from first_mb_in_slice; callers see it in Slice::first_mb.
+// Strips: one MFT per strip (make_strip_encoder), each a one-slice picture.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -19,13 +21,15 @@
 #include <strmif.h>
 #include <codecapi.h>
 #include <d3d11.h>
+#include <dxgi.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mftransform.h>
 #include <wrl/client.h>
 
-#include "../encoder.hpp"
 #include "../h264.hpp"
+#include "d3d11_input.hpp"
+#include "mf_encoder.hpp"
 
 using Microsoft::WRL::ComPtr;
 
@@ -47,8 +51,9 @@ std::string narrow(const wchar_t* w) {
     return s;
 }
 
-// BT.709 limited range, 2x2 chroma average.
-void bgra_to_nv12(const uint8_t* src, int src_stride, int w, int h, uint8_t* y, uint8_t* uv) {
+// BT.709 limited range, 2x2 chroma average. rgba: R and B swapped.
+void bgra_to_nv12(const uint8_t* src, int src_stride, int w, int h, uint8_t* y, uint8_t* uv, bool rgba) {
+    const int bi = rgba ? 2 : 0, ri = 2 - bi;
     std::vector<int> rows(size_t(h / 2));
     std::iota(rows.begin(), rows.end(), 0);
     std::for_each(std::execution::par, rows.begin(), rows.end(), [&](int r) {
@@ -62,7 +67,7 @@ void bgra_to_nv12(const uint8_t* src, int src_stride, int w, int h, uint8_t* y, 
             const uint8_t* px[4] = {s0 + 4 * x, s0 + 4 * x + 4, s1 + 4 * x, s1 + 4 * x + 4};
             uint8_t* py[4] = {y0 + x, y0 + x + 1, y1 + x, y1 + x + 1};
             for (int k = 0; k < 4; k++) {
-                int b = px[k][0], g = px[k][1], rr = px[k][2];
+                int b = px[k][bi], g = px[k][1], rr = px[k][ri];
                 *py[k] = uint8_t((47 * rr + 157 * g + 16 * b + 128) / 256 + 16);
                 sb += b;
                 sg += g;
@@ -140,9 +145,37 @@ private:
     bool stopped_ = false;
 };
 
+// MFTs that take NV12 and output H.264, hardware or software, in enumeration order.
+std::vector<ComPtr<IMFActivate>> enumerate(bool hardware) {
+    MFT_REGISTER_TYPE_INFO in{MFMediaType_Video, MFVideoFormat_NV12};
+    MFT_REGISTER_TYPE_INFO outt{MFMediaType_Video, MFVideoFormat_H264};
+    UINT32 flags = MFT_ENUM_FLAG_SORTANDFILTER |
+                   (hardware ? MFT_ENUM_FLAG_HARDWARE : MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT);
+    IMFActivate** list = nullptr;
+    UINT32 count = 0;
+    std::vector<ComPtr<IMFActivate>> out;
+    if (FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, flags, &in, &outt, &list, &count))) return out;
+    for (UINT32 i = 0; i < count; i++) {
+        out.emplace_back(list[i]);
+        list[i]->Release();
+    }
+    CoTaskMemFree(list);
+    return out;
+}
+
+std::string get_string(IMFActivate* a, const GUID& key) {
+    wchar_t* w = nullptr;
+    UINT32 len = 0;
+    if (FAILED(a->GetAllocatedString(key, &w, &len))) return {};
+    std::string s = narrow(w);
+    CoTaskMemFree(w);
+    return s;
+}
+
 class MfEncoder final : public Encoder {
 public:
-    explicit MfEncoder(const EncoderConfig& c) : cfg_(c) {}
+    MfEncoder(const EncoderConfig& c, const Candidate& cand, const VendorSettings& s)
+        : cfg_(c), cand_(cand), settings_(s) {}
 
     ~MfEncoder() override {
         if (events_) {
@@ -164,12 +197,16 @@ public:
         if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return fail(err, hr_text("CoInitializeEx", hr));
         if (FAILED(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET))) return fail(err, hr_text("MFStartup", hr));
         mf_started_ = true;
-        if (cfg_.gpu_device && !init_d3d(err)) return false;
+        // The device's textures go straight in only on the MFT's own adapter; else read back
+        if (cfg_.gpu_device && cand_.on_gpu_adapter && !init_d3d(err)) return false;
 
-        std::string tried;
-        if (cfg_.hardware && open(true, &tried)) return true;
-        if (cfg_.allow_software && open(false, &tried)) return true;
-        return fail(err, "no usable H.264 encoder MFT: " + tried);
+        auto list = enumerate(cand_.hardware);
+        if (cand_.index < 0 || cand_.index >= int(list.size())) return fail(err, "MFT " + cand_.name + " gone");
+        activate_ = list[size_t(cand_.index)];
+        name_ = get_string(activate_.Get(), MFT_FRIENDLY_NAME_Attribute) + (cand_.hardware ? " (hardware)" : " (software)");
+        std::string why;
+        if (!configure(&why)) return fail(err, why);
+        return true;
     }
 
     bool encode(const CpuFrame& f, int64_t ts, bool force_idr, EncodedFrame& out) override {
@@ -187,7 +224,7 @@ public:
             for (int r = 0; r < h / 2; r++)
                 memcpy(dst + size_t(w) * h + size_t(r) * w, f.plane[1] + size_t(r) * f.stride[1], w);
         } else {
-            bgra_to_nv12(f.plane[0], f.stride[0], w, h, dst, dst + size_t(w) * h);
+            bgra_to_nv12(f.plane[0], f.stride[0], w, h, dst, dst + size_t(w) * h, f.format == PixelFormat::RGBA);
         }
         cpu_buffer_->Unlock();
         cpu_buffer_->SetCurrentLength(size);
@@ -195,8 +232,12 @@ public:
     }
 
     bool encode(const GpuFrame& f, int64_t ts, bool force_idr, EncodedFrame& out) override {
-        if (!device_) return fail(nullptr, "no GPU device configured");
-        if (!dxgi_manager_set_) return fail(nullptr, "encoder MFT has no D3D11 support");
+        if (!dxgi_manager_set_) {  // other adapter, or an MFT without D3D11 support: via CPU memory
+            CpuFrame c;
+            std::string e;
+            if (!read_back_.read_back(f, c, &e)) return fail(nullptr, e);
+            return encode(c, ts, force_idr, out);
+        }
         auto* tex = static_cast<ID3D11Texture2D*>(f.texture);
         D3D11_TEXTURE2D_DESC desc;
         tex->GetDesc(&desc);
@@ -237,44 +278,6 @@ private:
         return true;
     }
 
-    // Try every MFT of one kind (hardware or software) until one accepts our configuration.
-    bool open(bool hardware, std::string* tried) {
-        MFT_REGISTER_TYPE_INFO in{MFMediaType_Video, MFVideoFormat_NV12};
-        MFT_REGISTER_TYPE_INFO outt{MFMediaType_Video, MFVideoFormat_H264};
-        UINT32 flags = MFT_ENUM_FLAG_SORTANDFILTER |
-                       (hardware ? MFT_ENUM_FLAG_HARDWARE : MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT);
-        IMFActivate** list = nullptr;
-        UINT32 count = 0;
-        if (FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, flags, &in, &outt, &list, &count))) return false;
-        bool ok = false;
-        for (UINT32 i = 0; i < count; i++) {
-            if (!ok) {
-                activate_ = list[i];
-                wchar_t* friendly = nullptr;
-                UINT32 len = 0;
-                list[i]->GetAllocatedString(MFT_FRIENDLY_NAME_Attribute, &friendly, &len);
-                name_ = narrow(friendly) + (hardware ? " (hardware)" : " (software)");
-                CoTaskMemFree(friendly);
-                std::string why;
-                ok = configure(&why);
-                if (!ok) {
-                    *tried += name_ + ": " + why + "; ";
-                    if (events_) {
-                        events_->stop();
-                        events_->Release();
-                        events_ = nullptr;
-                    }
-                    mft_.Reset();
-                    activate_->ShutdownObject();
-                    activate_.Reset();
-                }
-            }
-            list[i]->Release();
-        }
-        CoTaskMemFree(list);
-        return ok;
-    }
-
     bool configure(std::string* why) {
         HRESULT hr = activate_->ActivateObject(IID_PPV_ARGS(&mft_));
         if (FAILED(hr)) return fail(why, hr_text("ActivateObject", hr));
@@ -308,9 +311,11 @@ private:
         set_codec(CODECAPI_AVEncVideoMaxNumRefFrame, 1);
         set_codec(CODECAPI_AVEncVideoLTRBufferControl, 0);
         set_codec(CODECAPI_AVEncH264CABACEnable, 0, VT_BOOL);
+        if (settings_.quality_vs_speed >= 0)
+            set_codec(CODECAPI_AVEncCommonQualityVsSpeed, uint32_t(settings_.quality_vs_speed));
         // Each slice goes to its own decoder on the Quest, so no filtering across slice edges.
         // NVIDIA then writes disable_deblocking_filter_idc 1 (like x264; Meta's NVENC uses 2).
-        set_codec(CODECAPI_AVEnableInLoopDeblockFilter, 0);
+        if (settings_.deblock_off) set_codec(CODECAPI_AVEnableInLoopDeblockFilter, 0);
         set_codec(CODECAPI_AVEncMPVGOPSize, cfg_.gop > 0 ? cfg_.gop : 0xFFFFFFFFu);
 
         // Output type must be set before the input type.
@@ -324,13 +329,16 @@ private:
         MFSetAttributeRatio(out.Get(), MF_MT_FRAME_RATE, cfg_.fps, 1);
         MFSetAttributeRatio(out.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
         out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_ConstrainedBase);
-        out->SetUINT32(MF_MT_MPEG2_LEVEL, 60);  // level 6.0: 4096x2240 @ 72 exceeds 5.2's MB rate
+        // 4096x2240 @ 72 needs 6.0 (exceeds 5.2's MB rate); a 4096x448 strip 4.2
+        const int level = level_for(cfg_.width, cfg_.height, cfg_.fps);
+        out->SetUINT32(MF_MT_MPEG2_LEVEL, level ? level : 60);
         if (FAILED(hr = mft_->SetOutputType(0, out.Get(), 0))) {
-            // Some MFTs don't know ConstrainedBase or level 6.0; Baseline + their own level choice.
+            // Some MFTs don't know ConstrainedBase or the level; Baseline + their own level choice
+            // (fix_sps marks the SPS Constrained Baseline again).
             out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Base);
             out->DeleteItem(MF_MT_MPEG2_LEVEL);
             if (FAILED(hr = mft_->SetOutputType(0, out.Get(), 0))) return fail(why, hr_text("SetOutputType", hr));
-            profile_note_ = "Baseline (ConstrainedBase/level 6.0 refused)";
+            profile_note_ = "Baseline (ConstrainedBase/level " + std::to_string(level) + " refused)";
         }
 
         ComPtr<IMFMediaType> in;
@@ -396,7 +404,7 @@ private:
             double ratio = double(first) / double(cfg_.max_slice_bytes);
             int floor = std::min(51, qp + int(std::ceil(6 * std::log2(ratio))) + 2);
             for (int attempt = 1; ok && largest(out) > cfg_.max_slice_bytes; attempt++) {
-                if (attempt > 4 || !set_codec(CODECAPI_AVEncVideoMinQP, uint32_t(floor))) {
+                if (attempt > 4 || !settings_.refit_min_qp || !set_codec(CODECAPI_AVEncVideoMinQP, uint32_t(floor))) {
                     set_codec(CODECAPI_AVEncVideoMinQP, 0);
                     return fail(nullptr, "slice of " + std::to_string(largest(out)) + " B over the " +
                                              std::to_string(cfg_.max_slice_bytes) + " B cap at QP floor " +
@@ -520,7 +528,7 @@ private:
             switch (h264::nal_type(nal)) {
             case h264::kSps:
                 sps.assign(nal.begin(), nal.end());
-                h264::set_fixed_frame_rate(sps);  // NVIDIA writes fixed_frame_rate_flag 0 at a constant rate
+                fix_sps(sps);
                 h264::parse_sps(sps, sps_);
                 break;
             case h264::kPps:
@@ -554,6 +562,13 @@ private:
         out.csd = csd_;
     }
 
+    // NVIDIA writes fixed_frame_rate_flag 0 at a constant rate; encoders without VUI get Meta's
+    // timing; plain Baseline (ConstrainedBase refused) is marked Constrained Baseline.
+    void fix_sps(Bytes& sps) {
+        h264::set_constrained_baseline(sps);
+        if (!h264::add_vui(sps, cfg_.fps)) h264::set_fixed_frame_rate(sps);
+    }
+
     void csd_from_media_type() {
         ComPtr<IMFMediaType> t;
         UINT32 size = 0;
@@ -563,7 +578,7 @@ private:
         t->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, blob.data(), size, nullptr);
         for (auto nal : h264::split_annexb(blob)) {
             Bytes n(nal.begin(), nal.end());
-            if (h264::nal_type(n) == h264::kSps) h264::set_fixed_frame_rate(n);
+            if (h264::nal_type(n) == h264::kSps) fix_sps(n);
             h264::append_annexb(csd_, n);
         }
     }
@@ -630,6 +645,9 @@ private:
     }
 
     EncoderConfig cfg_;
+    Candidate cand_;
+    VendorSettings settings_;
+    D3D11Input read_back_;
     std::string name_, error_, slice_note_, profile_note_;
     bool mf_started_ = false;
     bool async_ = false;
@@ -666,16 +684,56 @@ private:
 
 }  // namespace
 
-std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string* error) {
-    if (config.layout != Layout::Slices) {
-        if (error) *error = "Media Foundation backend only encodes Layout::Slices";
-        return nullptr;
+std::vector<Candidate> mf_candidates(void* gpu_device) {
+    std::vector<Candidate> out;
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return out;
+    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET))) return out;
+    Vendor gpu = Vendor::Unknown;
+    if (gpu_device) {
+        ComPtr<IDXGIDevice> dxgi;
+        ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC desc{};
+        if (SUCCEEDED(static_cast<ID3D11Device*>(gpu_device)->QueryInterface(IID_PPV_ARGS(&dxgi))) &&
+            SUCCEEDED(dxgi->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetDesc(&desc)))
+            gpu = vendor_from_pci(desc.VendorId);
     }
-    if (config.codec != Codec::H264) {
-        if (error) *error = "Media Foundation backend only encodes H.264";
-        return nullptr;
+    for (bool hardware : {true, false}) {
+        auto list = enumerate(hardware);
+        for (size_t i = 0; i < list.size(); i++) {
+            Candidate c;
+            c.backend = Backend::MediaFoundation;
+            c.hardware = hardware;
+            c.index = int(i);
+            c.name = get_string(list[i].Get(), MFT_FRIENDLY_NAME_Attribute);
+            c.vendor = hardware ? vendor_from_text(get_string(list[i].Get(), MFT_ENUM_HARDWARE_VENDOR_ID_Attribute))
+                                : Vendor::Microsoft;
+            if (c.vendor == Vendor::Unknown) c.vendor = vendor_from_text(c.name);
+            c.on_gpu_adapter = !hardware || !gpu_device || c.vendor == gpu;
+            out.push_back(std::move(c));
+        }
     }
-    auto enc = std::make_unique<MfEncoder>(config);
+    MFShutdown();
+    return out;
+}
+
+std::unique_ptr<Encoder> create_mf(const Attempt& a, std::string* error) {
+    if (a.layout == Layout::Strips) {
+        // One MFT per strip. The device's textures are cut into strips on the GPU, or read back
+        // when the MFT sits on another adapter (a strip encoder also reads back its own strip
+        // if its MFT can't take textures).
+        const int n = std::max(a.config.slices, 1);
+        GpuInput gpu = a.candidate.on_gpu_adapter ? d3d11_split_input(n) : d3d11_read_back_input();
+        return make_strip_encoder(
+            a.config,
+            [&](const EncoderConfig& sc, int, std::string* e) -> std::unique_ptr<Encoder> {
+                auto enc = std::make_unique<MfEncoder>(sc, a.candidate, a.settings);
+                if (!enc->init(e)) return nullptr;
+                return enc;
+            },
+            std::move(gpu), error);
+    }
+    auto enc = std::make_unique<MfEncoder>(a.config, a.candidate, a.settings);
     if (!enc->init(error)) return nullptr;
     return enc;
 }
