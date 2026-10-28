@@ -38,6 +38,7 @@ namespace ElasticSea.QuestLink.Input
         [InputControl(layout = "Button", usage = "SecondaryTouch")] public float secondaryTouched;
         [InputControl(layout = "Button", aliases = new[] { "indexTouched" }, usage = "TriggerTouch")] public float triggerTouched;
         [InputControl(layout = "Button", aliases = new[] { "menuButton" }, usage = "MenuButton")] public float menu;
+        [InputControl(layout = "Button", usage = "ThumbrestTouch")] public float thumbrestTouched;
     }
 
     // Touch controller over Link. Haptics: SendImpulse (XRControllerWithRumble) or any

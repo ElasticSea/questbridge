@@ -63,6 +63,7 @@ namespace ElasticSea.QuestLink.Native
         public const uint ButtonThumbstick = 1 << 2;
         public const uint ButtonMenu = 1 << 3;
         public const uint TouchTrigger = 1 << 4;     // touches only
+        public const uint TouchThumbrest = 1 << 5;   // touches only
 
         // ql_controller.flags bits.
         public const uint FlagConnected = 1 << 0;

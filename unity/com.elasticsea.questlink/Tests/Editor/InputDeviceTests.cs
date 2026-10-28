@@ -1,4 +1,5 @@
 using ElasticSea.QuestLink.Input;
+using ElasticSea.QuestLink.Native;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -97,9 +98,62 @@ namespace ElasticSea.QuestLink.Tests
         [TestCase("<XRController>{RightHand}/primary2DAxis")]
         [TestCase("<XRController>{RightHand}/{PrimaryButton}")]
         [TestCase("<XRController>{RightHand}/{MenuButton}")]
+        [TestCase("<XRController>{RightHand}/{PrimaryTouch}")]
+        [TestCase("<XRController>{LeftHand}/{TriggerTouch}")]
+        [TestCase("<XRController>{LeftHand}/thumbrestTouched")]
         public void CommonXRBindingPathsResolve(string path)
         {
             Assert.IsNotNull(InputSystem.FindControl(path), path);
+        }
+
+        // ql_controller as libquestlink fills it for the right controller with A pressed (sensors fixture "a")
+        static QuestLinkNative.ql_controller NativeRightA() => new QuestLinkNative.ql_controller
+        {
+            pose = new QuestLinkNative.ql_pose { qx = -0.337228f, qy = -0.596684f, qz = 0.300931f, qw = 0.663088f, px = -0.0655078f, py = -0.00378974f, pz = 0.645326f, time_ns = 355_000_000_000 },
+            buttons = QuestLinkNative.ButtonPrimary,
+            touches = QuestLinkNative.ButtonPrimary | QuestLinkNative.TouchThumbrest,
+            trigger = 0.25f, grip = 1f, stick_x = 0.5f, stick_y = -1f,
+            flags = QuestLinkNative.FlagConnected | QuestLinkNative.FlagPositionTracked | QuestLinkNative.FlagRotationTracked,
+        };
+
+        [Test]
+        public void NativeControllerMapsToState()
+        {
+            Assert.IsTrue(NativeQuestLink.FromNative(NativeRightA(), out var s));
+            Assert.IsTrue(s.connected && s.positionTracked && s.rotationTracked);
+            Assert.IsTrue(s.primaryButton && s.primaryTouch && s.thumbrestTouch);
+            Assert.IsFalse(s.secondaryButton || s.thumbstickClick || s.menu || s.triggerTouch);
+            Assert.AreEqual(new Vector2(0.5f, -1f), s.thumbstick);
+            Assert.AreEqual(0.25f, s.trigger, Eps);
+            // Link (right-handed, -Z forward) to Unity: z flips, quaternion x/y flip
+            Assert.AreEqual(-0.645326f, s.pose.position.z, Eps);
+            Assert.AreEqual(0.337228f, s.pose.rotation.x, Eps);
+            Assert.AreEqual(0.663088f, s.pose.rotation.w, Eps);
+            Assert.AreEqual(355_000_000_000L, s.pose.timeNs);
+        }
+
+        [Test]
+        public void NativeControllerPutDownIsNotConnected()
+        {
+            var c = NativeRightA();
+            c.flags = 0;  // controllers put down: hands tracked instead
+            Assert.IsFalse(NativeQuestLink.FromNative(c, out var s));
+            Assert.IsFalse(s.connected);
+        }
+
+        [Test]
+        public void NativeControllerReachesXRControls()
+        {
+            NativeQuestLink.FromNative(NativeRightA(), out var s);
+            QuestLinkInput.QueueController(QuestLinkHand.Right, s);
+            InputSystem.Update();
+
+            var c = XRController.rightHand;
+            Assert.IsTrue(((ButtonControl)InputSystem.FindControl("<XRController>{RightHand}/{PrimaryButton}")).isPressed);
+            Assert.IsTrue(((ButtonControl)c["thumbrestTouched"]).isPressed);
+            Assert.IsTrue(((ButtonControl)c["gripPressed"]).isPressed);
+            Assert.AreEqual(3, ((IntegerControl)c["trackingState"]).ReadValue());
+            Assert.AreEqual(-1f, ((StickControl)c["thumbstick"]).ReadValue().y, 1e-3f);
         }
 
         [Test]

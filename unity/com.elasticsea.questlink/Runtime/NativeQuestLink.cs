@@ -107,7 +107,14 @@ namespace ElasticSea.QuestLink
         public bool TryGetController(QuestLinkHand hand, out QuestLinkControllerState state)
         {
             state = default;
-            if (ql_get_controller(session, (int)hand, out var c) != 0 || (c.flags & FlagConnected) == 0)
+            return ql_get_controller(session, (int)hand, out var c) == 0 && FromNative(c, out state);
+        }
+
+        // False (state default) while the controller is not connected (put down, hands tracked).
+        internal static bool FromNative(in ql_controller c, out QuestLinkControllerState state)
+        {
+            state = default;
+            if ((c.flags & FlagConnected) == 0)
                 return false;
             state = new QuestLinkControllerState
             {
@@ -126,6 +133,7 @@ namespace ElasticSea.QuestLink
                 secondaryTouch = (c.touches & ButtonSecondary) != 0,
                 thumbstickTouch = (c.touches & ButtonThumbstick) != 0,
                 triggerTouch = (c.touches & TouchTrigger) != 0,
+                thumbrestTouch = (c.touches & TouchThumbrest) != 0,
             };
             return true;
         }
