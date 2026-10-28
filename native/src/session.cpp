@@ -72,7 +72,7 @@ void Session::start() {
         control_seq_ = cfg_.attach_control_seq;
         for (int i = 0; i < 5; ++i) stream_seq_[uint8_t(topic::kVideoFirst + i)] = cfg_.attach_video_seq;
         log("info", "attaching to existing session");
-        enter(State::Streaming, 0);
+        enter(State::Streaming, 0);  // the earlier host already sent InputControl
         return;
     }
     enter(State::WaitHello, cfg_.hello_timeout_ns);
@@ -199,6 +199,20 @@ void Session::on_message(std::span<const uint8_t> raw) {
         }
         return;
     }
+    if (t == topic::kHands) {
+        if (auto h = parse_hands(body)) {
+            hands_ = *h;
+            ++hands_count_;
+        }
+        return;
+    }
+    if (t == topic::kSkeleton) {
+        // The bind pose, parents and capsules all sit in the first chunk of each hand's blob
+        auto c = parse_skeleton_chunk(body);
+        if (c && c->offset == 0)
+            if (auto sk = parse_skeleton(c->data)) skeletons_[c->hand] = *sk;
+        return;
+    }
     if (t != topic::kControl) return;
     if (body.size() < 8) return;
     uint8_t type = body[0], flags = body[1];
@@ -298,8 +312,20 @@ void Session::finish_handshake() {
         setup_due_ = clock_();
         tick();
     } else {
-        enter(State::Streaming, 0);
+        on_streaming();
     }
+}
+
+void Session::on_streaming() {
+    enter(State::Streaming, 0);
+    if (cfg_.hands) set_hands(true);
+}
+
+void Session::set_hands(bool on) {
+    // Segment table (1 segment, 2 words), then the segment, like Meta's PC
+    send_stream({{topic::kInputControl, kFlagsNormal, Bytes{0, 0, 0, 0, 2, 0, 0, 0}},
+                 {topic::kInputControl, kFlagsNormal, input_control_hands(on)}});
+    log("PC->Q", std::string("InputControl hands ") + (on ? "on" : "off"));
 }
 
 void Session::tick() {
@@ -323,7 +349,7 @@ void Session::tick() {
     }
     if (setup_next_ == setup.size()) {
         log("info", "sent " + std::to_string(setup.size()) + " setup msgs");
-        enter(State::Streaming, 0);
+        on_streaming();
     }
 }
 

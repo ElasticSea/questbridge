@@ -41,10 +41,33 @@ SessionConfig to_session_config(const ql_config& c) {
     s.attach_video_seq = c.attach_video_seq;
     s.first_frame_index = c.first_frame_index ? c.first_frame_index : 1;
     s.send_setup = c.send_setup != 0;
+    s.hands = c.hands != 0;
     s.hello_timeout_ns = int64_t(c.hello_timeout_ms) * 1'000'000;
     s.link_request_timeout_ns = int64_t(c.link_request_timeout_ms) * 1'000'000;
     s.step_timeout_ns = int64_t(c.step_timeout_ms) * 1'000'000;
     return s;
+}
+
+void to_ql_hand(int hand, const HandRecord& r, const HandSkeleton* headset, ql_hand& out) {
+    std::memset(&out, 0, sizeof out);
+    if (r.status != 1) return;
+    const HandSkeleton& sk = headset ? *headset : default_skeleton(hand);
+    out.flags = QL_HAND_TRACKED | (headset ? QL_HAND_HEADSET_SKELETON : 0) |
+                (r.input_status & hand_input::kPointerValid ? QL_HAND_AIM_VALID : 0) |
+                (r.input_status & hand_input::kDominant ? QL_HAND_DOMINANT : 0);
+    out.input_status = r.input_status;
+    out.confidence = r.confidence;
+    out.scale = r.scale;
+    std::memcpy(out.pinch, r.pinch, sizeof out.pinch);
+    uint64_t t = r.time_s > 0 ? uint64_t(r.time_s * 1e9 + 0.5) : 0;
+    out.root = {r.root_rot[0], r.root_rot[1], r.root_rot[2], r.root_rot[3], r.root_pos[0], r.root_pos[1], r.root_pos[2], t};
+    out.aim = {r.pointer_rot[0], r.pointer_rot[1], r.pointer_rot[2], r.pointer_rot[3],
+               r.pointer_pos[0], r.pointer_pos[1], r.pointer_pos[2], t};
+    auto joints = hand_joints(hand, r, sk);
+    for (size_t j = 0; j < kHandJoints; ++j) {
+        const JointPose& p = joints[j];
+        out.joints[j] = {p.rot[0], p.rot[1], p.rot[2], p.rot[3], p.pos[0], p.pos[1], p.pos[2], p.radius};
+    }
 }
 
 }  // namespace
@@ -94,6 +117,7 @@ void ql_config_init(ql_config* cfg) {
     cfg->attach_control_seq = 16;
     cfg->first_frame_index = 1;
     cfg->send_setup = 1;
+    cfg->hands = 1;
     cfg->step_timeout_ms = 3000;
 }
 
@@ -235,6 +259,29 @@ ql_status ql_host_get_head_pose(ql_host* host, ql_head_pose* out) {
     out->vsync_ns = p->vsync_ns;
     out->count = host->session->head_pose_count();
     return QL_OK;
+}
+
+ql_status ql_host_get_hands(ql_host* host, ql_hands* out) {
+    if (!host || !out) return QL_ERR_ARGUMENT;
+    std::lock_guard<std::mutex> lock(host->mu);
+    const Session& s = *host->session;
+    const auto& f = s.hands();
+    if (!f) return QL_ERR_NO_DATA;
+    for (int h = 0; h < 2; ++h) {
+        const auto& sk = s.skeleton(h);
+        to_ql_hand(h, f->hands[h], sk ? &*sk : nullptr, out->hands[h]);
+    }
+    out->count = s.hands_count();
+    return QL_OK;
+}
+
+ql_status ql_host_set_hands(ql_host* host, int enabled) {
+    if (!host) return QL_ERR_ARGUMENT;
+    std::unique_lock<std::mutex> lock(host->mu);
+    if (host->broken) return QL_ERR_TRANSPORT;
+    if (host->session->state() != State::Streaming) return QL_ERR_NOT_STREAMING;
+    host->session->set_hands(enabled != 0);
+    return host->flush(lock);
 }
 
 ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uint32_t count, const ql_frame_info* info) {

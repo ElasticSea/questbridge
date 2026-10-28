@@ -20,6 +20,7 @@
 #include "audio.hpp"
 #include "capnp.hpp"
 #include "frame.hpp"
+#include "hands.hpp"
 #include "pose.hpp"
 #include "xrsp.hpp"
 
@@ -28,7 +29,10 @@ namespace ql {
 namespace topic {
 constexpr uint8_t kControl = 1;
 constexpr uint8_t kAudio = audio::kTopic;
+constexpr uint8_t kHands = 8;
+constexpr uint8_t kSkeleton = 9;
 constexpr uint8_t kVideoFirst = 10;  // slice i on topic 10 + i
+constexpr uint8_t kInputControl = 28;
 constexpr uint8_t kHeadPose = 34;
 }  // namespace topic
 
@@ -68,6 +72,7 @@ struct SessionConfig {
     uint16_t attach_video_seq = 0;
     uint64_t first_frame_index = 1;
     bool send_setup = true;
+    bool hands = true;  // send InputControl hands-on once streaming (Meta's setup turns them off)
     int64_t hello_timeout_ns = 0;  // 0 = wait forever
     int64_t step_timeout_ns = 3'000'000'000;
     int64_t link_request_timeout_ns = 0;  // waiting for the user to press Enable Link
@@ -98,6 +103,13 @@ public:
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
     uint64_t head_pose_count() const { return head_pose_count_; }
+    const std::optional<HandsFrame>& hands() const { return hands_; }  // latest topic 8
+    uint64_t hands_count() const { return hands_count_; }
+    // Bind skeleton from topic 9, or nullopt (use default_skeleton)
+    const std::optional<HandSkeleton>& skeleton(int hand) const { return skeletons_[hand ? 1 : 0]; }
+
+    // Topic 28 InputControl: turn hand tracking (topics 8/9) on or off
+    void set_hands(bool on);
 
     // Raw stream send: numbers seq per topic, all messages in one transfer
     void send_stream(std::vector<StreamMessage> msgs);
@@ -136,6 +148,7 @@ private:
     void advance_phase(uint8_t type);
     void finish_handshake();
     void enter(State s, int64_t timeout_ns);
+    void on_streaming();
     void fail(const std::string& why);
     void log(const char* dir, const std::string& what, int seq = -1) const;
 
@@ -154,6 +167,9 @@ private:
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
     uint64_t head_pose_count_ = 0;
+    std::optional<HandsFrame> hands_;
+    uint64_t hands_count_ = 0;
+    std::optional<HandSkeleton> skeletons_[2];
     std::map<uint8_t, uint64_t> rx_counts_;
     std::map<uint8_t, uint32_t> stream_seq_;
     uint64_t next_frame_index_ = 1;

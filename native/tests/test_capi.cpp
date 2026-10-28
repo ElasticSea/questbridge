@@ -221,3 +221,38 @@ TEST(capi_transport_errors) {
     ql_host_close(h);
     CHECK_EQ(ql_host_open_transport(nullptr, nullptr, &h), QL_ERR_ARGUMENT);
 }
+
+TEST(capi_hands) {
+    FakeUsb usb;
+    const auto& fx = qltest::fixture("hands", "messages");
+    for (const auto& r : fx["topic9_first_chunks"].items()) usb.queue_message(r.as_hex());
+    for (const auto& r : fx["topic8"].items()) usb.queue_message(r.as_hex());
+    ql_config cfg;
+    ql_config_init(&cfg);
+    CHECK_EQ(cfg.hands, 1);
+    cfg.attach = 1;
+    ql_transport t = usb.transport();
+    ql_host* h = nullptr;
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    ql_hands hands;
+    CHECK_EQ(ql_host_get_hands(h, &hands), QL_ERR_NO_DATA);
+    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
+    REQUIRE(ql_host_get_hands(h, &hands) == QL_OK);
+    CHECK_EQ(hands.count, uint64_t(2));
+    const ql_hand& l = hands.hands[0];
+    const ql_hand& r = hands.hands[1];
+    CHECK_EQ(l.flags, uint32_t(QL_HAND_TRACKED | QL_HAND_AIM_VALID | QL_HAND_HEADSET_SKELETON));
+    CHECK_EQ(r.flags, uint32_t(QL_HAND_TRACKED | QL_HAND_AIM_VALID | QL_HAND_DOMINANT | QL_HAND_HEADSET_SKELETON));
+    CHECK_EQ(l.root.time_ns, uint64_t(351543261520000));
+    CHECK(std::abs(l.pinch[0] - 0.7f) < 1e-4f);
+    // Thumb tip (5) meets index tip (10) at pinch 0.7
+    float d = std::hypot(l.joints[5].px - l.joints[10].px, l.joints[5].py - l.joints[10].py, l.joints[5].pz - l.joints[10].pz);
+    CHECK(d < 0.02f);
+    CHECK(std::abs(r.joints[25].px - 0.303384f) < 2e-5f);  // LITTLE_TIP, decode_hands.py
+
+    usb.written.clear();
+    REQUIRE(ql_host_set_hands(h, 0) == QL_OK);
+    REQUIRE(usb.written.size() == 1);
+    CHECK_EQ(usb.written[0][1], uint8_t(28));
+    ql_host_close(h);
+}

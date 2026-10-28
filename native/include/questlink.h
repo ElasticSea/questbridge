@@ -152,6 +152,7 @@ typedef struct ql_config {
     uint16_t attach_video_seq;   /* default 0 */
     uint64_t first_frame_index;  /* default 1; frame.index must increase across the session */
     int send_setup;              /* send Meta's recorded stream setup after the handshake (default 1) */
+    int hands;                   /* turn hand tracking on once streaming (InputControl, default 1) */
     int hello_timeout_ms;        /* 0 = wait forever (default) */
     int link_request_timeout_ms; /* waiting for "Enable Link"; 0 = forever (default) */
     int step_timeout_ms;         /* per handshake step (default 3000) */
@@ -266,6 +267,50 @@ QL_API int ql_read_mic(ql_session* session, int16_t* out, uint32_t max_frames);
 QL_API ql_status ql_host_send_audio(ql_host* host, const float* interleaved_stereo, int64_t ts_ns);
 /* Host API: microphone samples received so far (as ql_read_mic). */
 QL_API int ql_host_read_mic(ql_host* host, int16_t* out, uint32_t max_frames);
+
+/* ======================= Hand tracking =================================================== */
+/* Topic 8 Hands, enabled by ql_config.hands (InputControl on topic 28). The Quest sends ~60
+ * messages/s; the joint data itself updates at ~25-30 Hz. Same raw Link convention as ql_pose.
+ * Joints are XR_EXT_hand_tracking joints with OpenXR axes (-Z toward the fingertip, +Y out of
+ * the back of the hand), computed from the 24 streamed bone rotations and the bind skeleton
+ * (topic 9, or a built-in adult hand until it arrived). */
+
+#define QL_HAND_JOINT_COUNT 26 /* XrHandJointEXT order: PALM, WRIST, THUMB_METACARPAL, ... */
+
+/* ql_hand.flags bits */
+#define QL_HAND_TRACKED (1u << 0)
+#define QL_HAND_AIM_VALID (1u << 1)
+#define QL_HAND_DOMINANT (1u << 2)
+#define QL_HAND_HEADSET_SKELETON (1u << 3) /* bind skeleton came from the headset (topic 9) */
+
+typedef struct ql_hand_joint {
+    float qx, qy, qz, qw;
+    float px, py, pz;
+    float radius; /* metres */
+} ql_hand_joint;
+
+typedef struct ql_hand {
+    uint32_t flags;        /* QL_HAND_* */
+    uint32_t input_status; /* raw topic 8 input bits (0x02 aim valid, 0x80 dominant, ...) */
+    float confidence;      /* 0..1 */
+    float scale;           /* hand size relative to the bind skeleton */
+    float pinch[4];        /* pinch strength 0..1: index, middle, ring, little */
+    ql_pose root;          /* wrist in the OVR bone frame; time_ns = sample time (Quest clock) */
+    ql_pose aim;           /* pointer pose (-Z = pointing direction) */
+    ql_hand_joint joints[QL_HAND_JOINT_COUNT];
+} ql_hand;
+
+typedef struct ql_hands {
+    ql_hand hands[2];      /* left, right; all zero (flags 0) when not tracked */
+    uint64_t count;        /* topic 8 messages received so far */
+} ql_hands;
+
+/* Session API: newest hands; QL_ERR_NO_DATA until the first topic 8 message. */
+QL_API int ql_get_hands(ql_session* session, ql_hands* out);
+/* Host API: same. */
+QL_API ql_status ql_host_get_hands(ql_host* host, ql_hands* out);
+/* Host API: send InputControl hands on (1) or off (0) now; QL_ERR_NOT_STREAMING before setup. */
+QL_API ql_status ql_host_set_hands(ql_host* host, int enabled);
 
 #ifdef __cplusplus
 }

@@ -35,6 +35,8 @@
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
 static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 48);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
+static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
+static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
 static_assert(sizeof(void*) != 8 || (sizeof(ql_frame_submit) == 64 && offsetof(ql_frame_submit, frame_index) == 56));
 
 namespace {
@@ -207,6 +209,7 @@ private:
             ql_config cfg;
             ql_config_init(&cfg);
             if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
+            cfg.hands = env_int("QL_HANDS", 1);
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -359,6 +362,13 @@ int ql_get_head_pose(ql_session* session, ql_pose* out) {
     if (!h || ql_host_get_head_pose(h.get(), &p) != QL_OK) return QL_ERR_NO_DATA;
     *out = p.pose;
     return QL_OK;
+}
+
+int ql_get_hands(ql_session* session, ql_hands* out) {
+    auto& rt = Runtime::get();
+    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    auto h = rt.host();
+    return h ? ql_host_get_hands(h.get(), out) : QL_ERR_NO_DATA;
 }
 
 int ql_get_controller(ql_session* session, int hand, ql_controller* out) {
