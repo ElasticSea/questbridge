@@ -305,7 +305,11 @@ private:
         if (!cfg_.cbr) set_codec(CODECAPI_AVEncCommonMaxBitRate, cfg_.bitrate / 2 * 3);
         set_codec(CODECAPI_AVEncMPVDefaultBPictureCount, 0);
         set_codec(CODECAPI_AVEncVideoMaxNumRefFrame, 1);
+        set_codec(CODECAPI_AVEncVideoLTRBufferControl, 0);
         set_codec(CODECAPI_AVEncH264CABACEnable, 0, VT_BOOL);
+        // Each slice goes to its own decoder on the Quest, so no filtering across slice edges.
+        // NVIDIA then writes disable_deblocking_filter_idc 1 (like x264; Meta's NVENC uses 2).
+        set_codec(CODECAPI_AVEnableInLoopDeblockFilter, 0);
         set_codec(CODECAPI_AVEncMPVGOPSize, cfg_.gop > 0 ? cfg_.gop : 0xFFFFFFFFu);
 
         // Output type must be set before the input type.
