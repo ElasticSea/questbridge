@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "capnp.hpp"
+#include "frame.hpp"
 #include "xrsp.hpp"
 
 namespace ql {
@@ -83,13 +84,21 @@ public:
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
 
     // Raw stream send: numbers seq per topic, all messages in one transfer
-    struct StreamMsg {
-        uint8_t topic;
-        uint8_t flags;
-        Bytes body;
-    };
-    void send_stream(std::vector<StreamMsg> msgs);
+    void send_stream(std::vector<StreamMessage> msgs);
     uint16_t stream_seq(uint8_t topic) const;
+
+    // One video frame as a single transfer. Needs the Streaming state and a clock offset
+    // (at least one Quest clock ping), like the replay loop in handshake.py.
+    enum class Submit { Ok, NotStreaming, NoClock, BadSlices };
+    struct FrameOptions {
+        uint64_t index = 0;                 // 0 = next index (session-wide, increasing)
+        int64_t target_vsync_quest_ns = 0;  // 0 = now (Quest clock) + vsync_lead_ns
+        int64_t vsync_lead_ns = 20'000'000;
+        std::optional<Pose> render_pose;
+        bool intra = true;
+    };
+    Submit submit_frame(std::span<const SliceData> slices, const FrameOptions& opt);
+    uint64_t next_frame_index() const { return next_frame_index_; }
 
 private:
     void send_control(uint8_t type, uint16_t version);
@@ -118,6 +127,7 @@ private:
     std::optional<int64_t> quest_offset_;
     std::map<uint8_t, uint64_t> rx_counts_;
     std::map<uint8_t, uint32_t> stream_seq_;
+    uint64_t next_frame_index_ = 1;
     size_t setup_next_ = 0;
     int64_t setup_due_ = 0;
     std::vector<std::vector<Bytes>> outbox_;

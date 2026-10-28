@@ -38,7 +38,7 @@ const char* state_name(State s) {
 }
 
 Session::Session(SessionConfig cfg, Clock clock, Log log)
-    : cfg_(cfg), clock_(std::move(clock)), log_(std::move(log)) {}
+    : cfg_(cfg), clock_(std::move(clock)), log_(std::move(log)), next_frame_index_(cfg.first_frame_index) {}
 
 void Session::start() {
     if (cfg_.attach) {
@@ -108,7 +108,7 @@ void Session::send_raw_control(Bytes body, const std::string& label) {
     ++control_seq_;
 }
 
-void Session::send_stream(std::vector<StreamMsg> msgs) {
+void Session::send_stream(std::vector<StreamMessage> msgs) {
     std::vector<Bytes> raw;
     for (auto& m : msgs) {
         uint32_t& seq = stream_seq_[m.topic];
@@ -121,6 +121,21 @@ void Session::send_stream(std::vector<StreamMsg> msgs) {
 uint16_t Session::stream_seq(uint8_t t) const {
     auto it = stream_seq_.find(t);
     return it == stream_seq_.end() ? 0 : uint16_t(it->second);
+}
+
+Session::Submit Session::submit_frame(std::span<const SliceData> slices, const FrameOptions& opt) {
+    if (state_ != State::Streaming) return Submit::NotStreaming;
+    if (!quest_offset_) return Submit::NoClock;  // need one clock ping to map our clock onto the Quest's
+    if (slices.empty() || slices.size() > templates::slice_headers().size()) return Submit::BadSlices;
+    FrameParams p;
+    p.index = opt.index ? opt.index : next_frame_index_;
+    p.target_vsync_quest_ns = opt.target_vsync_quest_ns ? opt.target_vsync_quest_ns
+                                                        : clock_() + *quest_offset_ + opt.vsync_lead_ns;
+    p.render_pose = opt.render_pose;
+    p.intra = opt.intra;
+    send_stream(build_frame(slices, p));
+    next_frame_index_ = p.index + 1;
+    return Submit::Ok;
 }
 
 // --- receiving -------------------------------------------------------------

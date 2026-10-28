@@ -30,6 +30,13 @@ struct Message {
     Bytes body;
 };
 
+// A message to send on a stream topic; seq is assigned per topic when sent
+struct StreamMessage {
+    uint8_t topic;
+    uint8_t flags;
+    Bytes body;
+};
+
 // Body must be a multiple of 4 bytes (use pad_body first).
 Bytes encode_message(uint8_t flags, uint8_t topic, uint16_t seq, std::span<const uint8_t> body,
                      uint16_t reserved = 0);
