@@ -5,46 +5,14 @@
 #include <mutex>
 #include <thread>
 
+#include "fake_quest.hpp"
 #include "harness.hpp"
 #include "questlink.h"
 #include "texture_encoder.hpp"
-#include "transport.hpp"
 
 using namespace ql;
 
 namespace {
-
-// Plays the Quest's side of the recorded session, records what we send
-struct FakeQuest {
-    std::mutex mu;
-    Bytes rx;
-    size_t rx_pos = 0;
-    std::vector<Bytes> written;
-};
-FakeQuest g_quest;
-bool g_quest_plugged = false;
-
-class FakeTransport final : public Transport {
-public:
-    bool write(const uint8_t* data, size_t len, int) override {
-        std::lock_guard<std::mutex> l(g_quest.mu);
-        g_quest.written.emplace_back(data, data + len);
-        return true;
-    }
-    long read(uint8_t* buf, size_t cap, int timeout_ms) override {
-        {
-            std::lock_guard<std::mutex> l(g_quest.mu);
-            size_t n = std::min(cap, g_quest.rx.size() - g_quest.rx_pos);
-            if (n) {
-                std::copy(g_quest.rx.begin() + g_quest.rx_pos, g_quest.rx.begin() + g_quest.rx_pos + n, buf);
-                g_quest.rx_pos += n;
-                return long(n);
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::min(timeout_ms, 5)));
-        return 0;
-    }
-};
 
 // "Texture" = pointer to an int; the encoded slice carries its value
 class FakeTextureEncoder final : public TextureEncoder {
@@ -114,16 +82,6 @@ int audio_blocks(bool loud) {
     return n;
 }
 
-template <class F>
-bool wait_for(F cond, int ms = 5000) {
-    auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-    while (std::chrono::steady_clock::now() < end) {
-        if (cond()) return true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    return cond();
-}
-
 void submit(ql_session* s, int* tex, uint64_t index, float qw) {
     ql_frame_submit f{};
     f.session = s;
@@ -135,19 +93,8 @@ void submit(ql_session* s, int* tex, uint64_t index, float qw) {
 
 }  // namespace
 
-// Platform backends for this test binary
+// Texture backend for this test binary (USB: fake_quest.hpp)
 namespace ql {
-std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail) {
-    std::lock_guard<std::mutex> l(g_quest.mu);
-    if (!g_quest_plugged) {
-        err = OpenError::NotFound;
-        detail = "fake: not plugged";
-        return nullptr;
-    }
-    g_quest_plugged = false;  // one connection
-    err = OpenError::None;
-    return std::make_unique<FakeTransport>();
-}
 std::unique_ptr<TextureEncoder> create_texture_encoder(const TextureEncoderConfig&, std::string*) {
     return std::make_unique<FakeTextureEncoder>();
 }
@@ -163,19 +110,7 @@ TEST(runtime_unity_flow) {
     ql_device_info dev;
     CHECK(ql_get_device_info(s1, &dev) != 0);
 
-    {
-        std::lock_guard<std::mutex> l(g_quest.mu);
-        auto add = [](const Bytes& raw) {
-            Bytes x = pack_transfer(std::vector<Bytes>{raw});
-            g_quest.rx.insert(g_quest.rx.end(), x.begin(), x.end());
-        };
-        for (const auto& e : qltest::fixture("handshake", "control").items())
-            if (e["dir"].as_string() == "quest_to_pc") add(e["raw"].as_hex());
-        for (const auto& g : qltest::fixture("handshake", "streams").items())
-            if (g["topic"].as_u64() == 34 || (g["topic"].as_u64() == 6 && g["dir"].as_string() == "quest_to_pc"))
-                for (const auto& s : g["samples"].items()) add(s["raw"].as_hex());
-        g_quest_plugged = true;
-    }
+    plug_recorded_quest();
     // Handshake, then ~0.7 s of paced stream setup
     REQUIRE(wait_for([&] { return ql_poll(s1) == 2; }));
     REQUIRE(ql_get_device_info(s1, &dev) == 0);
