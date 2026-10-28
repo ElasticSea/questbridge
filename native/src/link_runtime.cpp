@@ -140,6 +140,7 @@ private:
     bool encoder_tried_ = false;
     std::thread io_, encode_;
     uint64_t dropped_ = 0;  // encode thread only
+    const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
 
     Runtime() {
         io_ = std::thread([this] { io_loop(); });
@@ -226,6 +227,11 @@ private:
             fi.is_intra = out.idr ? 1 : 0;
             // Mesh 1001 + the FOV the eyes were rendered with (the device's) turn on timewarp
             fi.rectify_mesh_id = kRectifyMeshId;
+            // Target vsync = now + lead in the Quest clock. 20 ms (qlhost's default) made the
+            // headset log "Frame arrived ~7.6 ms before deadline, frame drop", so aim ~4 ms closer
+            ql_info info;
+            if (ql_host_get_info(h.get(), &info) == QL_OK && info.has_clock_offset)
+                fi.target_vsync_quest_ns = ql_now_ns() + info.quest_clock_offset_ns + vsync_lead_ns_;
             ql_device_info dev;
             if (ql_host_get_device_info(h.get(), &dev) == QL_OK) {
                 fi.has_fov = 1;
