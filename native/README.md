@@ -14,12 +14,19 @@ C++20 port of the Python Link host (`host/handshake.py`, `tools/xrsp.py`, `tools
 ## Build
 Windows (Visual Studio 2026's bundled CMake): `native\build.ps1` (Release; builds, then runs the tests). Output in `native/build/bin/<Config>/`.
 
-macOS: `brew install cmake libusb pkg-config`, then
+macOS (Apple clang from Xcode or the Command Line Tools; tested on macOS 26.7, arm64): `brew install cmake libusb pkg-config`, then from the repo root
 ```
-cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release && cmake --build native/build && ctest --test-dir native/build
+cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build -j
+ctest --test-dir native/build --output-on-failure
 ```
+Output in `native/build/bin/` (`qlhost`, `libquestlink.dylib` linked to brew's libusb through `@rpath`). Over SSH, brew is not on the non-login `PATH`: run `eval "$(/opt/homebrew/bin/brew shellenv)"` first. Without libusb/pkg-config, CMake warns and builds `transport_none.cpp` (`ql_host_open` returns `QL_ERR_UNSUPPORTED`). `qlenc` needs the VideoToolbox backend (`native/encoders/vt/`); until that lands, build only `--target qlhost questlink_tests questlink_capi_tests questlink_runtime_tests`.
+
+USB on macOS (`src/transport_libusb.cpp`): picks a VID `0x2833` device from `kQuestPids` whose interface 0 is class `ff`/`8a` with bulk `0x01`/`0x81` (Meta's own filter is `2833,ff,8A`), claims only that interface (adb keeps the ADB interface), one process-wide libusb context. No root and no kernel-driver detach needed (vendor-class interfaces). Unplug = read/write error → the runtime/`qlhost` reopens by polling `open_usb`; why an open failed is logged once per change on the `usb` log line (`QL_LOG=1`).
 
 ## Run (bench)
-Same as the Python host: stop OVRService first, then e.g. `set XRSP_REPLAY=host\replay\meta-idr.json` and `native\build\bin\Release\qlhost.exe 30`. At the end it prints the `XRSP_ATTACH` values for a follow-up run.
+macOS: no OVRService to stop. Plug the Quest in, then `XRSP_REPLAY=host/replay/meta-idr.json QL_LOG=1 native/build/bin/qlhost 30` and select Link in the headset (the Quest only sends HELLO after that).
+
+Windows: same as the Python host: stop OVRService first, then e.g. `set XRSP_REPLAY=host\replay\meta-idr.json` and `native\build\bin\Release\qlhost.exe 30`. At the end it prints the `XRSP_ATTACH` values for a follow-up run.
 
 Differences from `handshake.py`: a handshake timeout exits with code 1 instead of reopening the device; replay uses the embedded EncodedSlice headers (identical to the ones in Meta's and `encode_pattern.py`'s clips); while listening without a clip it logs per-topic counts every 2 s instead of every message.
