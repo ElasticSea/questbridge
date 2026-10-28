@@ -151,8 +151,9 @@ Our host refuses to send anything above 120 KiB (`kMaxStreamMessage` in `native/
 Most structured payloads are standard [Cap'n Proto](https://capnproto.org/encoding.html)
 messages (verified: `tools/capnp_codec.py`, schema-less decode/encode).
 
-- Always **one segment**; no far pointers, no capabilities seen. Segment table =
-  `u32 segment_count − 1 (= 0)`, `u32 segment_words`.
+- One segment everywhere except topic 4 Mesh (3 segments with far pointers, §6.5); no
+  capabilities seen. Segment table = `u32 segment_count − 1`, then `u32 words` per segment
+  (padded to 8 B). Our codec handles single-segment messages only.
 - Only `video.capnp:EncodedSlice` (and a few unrelated schemas) are embedded in Meta's binaries
   (`tools/capnp_extract.py` → `schemas/`). All other messages are decoded structurally; field
   names in this spec are ours unless they come from that schema or from log strings.
@@ -518,3 +519,224 @@ still cross strip edges (with x264 too); no visible problem so far but unverifie
   4096 × 2240, 3648 × 1968 maybe the per-frame render target). The two large segments (~132 and
   ~96 KiB) were lost to capture truncation; how they are carried within the ~128 KiB message
   limit is unknown.
+
+## 7. Other streams
+
+### 7.1 Head pose (topic 34 Pose2, Quest → host)
+
+Single-segment Cap'n Proto, segment table + 272 B segment, ~543 poses/s (verified:
+`tools/decode_pose.py --check` derivative cross-checks r ≈ 1, `native/src/pose.cpp`,
+`native/tests/test_pose.cpp`). Offsets are **segment** offsets; root = 18 data / 3 ptrs.
+
+| Seg off | Type | Field | Status |
+|---|---|---|---|
+| 0x00 | ptr | root | |
+| 0x08 | u64 | vsync time, Quest ns (steps of 13.889 ms at 72 Hz) | verified |
+| 0x10–0x77 | | frame-timing feedback: frame indices and Quest-ns timestamps of recently displayed frames (zero until video starts; `FRAME_FIELDS` in `decode_pose.py`) | partial |
+| 0x80 | f32 | unknown, changes ~1/s in step with clock sync | unknown |
+| 0x88 | i64 | unknown ns offset (−0.17 … −0.35 s), slews slowly | unknown |
+| 0x90 | u64 | send time, Quest ns | verified |
+| 0x98 | ptr | null in all captures; inferred: list of tracked devices (controllers, `XrsTrackingEntry`) | inferred |
+| 0xa0 | ptr | → head pose state at 0xb8 (11 data words) | verified |
+| 0xa8 | ptr | → 1-word struct at 0xb0: u64 `0xf` (tracking status bits?) | inferred |
+| 0xb8 | 3 × f32 | angular velocity, world frame, rad/s | verified |
+| 0xc4 | 3 × f32 | linear velocity, m/s | verified |
+| 0xd0 | 3 × f32 | angular acceleration, rad/s² | verified |
+| 0xdc | 3 × f32 | linear acceleration (gravity removed), m/s² | verified |
+| 0xe8 | 4 × f32 | orientation quaternion x, y, z, w | verified |
+| 0xf8 | 3 × f32 | position, m | verified |
+| 0x104 | u32 | 0 | |
+| 0x108 | u64 | pose sample time, Quest ns (~2.3 ms before send time) | verified |
+
+Convention: right-handed, +Y up, −Z forward, metres, in the headset's tracking space. Feed the
+latest pose (or a prediction to the target vsync) into the frame's `renderPose`.
+
+### 7.2 Device input (topic 35 DeviceInput, Quest → host)
+
+Segment table + 32 B segment at the pose rate. Root 2 data / 1 ptr (observed; layout of the
+populated case unknown):
+
+| Seg off | Type | Value |
+|---|---|---|
+| 0x08 | u8, u8, u16 | 3, 100, 0 (constant) |
+| 0x0c | f32 | 1.1553 (constant) |
+| 0x10 | f32 | 0.062–0.065 (maybe the live IPD in m) |
+| 0x18 | ptr | null; inferred: `XrsDeviceInputEntry` list (controller buttons/axes/touch) |
+
+No controller was awake in any capture, so controller poses, buttons and sticks are **not
+decoded** (candidates: 34 @0x98 and 35 @0x18; RuntimeIPC also mirrors controller state).
+
+### 7.3 Hands (InputControl 28, Hands 8, Skeleton 9)
+
+**InputControl (topic 28, host → Quest)**: segment table + 1-word root struct (verified on the
+bench). `u16 type @0, u16 value @2`, rest 0.
+
+| Type | Values | Effect |
+|---|---|---|
+| 1 | 0 / 1 | hands off / on (headset logs `Toggling hands. enabled = %d`). Meta sends `{1, 0}` at every session start |
+| 2 | 0 / 1 | body tracking off / "3-point" (inferred from binaries) |
+| 0, or other bytes set | | rejected: `getInputControl received with unsupported message` |
+
+With hands on, the Quest sends (both **packed little-endian C structs**, not Cap'n Proto; one
+XRSP message each, flags `0x10`, no segment table; verified: `tools/decode_hands.py`,
+`tests/test_hands.py`, fixture `tests/fixtures/hands/`):
+
+**Topic 8 Hands**: 1320 B body, 60 msg/s. Hand data updates at ~25–30 Hz and is repeated in
+between; the pointer pose changes every message.
+
+| Body off | Field |
+|---|---|
+| 0x000 | u32 3 (both hands present?) |
+| 0x004 | left hand record (656 B) |
+| 0x294 | right hand record |
+| 0x524 | u32 0 |
+
+| Record off | Field |
+|---|---|
+| 0x000 | u64 0 |
+| 0x008 | u32 tracking status: 1 tracked, 0 lost (record then zero) |
+| 0x00c | root (wrist) orientation, 4 × f32 xyzw |
+| 0x01c | root position, 3 × f32 m, same space as the head pose |
+| 0x028 | 3 × f32, always 0 (velocity?) |
+| 0x034 | 24 bone rotations, 4 × f32 each, local to the parent bone (order below) |
+| 0x1b4 | f64 sample time, s, Quest clock; 0x1bc same value again |
+| 0x1c4 | f32 hand confidence (1.0 = high) |
+| 0x1c8 | f32 hand scale (multiplies bind-skeleton translations) |
+| 0x1cc | 5 × f32 finger confidences, thumb … pinky |
+| 0x1e0 | 2 × u32 0 |
+| 0x1e8 | 5 fingers × 4 f32, curl/splay-like values 0 … 1.35 (partial) |
+| 0x238 | 6 × f32 ≈ 0.998 (unknown) |
+| 0x250 | u32 0 |
+| 0x254 | 4 × f32 pinch strength: index, middle, ring, pinky (0 … 1) |
+| 0x264 | pointer (aim) pose: orientation 4 × f32, position 3 × f32 |
+| 0x280 | 3 × u32 0 |
+| 0x28c | u32 input status bits: `0x02` pointer valid, `0x80` dominant hand; `0x1000` / `0x2000` occasionally (pinch / system gesture?) |
+
+Bones (index: name → parent): 0 WristRoot, 1 ForearmStub→0, 2 Thumb0→0, 3 Thumb1→2, 4 Thumb2→3,
+5 Thumb3→4, 6 Index1→0, 7 Index2→6, 8 Index3→7, 9 Middle1→0, 10 Middle2→9, 11 Middle3→10,
+12 Ring1→0, 13 Ring2→12, 14 Ring3→13, 15 Pinky0→0, 16 Pinky1→15, 17 Pinky2→16, 18 Pinky3→17,
+19 ThumbTip→5, 20 IndexTip→8, 21 MiddleTip→11, 22 RingTip→14, 23 PinkyTip→18. WristRoot,
+ForearmStub and the tips are always identity; Pinky0 stays at its bind rotation.
+
+Joint world pose: start from the root pose, then per bone
+`world = parent_world · (bind_translation × scale, streamed_rotation)` (verified: thumb-tip to
+index-tip distance closes with pinch strength). OpenXR `XR_EXT_hand_tracking` mapping:
+`OPENXR` in `tools/decode_hands.py` (palm and index/middle/ring metacarpals are not sent and
+must be synthesized).
+
+**Topic 9 Skeleton**: 46 messages of 4120 B within 0.4 s after hands are enabled, then nothing.
+Chunk = `u32 hand (0 left, 1 right), u32 0, f64 time s, u32 byte offset, 4096 B data, u32 0`.
+Each hand's 23 chunks form one 94,208 B blob:
+
+| Blob off | Field |
+|---|---|
+| 0x0000 | skeleton header: u32 version `0xdf000001`, u32 bones 24, u32 capsules 19 |
+| 0x000c | mesh header: u32 version `0xdf000001`, u32 vertices 1360, u32 indices 6942 |
+| 0x0018 | 24 bind poses, local to parent: rotation 4 × f32 + translation 3 × f32 |
+| 0x02b8 | 24 × i16 parent bone (−1 = root) |
+| 0x02e8 | 19 capsules: u32 bone, p0 3 × f32, p1 3 × f32, f32 radius |
+| 0x0548 | 440 B constants (joint limits?), unknown |
+| 0x0700 | 48 × i16 index map (−1 = none), unknown |
+| 0x0760 | 1360 vertex positions 3 × f32 (bind space) |
+| 0x4720 | 6942 × u16 triangle indices |
+| 0x7d5c | 1360 normals 3 × f32, 1360 UVs 2 × f32, 1360 × 4 i16 blend bones, 1360 × 4 f32 blend weights |
+| 0x1671c | 2276 B tail, unknown |
+
+The right-hand blob is the left one mirrored (positions negated, same rotations).
+
+### 7.4 Audio (topic 6) and AudioControl (topic 26)
+
+Raw PCM unless session feature 6 (Opus) is selected; Meta's PC does not select it. Each 10 ms
+block is a single-segment Cap'n Proto message sent as two XRSP messages (verified byte-exact:
+`encode_audio` in `tools/decode_audio.py`, `test_audio_blocks_reencode`):
+
+1. flags `0x10`: segment table `00000000 <u32 words>` (483 host → Quest, 123 Quest → host);
+2. flags `0x18`: the segment, padded so header + body is a multiple of 1024 B (§2.2).
+
+| Seg off | Field |
+|---|---|
+| 0x00 | root pointer `00000000 01000100` (1 data word, 1 pointer) |
+| 0x08 | u64 timestamp, ns, **sender's own clock**; roughly when the block was handed to the transport, not sample-accurate |
+| 0x10 | byte-list pointer `01000000 <n << 3 \| 2>` |
+| 0x18 | n bytes PCM |
+
+| Direction | n | Format | Cadence |
+|---|---|---|---|
+| Host → Quest (headphones) | 3840 | 480 frames, 48 kHz, **stereo float32, interleaved L R** | one block / 10 ms |
+| Quest → host (mic) | 960 | 480 frames, 48 kHz, **mono int16** | two blocks back to back / 20 ms |
+
+`seq` advances by 2 per block. The headset resamples adaptively (`AdaptiveSrc`, 20 ms latency,
+50 ms max), so keep sending blocks every 10 ms (zeros for silence). Mic timestamps are in the
+Quest clock (subtract the clock offset). With Opus the mic encoder is 48 kHz mono 96 kbit/s;
+the Opus payload layout is not captured. Playback through our host is not yet bench-tested.
+
+**AudioControl (topic 26)**: segment table + 2-word root struct, once each way at setup
+(observed; semantics inferred from the headset log):
+
+| Dir | Data words | Meaning |
+|---|---|---|
+| Quest → host | `03 00 02 00 01 00 00 00` `00 00 00 00 00 00 80 3f` | logged as `source = 3, headphones = (0.0, 0), mic = (1.0, 1)`: u16 source, u16 type (2 = volume?), u8 mic flag @4, f32 headphone volume @8, f32 mic volume @12 |
+| Host → Quest | `01 00 01 00 00 00 00 00` `00…00` | probably type 1 = connectivity; replay verbatim |
+
+### 7.5 Telemetry (topic 33 Logging, Quest → host)
+
+~7 messages/s, Cap'n Proto padded to 1 KiB. Contents not decoded; not needed by a host.
+
+### 7.6 Command (topic 2)
+
+Raw 32-byte bodies, no Cap'n Proto (observed):
+
+| Off | Type | Field |
+|---|---|---|
+| 0x00 | u64 | wall-clock time, **µs since the Unix epoch** (both directions) |
+| 0x08 | u32 | command type |
+| 0x0c | u32 | 0 |
+| 0x10 | … | value(s); zero-filled |
+
+| Dir | Type | Value | Meaning |
+|---|---|---|---|
+| Host → Quest | 12 | 2 | sharpening (inferred) |
+| Host → Quest | 15 | 1 | local dimming (inferred) |
+| Host → Quest | 17 | 0 | drop state (inferred) |
+| Host → Quest | 19 | 2 | unknown |
+| Quest → host | 18 | 8 bytes, look like two floats/doubles | unknown, seen once |
+| Quest → host | 23 | `u32 2401, u32 2401, i32 −34, 0` | sent every ~5 s; logged as `Send command, type=23` (stats?) |
+
+### 7.7 Haptics (topic 7, host → Quest)
+
+Meta sent one message at setup: segment table + root 3 data / 1 ptr: `d0` u64 time in the
+**Quest clock**, `d1` u32 3, `d2` 0, `p0` null (observed). Binary names suggest
+`XrsHaptic` = simple `{deviceType, deviceID, amplitude}` or a buffered sample list
+(`vrapi_SetHapticVibrationSimple/Buffer`). Field layout not decoded; not yet tested.
+
+### 7.8 RuntimeIPC (topic 31)
+
+Meta's PC connects through this topic to the headset's `com.oculus.vrruntimeservice`
+(RIPC version 87; session features 14/15). The Quest sends a ~12.5 KB snapshot of named runtime
+states (hands, remote input and tracking, eye/face/body tracking, passthrough, guardian/aperture,
+performance), then ~75 Hz deltas of ~4.6 KB. Payload serialization is Meta's reflection format
+("Reflect V2", type-info hashes), not Cap'n Proto (inferred from the binaries).
+
+Framing (observed in the setup messages): segment table + a 1-word Cap'n Proto struct
+`{u32 kind, u32 payload_bytes}` (kinds `0x08` and `0x20` seen), for kind `0x20` a further
+32-byte header message, then the payload as a raw message (flags `0x18`, padded to 4 B).
+
+Our host replays Meta's recorded setup messages on 31 and otherwise ignores the topic. It is a
+second route to most sensor state, but would mean implementing RIPC; the dedicated topics are
+preferred.
+
+### 7.9 Passthrough and cameras
+
+Two separate mechanisms (inferred from binaries; nothing captured):
+
+1. **Composited on the headset** (no images to the host): the host encodes alpha into the video
+   (`XrsAlphaEncodingScheme`, "alpha as-is in Y plane"; the headset's VideoReceiver is created
+   `with alpha`) and sets `envBlendMode` = 3 (alphaBlend); `passthroughLayerId` / `apertureId`
+   select layers. Layer state syncs over RuntimeIPC. Untested.
+2. **Camera images to the host** on topic 32 CameraStream: either MR streaming (Raw or H.265,
+   advertised by a `CameraStreamingSupport` value in the headset's invite, field not located) or
+   Passthrough Camera Access (session feature 20, offered by Quest 3). The message format on 32
+   is unknown.
+
+Body tracking: topic 30 + InputControl type 2 (not captured). Eye/face tracking: no topic;
+state only via RuntimeIPC, and Quest 3 has no such sensors.
