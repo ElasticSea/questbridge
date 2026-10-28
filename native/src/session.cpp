@@ -459,8 +459,11 @@ uint16_t Session::pick_codec() const {
         if (!offered.empty() && !lists(c)) log("info", std::string(codec::name(c)) + " not listed by the headset; sending it anyway");
         return c;
     }
-    // An empty list (Quest 3, Quest Pro) says nothing: stay on H.264, which every headset plays
-    return cfg_.prefer_hevc && lists(codec::kHevc) ? codec::kHevc : codec::kH264;
+    // The list can't be trusted: the Quest Pro sends it empty and decodes HEVC (bench
+    // 2026-10-28). So where HEVC is preferred, only a list that names codecs but not HEVC
+    // keeps H.264.
+    if (!cfg_.prefer_hevc) return codec::kH264;
+    return offered.empty() || lists(codec::kHevc) ? codec::kHevc : codec::kH264;
 }
 
 void Session::begin_phase(uint16_t version) {

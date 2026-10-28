@@ -63,8 +63,8 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
   **9.5 ms**, ~92 fps pipelined. Throughput varies ~20% with the Mac's desktop load (Aerial
   wallpaper, Unity open): 5 x 4096x448 H.264 measured 62 fps first, 50 fps later.
 - **HEVC strips in the native core (2026-10-28):** the session sends the codec in CONFIG v3
-  (`ql_config.codec` / `QL_CODEC`, auto = HEVC on macOS only when the HELLO v3 lists it; Quest 3/Pro
-  list nothing, so H.264), and the Metal texture encoder follows it. ave.hevc strip headers:
+  (`ql_config.codec` / `QL_CODEC`, auto = HEVC on macOS unless the HELLO v3 lists codecs without HEVC; Quest 3/Pro
+  list nothing and the Pro decodes HEVC, so HEVC on the Mac, H.264 on Windows), and the Metal texture encoder follows it. ave.hevc strip headers:
   VPS + SPS + PPS per strip (csd), one slice segment per strip, IDR_N_LP (20) on forced keys in
   every strip at once, no reordering (max_num_reorder 0, dec buffering 5), CTB 32, level 5.2,
   POC lsb 11 bits, temporal MVP on, SAO on, **WPP on (entropy_coding_sync, entry points in the

@@ -49,8 +49,8 @@ if(APPLE)
     "-framework Metal" "-framework Foundation" "-framework IOSurface")
   target_compile_definitions(questlink_metal_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
   add_test(NAME questlink_metal_tests COMMAND questlink_metal_tests)
-  add_test(NAME questlink_metal_hevc_tests COMMAND questlink_metal_tests)
-  set_tests_properties(questlink_metal_hevc_tests PROPERTIES ENVIRONMENT QL_CODEC=hevc)
+  set_tests_properties(questlink_metal_tests PROPERTIES ENVIRONMENT QL_CODEC=h264)
+  add_test(NAME questlink_metal_hevc_tests COMMAND questlink_metal_tests)  # auto = HEVC on macOS
 
   # VideoToolbox HEVC / H.264 strips: encode, decode each strip again, slice cap
   add_executable(questlink_vt_tests test_main.cpp test_vt.cpp)
