@@ -1,6 +1,7 @@
 #include "h264.hpp"
 
 #include <algorithm>
+#include <initializer_list>
 
 namespace ql::enc::h264 {
 
@@ -73,6 +74,10 @@ public:
         u(0, len);
         u(v + 1, len + 1);
     }
+    // Copy bits [from, to) of src
+    void copy(const Bytes& src, size_t from, size_t to) {
+        for (size_t i = from; i < to; i++) u((src[i >> 3] >> (7 - (i & 7))) & 1, 1);
+    }
     const Bytes& bytes() const { return d_; }  // zero-padded to a byte
 
 private:
@@ -93,6 +98,24 @@ Bytes escape(uint8_t header, const Bytes& data) {
         zeros = b == 0 ? zeros + 1 : 0;
     }
     return out;
+}
+
+// Bit offset of the rbsp_stop_one_bit (the last 1 bit); 0 if none.
+size_t stop_bit(const Bytes& d) {
+    for (size_t i = d.size(); i-- > 0;)
+        if (d[i])
+            for (int b = 0; b < 8; b++)
+                if ((d[i] >> b) & 1) return i * 8 + size_t(7 - b);
+    return 0;
+}
+
+// RBSP with bits [cut_from, cut_to) replaced by `insert_ue` (ue values), re-terminated
+Bytes splice(const Bytes& data, size_t cut_from, size_t cut_to, std::initializer_list<uint32_t> insert_ue) {
+    BitWriter w;
+    w.copy(data, 0, cut_from);
+    for (uint32_t v : insert_ue) w.ue(v);
+    w.copy(data, cut_to, stop_bit(data) + 1);  // through the stop bit; the writer zero-pads
+    return w.bytes();
 }
 
 }  // namespace
@@ -135,6 +158,7 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
         break;
     }
     out.log2_max_frame_num = int(b.ue()) + 4;
+    out.poc_type_bit = int(b.pos());
     uint32_t poc_type = b.ue();
     out.poc_type = int(poc_type);
     if (poc_type == 0) {
@@ -145,6 +169,7 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
         b.se();
         for (uint32_t n = b.ue(), i = 0; i < n && b.ok(); i++) b.se();
     }
+    out.poc_end_bit = int(b.pos());
     out.max_num_ref_frames = int(b.ue());
     b.u(1);   // gaps_in_frame_num_value_allowed_flag
     out.width_mbs = int(b.ue()) + 1;
@@ -232,6 +257,33 @@ bool parse_pps(std::span<const uint8_t> nal, Pps& out) {
     b.u(1);                          // constrained_intra_pred_flag
     out.redundant_pic_cnt = b.u(1);
     return b.ok();
+}
+
+bool set_poc_type2(Bytes& nal) {
+    Sps sps;
+    if (!parse_sps(nal, sps)) return false;
+    if (sps.poc_type == 2) return true;
+    if (sps.poc_type != 0) return false;
+    Bytes data = rbsp(nal, nal.size());
+    nal = escape(nal[0], splice(data, size_t(sps.poc_type_bit), size_t(sps.poc_end_bit), {2}));
+    return true;
+}
+
+bool drop_poc_lsb(Bytes& nal, const Sps& sps, const Pps& pps) {
+    if (sps.poc_type != 0 || nal.empty()) return sps.poc_type == 2;
+    Bytes data = rbsp(nal, nal.size());
+    Bits b(data);
+    b.ue();                              // first_mb_in_slice
+    b.ue();                              // slice_type
+    b.ue();                              // pic_parameter_set_id
+    b.u(sps.log2_max_frame_num);         // frame_num (frame_mbs_only: no field flags)
+    if (nal_type(nal) == kIdr) b.ue();   // idr_pic_id
+    size_t from = b.pos();
+    b.u(sps.log2_max_poc_lsb);           // pic_order_cnt_lsb
+    if (pps.bottom_field_pic_order) b.se();  // delta_pic_order_cnt_bottom
+    if (!b.ok()) return false;
+    nal = escape(nal[0], splice(data, from, b.pos(), {}));
+    return true;
 }
 
 bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out, const Sps* sps, const Pps* pps) {
