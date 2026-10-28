@@ -11,11 +11,14 @@ namespace ElasticSea.QuestLink.BridgeTest
     {
         const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
         const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nThen take the headset off.";
+        const string AudioInstructions = "Look around:\nobjects should stay still, in 3D.\n\nAudio test below.\nThen take the headset off.";
 
         public QuestLinkRig.BackendMode backend = QuestLinkRig.BackendMode.Native;
         public Color sky = new Color(0.55f, 0.75f, 0.95f);
         [Tooltip("Head height used when the Link origin is at eye level.")]
         public float standingHeight = 1.6f;
+        [Tooltip("Game audio to the headset (beeps, mic playback) and the headset mic back; AudioBench.")]
+        public bool audioTest = true;
 
         QuestLinkRig rig;
         bool recentred;
@@ -59,7 +62,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             Cube(new Vector3(2.2f, 0.5f, -0.5f), 1.0f, new Color(0.8f, 0.4f, 0.85f));
             Cube(new Vector3(-2.0f, 0.35f, -1.0f), 0.7f, new Color(0.95f, 0.6f, 0.2f));
             Cube(new Vector3(0.3f, 0.2f, -2.0f), 0.4f, new Color(0.3f, 0.85f, 0.85f));
-            Text(Instructions, new Vector3(0f, 1.9f, 3.2f));
+            Text(audioTest ? AudioInstructions : Instructions, new Vector3(0f, 1.9f, 3.2f), 1.2f);
 
             var rigObject = new GameObject("QuestLink Rig");
             rigObject.SetActive(false);
@@ -68,6 +71,22 @@ namespace ElasticSea.QuestLink.BridgeTest
             rigObject.SetActive(true);
             if (rig.Backend != null)
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
+            if (audioTest && rig.Head != null)
+                AudioTest();
+        }
+
+        // Listener on the head, sent to the headset; beeps and mic record/playback below the instructions
+        void AudioTest()
+        {
+            var output = rig.Head.gameObject.AddComponent<QuestLinkAudio>();
+            output.rig = rig;
+            var bench = new GameObject("Audio Bench").AddComponent<AudioBench>();
+            var mic = bench.gameObject.AddComponent<QuestLinkMicrophone>();
+            mic.rig = rig;
+            bench.output = output;
+            bench.mic = mic;
+            bench.label = Text("", new Vector3(0f, 0.7f, 3.2f), 0.9f);
+            Debug.Log($"[QuestLink] audio test on, output {AudioSettings.outputSampleRate} Hz {AudioSettings.speakerMode}");
         }
 
         void Update()
@@ -197,7 +216,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             cube.GetComponent<Renderer>().material.color = color;
         }
 
-        static void Text(string text, Vector3 position)
+        static TextMesh Text(string text, Vector3 position, float boardHeight)
         {
             var go = new GameObject("Instructions");
             go.transform.position = position;
@@ -217,8 +236,9 @@ namespace ElasticSea.QuestLink.BridgeTest
             board.name = "Board";
             board.transform.SetParent(go.transform, false);
             board.transform.localPosition = new Vector3(0f, 0f, 0.02f);
-            board.transform.localScale = new Vector3(3.0f, 1.2f, 1f);
+            board.transform.localScale = new Vector3(3.0f, boardHeight, 1f);
             board.GetComponent<Renderer>().material.color = new Color(0.1f, 0.12f, 0.16f);
+            return mesh;
         }
     }
 }
