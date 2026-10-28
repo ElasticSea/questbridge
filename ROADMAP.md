@@ -25,7 +25,7 @@
 - [~] M5: native dylib with C API (pose out, frame in) + CLI on top; fixtures/tests reuse it — `native/` builds and passes byte-exact tests on Windows; bench run of `qlhost` and macOS build pending
 - [ ] M6: Unity package v0: two-eye rig → RT → Metal/IOSurface → VideoToolbox; head pose via Input System; scene visible in headset from Editor Play mode
 - [ ] M7: controllers: poses + buttons/sticks as XRController devices, haptics; works with XRI
-- [ ] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap)
+- [~] M8: hand tracking: joints decoded → C# hands API (XR Hands subsystem if cheap) — topics 8/9 decoded (`tools/decode_hands.py`, 2026-10-28); C# API pending
 - [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
 - [ ] M10: standalone macOS player build; latency tuning
 - [ ] later: environment depth / body tracking over Link; XR SDK display provider; raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
