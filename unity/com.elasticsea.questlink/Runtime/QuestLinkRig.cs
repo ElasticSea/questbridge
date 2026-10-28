@@ -51,6 +51,13 @@ namespace ElasticSea.QuestLink
 
         void OnEnable()
         {
+            // Two streams to one headset: the XR Plug-in Management loader already drives Camera.main
+            if (QuestLinkXRDriver.Active != null)
+            {
+                Debug.LogWarning("[QuestLink] The Quest Link XR loader is already streaming; turn it off in XR Plug-in Management or remove this rig.", this);
+                enabled = false;
+                return;
+            }
             var b = CreateBackend(backend);
             if (b == null)
             {

@@ -25,7 +25,8 @@ To use Meta's Link again later: `Start-Service OVRService` (admin).
 ## 3. Drop the rig in your scene
 1. **GameObject → XR → QuestLink Rig** (or drag `Packages/Quest Link for Mac/Runtime/Prefabs/QuestLink Rig`).
 2. Put it where the player should stand, on the floor. Leave your Main Camera where it is: while playing the rig copies its settings (clear color, culling mask) and turns it off, and `Camera.main` points at the rig's left eye.
-3. Select the rig. If the Inspector shows a red box (e.g. "streaming needs Direct3D 11"), press its button; Unity restarts once.
+3. Leave **Quest Link** unticked in Project Settings → XR Plug-in Management (that's the other way to stream, without the rig; both at once don't work).
+4. Select the rig. If the Inspector shows a red box (e.g. "streaming needs Direct3D 11"), press its button; Unity restarts once.
 
 ## 4. Play
 1. Plug the Quest in and put it on.
