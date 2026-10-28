@@ -10,6 +10,9 @@
 // Recovery (PROTOCOL.md §4.6): in WaitHello we send a "preluding BYE" like Meta's host, so a
 // headset whose INVITE (HELLO) went unanswered restarts and sends a fresh one; a HELLO in any
 // state restarts the handshake; a BYE from the headset mid-session returns to WaitHello.
+// While streaming, silence (no Quest message for silence_timeout) also ends the stream with a
+// BYE. After a USB error the caller may reopen USB and resume(): the stream continues with the
+// same numbering if the headset still has it (any message within resume_timeout), else BYE.
 #pragma once
 
 #include <array>
@@ -71,6 +74,9 @@ enum class State {
 };
 const char* state_name(State s);
 
+// Why a stream ended (same values as ql_loss)
+enum class Loss { None, Usb, HeadsetBye, NewHello, Silence };
+
 // HELLO device description (docs/PROTOCOL.md §8; tools/device_info.py is the same parse)
 struct DeviceInfo {
     struct Mode {
@@ -119,6 +125,11 @@ struct SessionConfig {
     // otherwise sent as is, offered or not
     int codec = -1;
     bool prefer_hevc = false;  // this platform's encoder is faster at HEVC (VideoToolbox)
+    // Setup/Streaming: no Quest message this long ends the stream (BYE, wait for HELLO); 0 = never.
+    // The headset pings the clock at least every second and sends poses at the display rate.
+    int64_t silence_timeout_ns = 3'000'000'000;
+    // resume(): no Quest message this long after the reopen means the headset's stream is gone
+    int64_t resume_timeout_ns = 1'000'000'000;
 };
 
 class Session {
@@ -129,6 +140,9 @@ public:
     Session(SessionConfig cfg, Clock clock, Log log = {});
 
     void start();
+    // USB reopened after an error: continue a running stream with the same numbering (the
+    // headset still has it if anything arrives within resume_timeout), else start over
+    void resume();
     void on_message(std::span<const uint8_t> raw);
     void tick();
 
@@ -140,6 +154,10 @@ public:
     uint64_t session_id() const { return session_id_; }
     uint32_t streams() const { return streams_; }       // times Streaming was entered
     uint32_t byes_sent() const { return byes_sent_; }   // preluding BYEs
+    uint32_t losses() const { return losses_; }         // streams ended by the headset or silence
+    Loss last_loss() const { return last_loss_; }
+    uint32_t resumes() const { return resumes_; }       // resume()s the headset confirmed
+    bool resuming() const { return resume_deadline_ != 0; }
     uint16_t control_seq() const { return control_seq_; }
     std::optional<int64_t> quest_clock_offset_ns() const { return quest_offset_; }
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
@@ -209,6 +227,8 @@ private:
     void on_streaming();
     void connect_haptics();
     void fail(const std::string& why);
+    void lose(Loss why);
+    void clear_input();
     void log(const char* dir, const std::string& what, int seq = -1) const;
 
     SessionConfig cfg_;
@@ -225,6 +245,11 @@ private:
     int64_t bye_due_ = 0;  // 0 = none
     uint32_t byes_sent_ = 0;
     uint32_t streams_ = 0;
+    uint32_t losses_ = 0;
+    Loss last_loss_ = Loss::None;
+    uint32_t resumes_ = 0;
+    int64_t last_rx_ns_ = 0;
+    int64_t resume_deadline_ = 0;  // 0 = not resuming
     std::optional<int64_t> quest_offset_;
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
