@@ -58,5 +58,9 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
   `PrioritizeEncodingSpeedOverQuality`, Quality 0, Constrained High: no gain. **72 Hz at
   4096x2240 is out of reach with H.264**; 3840x1920 as strips reaches ~74 fps, 1920x1088 217 fps.
   **HEVC is faster:** 4096x2240 72.8 fps (1 session), 5 strips 87.6 fps.
+- **Real-time options (`qlenc`, encode() per frame, NV12):** `--codec hevc` (ave.hevc, Main, 5 x
+  4096x448, one slice each, IDR 19/20) **10.9 ms**; `--size 2880x1600` H.264 (5 x 2880x320)
+  **9.5 ms**, ~92 fps pipelined. Throughput varies ~20% with the Mac's desktop load (Aerial
+  wallpaper, Unity open): 5 x 4096x448 H.264 measured 62 fps first, 50 fps later.
 - Strip sizes: `DataRateLimits` caps each strip at 120,000 B per frame duration; on the test
   pattern at 100 Mbit/s CBR the largest strip was 12 KB (P), 8.5 KB (IDR).
