@@ -71,7 +71,7 @@ struct Run {
 
 TEST(device_fixtures_match_expected) {
     auto files = device_files();
-    CHECK(files.size() >= 1);
+    CHECK(files.size() >= 2);  // quest3, quest_pro
     for (const auto& path : files) {
         auto fx = json::parse_file(path.string());
         const auto& x = fx["expected"];
@@ -156,5 +156,6 @@ TEST(strips_follow_encode_height) {
     CHECK(strips(2240, 5) == strips(0, 5));
     CHECK(strips(1600, 5) == (S{{0, 20}, {320, 20}, {640, 20}, {960, 20}, {1280, 20}}));
     CHECK(strips(2240, 1) == (S{{0, 140}}));
+    CHECK(strips(2160, 5) == (S{{0, 27}, {432, 27}, {864, 27}, {1296, 27}, {1728, 27}}));  // Quest Pro
     CHECK(strips(1080, 5) == (S{{0, 14}, {224, 14}, {448, 14}, {672, 14}, {896, 12}}));  // 68 rows
 }
