@@ -6,6 +6,7 @@
   "unity": "6000.3",
   "dependencies": {
     "com.unity.inputsystem": "1.19.0",
+    "com.unity.modules.audio": "1.0.0",
     "com.unity.modules.xr": "1.0.0"
   },
   "samples": [

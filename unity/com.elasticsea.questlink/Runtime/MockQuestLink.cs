@@ -16,6 +16,11 @@ namespace ElasticSea.QuestLink
         public QuestLinkPose LastRenderPose { get; private set; }
         public RenderTexture LastTexture { get; private set; }
         public (QuestLinkHand hand, float amplitude, float duration)? LastHaptic { get; private set; }
+        public long SubmittedAudioFrames { get; private set; }
+        public int LastAudioSampleRate { get; private set; }
+        public float[] LastAudio { get; private set; } = new float[0];  // interleaved stereo
+
+        readonly System.Collections.Generic.Queue<float> microphone = new System.Collections.Generic.Queue<float>();
 
         public string Name => "Mock";
 
@@ -77,6 +82,36 @@ namespace ElasticSea.QuestLink
             LastFrameIndex = frameIndex;
             LastRenderPose = renderPose;
             LastTexture = eyes;
+        }
+
+        public void SubmitAudio(float[] stereo, int frames, int sampleRate)
+        {
+            lock (microphone)
+            {
+                SubmittedAudioFrames += frames;
+                LastAudioSampleRate = sampleRate;
+                LastAudio = new float[frames * 2];
+                System.Array.Copy(stereo, LastAudio, frames * 2);
+            }
+        }
+
+        // Tests: samples the "headset" microphone will return.
+        public void QueueMicrophone(float[] samples)
+        {
+            lock (microphone)
+                foreach (var s in samples)
+                    microphone.Enqueue(s);
+        }
+
+        public int ReadMicrophone(float[] samples, int offset, int count)
+        {
+            lock (microphone)
+            {
+                var n = Mathf.Min(count, microphone.Count);
+                for (var i = 0; i < n; i++)
+                    samples[offset + i] = microphone.Dequeue();
+                return n;
+            }
         }
 
         public void Dispose() { }

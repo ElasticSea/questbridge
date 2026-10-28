@@ -26,6 +26,11 @@ Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it dir
 - **Input.** `QuestLinkHMD : XRHMD` and two `QuestLinkController : XRControllerWithRumble`, with `LeftHand`/`RightHand` usages. Control names follow Unity's Oculus Touch layout, and usages follow XR feature usages (`TriggerButton`, `GripButton`, `Primary2DAxis`, `PrimaryButton`, `MenuButton`, …). `SendImpulse` and any `SendHapticImpulseCommand` go to the backend's `SendHaptic`.
 - **Defaults.** Quest 3 values from PROTOCOL_NOTES.md: FOV in up/down/left/right degrees is 44/55/54/40 for the left eye and mirrored for the right, IPD is 63.5 mm, and the stream runs at 72 Hz. The native layer overrides them when it reports device info.
 
+## Audio
+- **Game audio → headset.** Add `QuestLinkAudio` next to the scene's AudioListener (ideally on the rig's `Head`). It reads the final mix in `OnAudioFilterRead`, downmixes to stereo and calls `ql_submit_audio`; the native side resamples to 48 kHz and sends a 10 ms block every 10 ms (silence when the queue runs dry). `muteLocal` (default on) silences the PC speakers.
+- **Headset mic → Unity.** `QuestLinkMicrophone` pulls the Quest mic (48 kHz mono) every frame into a 1 s buffer: `Read(samples, offset, count)`, `Level` (RMS), `Clear()`. `playThrough` plays it live through an AudioSource on the same GameObject (40 ms jitter cushion); since that also reaches the headset through `QuestLinkAudio`, keep the gain low or expect feedback.
+- FirstLight (`audioTest`, on by default) runs `AudioBench`: beeps every 2 s, records 4 s of mic, plays it back, with instructions and a mic level bar in the headset.
+
 ## Coordinates
 The C API uses raw Link convention: right-handed, +Y up, −Z forward, metres, and Quest-clock nanoseconds. C# converts by mirroring Z: position `(x, y, −z)`, quaternion `(−x, −y, z, w)` (`QuestLinkMath.LinkToUnity`). It converts back the same way for the submitted renderPose.
 

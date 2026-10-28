@@ -19,5 +19,12 @@ namespace ElasticSea.QuestLink
         // Main thread, after the frame's cameras have rendered. Implementations hand the
         // texture to the render thread themselves.
         void SubmitFrame(RenderTexture eyes, QuestLinkPose renderPose, ulong frameIndex);
+
+        // Any thread (Unity's audio thread). Game audio for the headset: the first `frames`
+        // interleaved L R frames of `stereo` at `sampleRate`. Dropped while not streaming.
+        void SubmitAudio(float[] stereo, int frames, int sampleRate);
+
+        // Any thread. Headset microphone, 48 kHz mono, oldest first; returns samples copied.
+        int ReadMicrophone(float[] samples, int offset, int count);
     }
 }

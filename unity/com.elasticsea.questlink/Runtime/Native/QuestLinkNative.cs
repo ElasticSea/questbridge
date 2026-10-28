@@ -87,5 +87,10 @@ namespace ElasticSea.QuestLink.Native
         [DllImport(Library)] public static extern int ql_haptic(IntPtr session, int hand, float amplitude, float duration_s);
         [DllImport(Library)] public static extern int ql_submit_frame_texture(IntPtr session, IntPtr native_texture, ref ql_pose render_pose, ulong frame_index);
         [DllImport(Library)] public static extern IntPtr ql_get_render_event_func();
+
+        // Audio: game audio to the headset, headset microphone back (48 kHz mono int16).
+        public const int MicSampleRate = 48000;
+        [DllImport(Library)] public static extern int ql_submit_audio(IntPtr session, float[] interleaved_stereo, uint frames, uint sample_rate);
+        [DllImport(Library)] public static extern int ql_read_mic(IntPtr session, short[] samples, uint max_frames);
     }
 }

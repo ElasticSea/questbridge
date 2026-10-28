@@ -17,7 +17,10 @@ namespace ElasticSea.QuestLink
         static readonly IntPtr[] ring = AllocRing();
         static int ringNext;
 
-        IntPtr session;
+        volatile IntPtr session;  // also read on the audio thread
+        volatile bool audioAvailable = true;
+        readonly object micScratchLock = new object();
+        short[] micScratch = new short[4800];
         readonly IntPtr renderEvent;
         readonly CommandBuffer commands = new CommandBuffer { name = "QuestLink Submit" };
         // Top-down copy of the eye texture handed to the encoder (see SubmitFrame)
@@ -162,6 +165,33 @@ namespace ElasticSea.QuestLink
 
             commands.IssuePluginEventAndData(renderEvent, EventSubmitFrame, payload);
             Graphics.ExecuteCommandBuffer(commands);
+        }
+
+        public void SubmitAudio(float[] stereo, int frames, int sampleRate)
+        {
+            var s = session;
+            if (s == IntPtr.Zero || !audioAvailable || frames <= 0)
+                return;
+            try { ql_submit_audio(s, stereo, (uint)frames, (uint)sampleRate); }
+            catch (EntryPointNotFoundException) { audioAvailable = false; }  // older libquestlink
+        }
+
+        public int ReadMicrophone(float[] samples, int offset, int count)
+        {
+            var s = session;
+            if (s == IntPtr.Zero || !audioAvailable || count <= 0)
+                return 0;
+            lock (micScratchLock)
+            {
+                if (micScratch.Length < count)
+                    micScratch = new short[count];
+                int n;
+                try { n = ql_read_mic(s, micScratch, (uint)count); }
+                catch (EntryPointNotFoundException) { audioAvailable = false; return 0; }
+                for (var i = 0; i < n; i++)
+                    samples[offset + i] = micScratch[i] / 32768f;
+                return Math.Max(n, 0);
+            }
         }
 
         public void Dispose()

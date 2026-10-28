@@ -6,6 +6,7 @@
       "source": "local",
       "dependencies": {
         "com.unity.inputsystem": "1.19.0",
+        "com.unity.modules.audio": "1.0.0",
         "com.unity.modules.xr": "1.0.0"
       }
     },
@@ -33,6 +34,12 @@
         "com.unity.modules.imgui": "1.0.0",
         "com.unity.modules.jsonserialize": "1.0.0"
       }
+    },
+    "com.unity.modules.audio": {
+      "version": "1.0.0",
+      "depth": 0,
+      "source": "builtin",
+      "dependencies": {}
     },
     "com.unity.modules.hierarchycore": {
       "version": "1.0.0",
