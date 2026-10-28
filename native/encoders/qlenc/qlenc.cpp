@@ -5,6 +5,7 @@
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
 //              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency]
 //              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
+//              [--codec h264|hevc] [--size 4096x2240]
 // Strips (VideoToolbox): one .h264 per strip, capture/runs/<name>-<i>.h264.
 #include <algorithm>
 #include <chrono>
@@ -265,6 +266,8 @@ int main(int argc, char** argv) {
     std::string layout_arg = "slices";
 #endif
     size_t max_slice_bytes = 120'000;
+    bool hevc = false;
+    int width = 4096, height = 2240;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -278,13 +281,20 @@ int main(int argc, char** argv) {
         else if (a == "--low-latency") low_latency = true;
         else if (a == "--slices") slices = std::stoi(next());
         else if (a == "--layout") layout_arg = next();
+        else if (a == "--codec") hevc = next() == "hevc";
+        else if (a == "--size") {
+            std::string v = next();
+            width = std::stoi(v);
+            height = std::stoi(v.substr(v.find('x') + 1));
+        }
         else if (a == "--max-slice-bytes") max_slice_bytes = std::stoul(next());
         else if (a == "--csd") csd_every = next() != "idr";
         else if (a == "--root") root_arg = next();
         else {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
                             "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency] [--slices 5] "
-                            "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO]\n");
+                            "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO] [--codec h264|hevc] "
+                            "[--size 4096x2240]\n");
             return 2;
         }
     }
@@ -303,6 +313,9 @@ int main(int argc, char** argv) {
     cfg.layout = layout_arg == "strips" ? ql::enc::Layout::Strips : ql::enc::Layout::Slices;
     cfg.max_slice_bytes = max_slice_bytes;
     cfg.low_latency_rc = low_latency;
+    cfg.codec = hevc ? ql::enc::Codec::HEVC : ql::enc::Codec::H264;
+    cfg.width = width;
+    cfg.height = height;
     const bool strips = cfg.layout == ql::enc::Layout::Strips;
     const int W = cfg.width, H = cfg.height;
 
@@ -352,19 +365,21 @@ int main(int argc, char** argv) {
         fprintf(stderr, "encoder: %s\n", err.c_str());
         return 1;
     }
-    printf("encoder: %s\ninput: %s, %dx%d @ %d fps, %.0f Mbit/s %s, gop %d, %s\n", enc->name().c_str(),
-           input.c_str(), W, H, cfg.fps, mbps, vbr ? "VBR" : "CBR", gop, strips ? "strips" : "slices");
+    printf("encoder: %s\ninput: %s, %dx%d @ %d fps, %.0f Mbit/s %s, gop %d, %s %s\n", enc->name().c_str(),
+           input.c_str(), W, H, cfg.fps, mbps, vbr ? "VBR" : "CBR", gop, hevc ? "HEVC" : "H.264",
+           strips ? "strips" : "slices");
 
     const int height_mbs = H / 16, width_mbs = W / 16;
     std::vector<int> expected;
     for (int s = 0; s < slices; s++) expected.push_back(strips ? 0 : s * (height_mbs / slices) * width_mbs);
 
     // Slices: one stream. Strips: one stream per strip (each has its own SPS/PPS).
-    fs::path es_path = root / "capture" / "runs" / (name + ".h264");
+    fs::path es_path = root / "capture" / "runs" / (name + (hevc ? ".h265" : ".h264"));
     fs::create_directories(es_path.parent_path());
     std::vector<std::ofstream> es;
     for (int i = 0; i < (strips ? slices : 1); i++)
-        es.emplace_back(strips ? es_path.parent_path() / (name + "-" + std::to_string(i) + ".h264") : es_path,
+        es.emplace_back(strips ? es_path.parent_path() / (name + "-" + std::to_string(i) + es_path.extension().string())
+                               : es_path,
                         std::ios::binary);
 
     std::vector<ql::enc::EncodedFrame> encoded;
@@ -437,11 +452,13 @@ int main(int argc, char** argv) {
     es.clear();
 
     // SPS summary
-    ql::enc::h264::Sps sps;
-    for (auto nal : ql::enc::h264::split_annexb(encoded[0].csd))
-        if (ql::enc::h264::nal_type(nal) == ql::enc::h264::kSps) ql::enc::h264::parse_sps(nal, sps);
-    printf("SPS: profile %d constraints 0x%02x level %d.%d, %dx%d MBs\n", sps.profile, sps.constraints,
-           sps.level / 10, sps.level % 10, sps.width_mbs, sps.height_mbs);
+    if (!hevc) {
+        ql::enc::h264::Sps sps;
+        for (auto nal : ql::enc::h264::split_annexb(encoded[0].csd))
+            if (ql::enc::h264::nal_type(nal) == ql::enc::h264::kSps) ql::enc::h264::parse_sps(nal, sps);
+        printf("SPS: profile %d constraints 0x%02x level %d.%d, %dx%d MBs\n", sps.profile, sps.constraints,
+               sps.level / 10, sps.level % 10, sps.width_mbs, sps.height_mbs);
+    }
 
     std::string want;
     for (int e : expected) want += (want.empty() ? "" : "/") + std::to_string(e);
@@ -498,8 +515,8 @@ int main(int argc, char** argv) {
     std::ofstream clip(clip_path, std::ios::binary);
     std::ostringstream setup;
     write_json(setup, *meta.get("setup"));
-    clip << "{\"source\": \"qlenc " << enc->name() << " " << mbps << " Mbit/s gop " << gop
-         << (strips ? " strips" : "")
+    clip << "{\"source\": \"qlenc " << enc->name() << " " << (hevc ? "HEVC " : "") << W << "x" << H << " " << mbps
+         << " Mbit/s gop " << gop << (strips ? " strips" : "")
          << "\", \"frame_index\": 1, \"setup\": " << setup.str() << ", \"frames\": [";
     for (size_t f = 0; f < encoded.size(); f++) {
         const auto& e = encoded[f];
@@ -513,6 +530,8 @@ int main(int argc, char** argv) {
             size_t d = 8 + 8 * (ptr >> 2);
             hdr[d + 48] = uint8_t(i);                                         // slice.index
             hdr[d + 49] = uint8_t((e.idr ? 1 : 0) | (i == 4 ? 2 : 0));        // isIntraFrame, isLastSliceOfAFrame
+            put_u32(hdr, d + 52, uint32_t(i * (H / 5)));                      // yOffsetInPixels
+            put_u32(hdr, d + 56, uint32_t(H / 5 / 16));                       // heightInMacroBlocks
             const Bytes& csd = e.slices[i].csd.empty() ? e.csd : e.slices[i].csd;
             put_u32(hdr, d + 60, with_csd ? uint32_t(csd.size()) : 0);        // csdLength
             put_u32(hdr, d + 64, uint32_t(e.slices[i].nal.size()));           // videoLength
