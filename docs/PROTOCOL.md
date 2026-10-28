@@ -699,7 +699,7 @@ Raw 32-byte bodies, no Cap'n Proto (observed):
 | Host → Quest | 15 | 1 | local dimming (inferred) |
 | Host → Quest | 17 | 0 | drop state (inferred) |
 | Host → Quest | 19 | 2 | unknown |
-| Quest → host | 18 | 8 bytes, look like two floats/doubles | unknown, seen once |
+| Quest → host | 18 | two f64 (≈ 2.78, 1.88) | unknown, seen once |
 | Quest → host | 23 | `u32 2401, u32 2401, i32 −34, 0` | sent every ~5 s; logged as `Send command, type=23` (stats?) |
 
 ### 7.7 Haptics (topic 7, host → Quest)
@@ -740,3 +740,80 @@ Two separate mechanisms (inferred from binaries; nothing captured):
 
 Body tracking: topic 30 + InputControl type 2 (not captured). Eye/face tracking: no topic;
 state only via RuntimeIPC, and Quest 3 has no such sensors.
+
+## 8. HELLO and the device description
+
+HELLO (`0x81`) root: 7 data words, 13 pointers. v1 opens phase 1, v3 opens phase 2 (verified
+values: `tests/test_handshake.py`; field names are ours unless stated).
+
+| Field | v1 | v3 | Meaning |
+|---|---|---|---|
+| `d0` | u16 1, u16 0, u32 1 | u16 3, u16 1, u32 47 | u16 @0 = protocol version; rest unknown |
+| `d1` | 1 | 31 | unknown |
+| `d2` | 0 | f32 2.49 | unknown |
+| `d3` | `<DEVICE_ID>` | same | u64 device id |
+| `d4` | 0 | u32 @+4 = 1 | unknown |
+| `d6` | random u64 | 0 | **session id**, echoed by the host in phase 1 (§4.2) |
+| `p0` | text `<SERIAL>` | same | headset serial |
+| `p1` | text `<UUID>` | null | device UUID |
+| `p3` | struct | same | **device description** (below) |
+| `p4` | u32 list `[90,120,80,72]` | `[72,80,90,120]` | supported refresh rates, Hz |
+| `p5` | text | same | firmware build, e.g. `releases-oculus-14.0-v207` |
+| `p6` | u16 list `[0,4,1,2,3,8]` | `[1,5,6,7,9,13,14,15,19,20]` | offered features (§4.7) |
+| `p7` | null | text `<UUID>` | Link session UUID (`xrs_session_id` in the headset's perf log) |
+| `p8` | struct `{u64 7}` | u16 list `[0,2]` | unknown |
+| `p9` | null | u16 list `[1,2]` | unknown |
+| `p10` | null | u16 list `[0,1]` | unknown |
+| `p11` | null | data `[00]` | unknown |
+
+**Device description** (`p3`, 0 data / 7 ptrs; identical in v1 and v3 except where noted):
+
+`p3.p0` display struct (7 data / 7 ptrs):
+
+| Field | Value (Quest 3) | Meaning |
+|---|---|---|
+| `d0` | u32 4, u32 4128 | unknown; **panel width** (both eyes), px |
+| `d1` | u32 2208, f32 72.0 | **panel height**, px; **default refresh**, Hz |
+| `d2` | f32 0.0635, f32 0.015 | **IPD**, m; unknown |
+| `d3` | 0, f32 0.0302 | unknown |
+| `d4` | f32 1.0, f32 1.0 | unknown |
+| `d5` | u32 4096, u32 2240 | **encode width, height** (video size, §6.1) |
+| `d6` | u32 5 (v1) / 0 (v3) | slices (v1 only) |
+| `p0`, `p1` | `"Meta Quest 3"`, `"Oculus VR"` | product, manufacturer |
+| `p2` | `{u32 53822, u32 49}` | unknown |
+| `p3`, `p4` | left, right eye (6 data words each) | **FOV in degrees**: f32 up, down, left, right = left eye 44, 55, 54, 40; right eye 44, 55, 40, 54. Then 8 small f32 (≈ ±0.0246, 0.0235, ±0.0031, 0.0430, 0.0460; per-eye offsets, meaning unknown) |
+| `p5` | list of 5 structs `{u32 Hz; p0 {f64, f64}; p1 {u64}}` | **mode table** (below) |
+| `p6` | null (v1) / struct 3 data + empty u16 list (v3) | unknown |
+
+Mode table (the host's CONFIG refresh picks one; the ACK echoes it):
+
+| Hz | f64 a | f64 b | u64 (bit/s?) |
+|---|---|---|---|
+| 60 | 0.30 | 0.25 | 142,225,910 |
+| 72 | 0.65 | 0.60 | 123,875,920 |
+| 80 | 0.52 | 0.47 | 114,699,290 |
+| 90 | 0.75 | 0.70 | 188,753,520 |
+| 120 | 0.75 | 0.70 | 188,753,520 |
+
+Other description pointers: `p3.p1`, `p3.p2` two 11-entry f32 curves rising from 1.0 (to ~2.36
+and ~2.98; lens distortion / chroma, inferred); `p3.p3` `{f32 0.70, f32 0.705}`; `p3.p4`–`p3.p6`
+three structs `{u32 6416, u32 3432, u32 flags, u32 w, u32 w, u32 h}` with sizes 3616 × 2016,
+4128/3616 × 2880 and 3104/3616 × 3516 (resolution presets, meaning unknown).
+
+What our host uses: encode size, refresh list, IPD and the per-eye FOV (→ `FovPort` tangents,
+§6.5); `ql_device_info` in `native/include/questlink.h`.
+
+## 9. Open questions
+
+| Area | Question |
+|---|---|
+| Framing | Meaning of the other XRSP flag bits and of the inner flags `0x0c`/`0x8c`/`0x2c`; how a pad > 255 B is encoded; whether the ~128 KiB limit is per message or per topic, and how topic 4's larger segments are carried |
+| Handshake | Unknown words in HELLO/CONFIG/ACK (`d1`, `d2`, `d4`, `p8`–`p11`, CONFIG `d3`/`d4`/`d11`/`p3`); the phase-1 id lists; the BYE message; any host-initiated shutdown |
+| Video | CONFIG `slices` ≠ 5 (fewer strips, single decoder via feature 11); other encode sizes (resolution presets, ROADMAP R2); HEVC (Meta's gatekeepers mention it); 80/90/120 Hz; whether motion vectors across strip edges cause artefacts; alpha encoding for passthrough |
+| Timing | Exact accepted window around `targetVsync` (both too early and too late drop frames); meaning of the topic-34 frame-timing feedback block |
+| Mesh | Topic-4 mesh content and whether hosts can define their own rectify meshes |
+| Controllers | Poses (topic 34 @0x98), buttons/axes/touch (topic 35 list), haptics (topic 7 fields): needs a capture with controllers awake |
+| Audio | Opus payload format (feature 6); host → Quest PCM playback by our host not bench-tested; AudioControl fields |
+| Sensors | Body (30), CameraStream (32, feature 20), UserSettingsSync (27), Asw (29), Logging (33) formats; RuntimeIPC is a full protocol of its own |
+| Command | Most command types and values on topic 2 |
+| Firmware | Everything here is for one firmware/runtime pair; the unused newer topic table (`36 Pose2`, `38 FrameFeedback`) suggests renumbering ahead. Pin the firmware string from HELLO and re-run the fixture tests after updates |
