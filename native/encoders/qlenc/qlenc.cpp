@@ -3,13 +3,15 @@
 // tools/encode_pattern.py, so `XRSP_REPLAY=... py host/handshake.py` streams it unchanged).
 //
 // Usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72]
-//              [--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency]
+//              [--input nv12|bgra|d3d11|d3d11-rgba|cvpixelbuffer] [--layout auto|slices|strips] [--software] [--low-latency]
+//              [--backend auto|nvidia|amd|intel|mf|mf-software|openh264|software]
 //              [--slices 5] [--max-slice-bytes 120000] [--csd every|idr] [--root REPO]
 //              [--codec h264|hevc] [--size 4096x2240] [--pattern tiles|noise|motion|cuts]
 // Patterns noise (fresh random pixels every frame), motion (a random texture jumping ~300 px
 // per frame) and cuts (tiles with a 2-frame motion burst every 18 frames, so rate control is at
 // a low QP when the burst hits) are the worst cases for the per-slice size cap.
-// Strips (VideoToolbox): one .h264 per strip, capture/runs/<name>-<i>.h264.
+// Strips: one .h264 per strip, capture/runs/<name>-<i>.h264. Windows picks backend and layout
+// per machine (--layout auto); --backend forces one (see encoders/select.hpp).
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -303,8 +305,9 @@ int main(int argc, char** argv) {
 #ifdef __APPLE__
     std::string layout_arg = "strips";  // VideoToolbox has no slice-count control
 #else
-    std::string layout_arg = "slices";
+    std::string layout_arg = "auto";  // per GPU vendor, checked on a probe frame
 #endif
+    std::string backend = "auto";
     size_t max_slice_bytes = 120'000;
     bool hevc = false;
     int width = 4096, height = 2240;
@@ -321,6 +324,7 @@ int main(int argc, char** argv) {
         else if (a == "--low-latency") low_latency = true;
         else if (a == "--slices") slices = std::stoi(next());
         else if (a == "--layout") layout_arg = next();
+        else if (a == "--backend") backend = next();
         else if (a == "--codec") hevc = next() == "hevc";
         else if (a == "--size") {
             std::string v = next();
@@ -333,7 +337,8 @@ int main(int argc, char** argv) {
         else if (a == "--pattern") pattern = next();
         else {
             fprintf(stderr, "usage: qlenc [--frames N] [--name NAME] [--mbps 100] [--vbr] [--gop 72] "
-                            "[--input nv12|bgra|d3d11|cvpixelbuffer] [--layout slices|strips] [--software] [--low-latency] [--slices 5] "
+                            "[--input nv12|bgra|d3d11|d3d11-rgba|cvpixelbuffer] [--layout auto|slices|strips] [--software] [--low-latency] [--slices 5] "
+                            "[--backend auto|nvidia|amd|intel|mf|mf-software|openh264|software] "
                             "[--max-slice-bytes 120000] [--csd every|idr] [--root REPO] [--codec h264|hevc] "
                             "[--size 4096x2240]\n");
             return 2;
@@ -351,20 +356,23 @@ int main(int argc, char** argv) {
     cfg.cbr = !vbr;
     cfg.gop = gop;
     cfg.hardware = !software;
-    cfg.layout = layout_arg == "strips" ? ql::enc::Layout::Strips : ql::enc::Layout::Slices;
+    cfg.layout = layout_arg == "strips"   ? ql::enc::Layout::Strips
+                 : layout_arg == "slices" ? ql::enc::Layout::Slices
+                                          : ql::enc::Layout::Auto;
+    cfg.backend = backend;
     cfg.max_slice_bytes = max_slice_bytes;
     cfg.low_latency_rc = low_latency;
     cfg.codec = hevc ? ql::enc::Codec::HEVC : ql::enc::Codec::H264;
     cfg.width = width;
     cfg.height = height;
-    const bool strips = cfg.layout == ql::enc::Layout::Strips;
     const int W = cfg.width, H = cfg.height;
 
 #ifdef _WIN32
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
-    if (input == "d3d11") {
+    const bool d3d = input == "d3d11" || input == "d3d11-rgba";  // RGBA: what Unity renders into
+    if (d3d) {
         HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
                                        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
                                        nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &ctx);
@@ -377,7 +385,7 @@ int main(int argc, char** argv) {
         td.Height = H;
         td.MipLevels = 1;
         td.ArraySize = 1;
-        td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        td.Format = input == "d3d11" ? DXGI_FORMAT_B8G8R8A8_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM;
         td.SampleDesc.Count = 1;
         td.Usage = D3D11_USAGE_DEFAULT;
         td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -406,6 +414,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "encoder: %s\n", err.c_str());
         return 1;
     }
+    const bool strips = enc->layout() == ql::enc::Layout::Strips;
+    if (!enc->selection().empty()) printf("skipped: %s\n", enc->selection().c_str());
     printf("encoder: %s\ninput: %s, %dx%d @ %d fps, %.0f Mbit/s %s, gop %d, %s %s\n", enc->name().c_str(),
            input.c_str(), W, H, cfg.fps, mbps, vbr ? "VBR" : "CBR", gop, hevc ? "HEVC" : "H.264",
            strips ? "strips" : "slices");
@@ -426,7 +436,7 @@ int main(int argc, char** argv) {
     std::vector<ql::enc::EncodedFrame> encoded;
     std::vector<double> ms, call_ms;  // encoder submit->output; whole encode() call
     std::map<std::string, int> layouts;
-    std::vector<uint8_t> bgra(size_t(W) * H * 4), nv12;
+    std::vector<uint8_t> bgra(size_t(W) * H * 4), nv12, rgba;
     for (int f = 0; f < frames; f++) {
         if (pattern == "tiles" || (pattern == "cuts" && f % 18 < 16)) draw_pattern(bgra, W, H, f, slices);
         else draw_random(bgra, W, H, f, pattern != "noise");
@@ -434,6 +444,10 @@ int main(int argc, char** argv) {
         ql::enc::EncodedFrame out;
         bool ok;
         if (input == "nv12") bgra_to_nv12(bgra, W, H, nv12);  // test input, not timed
+        if (input == "d3d11-rgba") {
+            rgba = bgra;
+            for (size_t p = 0; p < rgba.size(); p += 4) std::swap(rgba[p], rgba[p + 2]);
+        }
         auto t0 = std::chrono::steady_clock::now();
         if (input == "bgra") {
             ql::enc::CpuFrame cf;
@@ -442,8 +456,8 @@ int main(int argc, char** argv) {
             cf.stride[0] = W * 4;
             ok = enc->encode(cf, ts, false, out);
 #ifdef _WIN32
-        } else if (input == "d3d11") {
-            ctx->UpdateSubresource(tex.Get(), 0, nullptr, bgra.data(), W * 4, 0);
+        } else if (d3d) {
+            ctx->UpdateSubresource(tex.Get(), 0, nullptr, input == "d3d11" ? bgra.data() : rgba.data(), W * 4, 0);
             ql::enc::GpuFrame gf;
             gf.texture = tex.Get();
             ok = enc->encode(gf, ts, false, out);
