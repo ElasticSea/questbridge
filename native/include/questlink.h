@@ -368,7 +368,7 @@ QL_API ql_status ql_host_haptic(ql_host* host, int hand, float amplitude, float 
 /* First-run diagnostic behind Unity's QuestLink > Check Setup and `qlhost --check`. Checks, in
  * order (id): "os", "link_app" (Windows: Meta Horizon Link's USB driver), "quest_usb",
  * "xrsp_interface", "ovr_service" (Windows), "xrsp_claim" (opened and released again unless
- * QL_CHECK_NO_CLAIM; never prompts), "gpu_encoder" (opens a hardware H.264 encoder once).
+ * QL_CHECK_NO_CLAIM or QL_USB=0; never prompts), "gpu_encoder" (opens a hardware H.264 encoder once).
  * Text is ASCII; fix is empty when nothing needs doing.
  *
  * OVRService (Windows) holds the Quest's Link interface while it runs. When opening the Quest

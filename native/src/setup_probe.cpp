@@ -1,6 +1,7 @@
 // ql_check_setup: gathers setup_check.hpp's Probe on this machine and evaluates it.
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -91,6 +92,12 @@ void probe_encoder(setup::Probe& p) {
 #endif
 }
 
+// QL_USB=0 (Unity tests with a headset plugged in): never open the Quest
+bool usb_off() {
+    const char* v = std::getenv("QL_USB");
+    return v && *v && std::atoi(v) == 0;
+}
+
 void copy(char* dst, size_t cap, const std::string& s) {
     size_t n = std::min(cap - 1, s.size());
     std::memcpy(dst, s.data(), n);
@@ -116,7 +123,7 @@ int ql_check_setup(uint32_t flags, ql_check* out, int cap) {
         p.xrsp = usb.xrsp;
         if (p.xrsp && open_transport_count() > 0) {
             p.claim = Claim::Self;
-        } else if (p.xrsp && !(flags & QL_CHECK_NO_CLAIM)) {
+        } else if (p.xrsp && !(flags & QL_CHECK_NO_CLAIM) && !usb_off()) {
             OpenError err = try_claim(p.claim_detail);
             p.claim = err == OpenError::None ? Claim::Ok : err == OpenError::Busy ? Claim::Busy : Claim::Failed;
             if (err == OpenError::NotFound) p.claim_detail = "the Link interface went away (Link restarting?)";
