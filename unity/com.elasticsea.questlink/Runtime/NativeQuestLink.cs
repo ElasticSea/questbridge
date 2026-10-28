@@ -230,6 +230,14 @@ namespace ElasticSea.QuestLink
             }
         }
 
+        // Hand the headset's Link session to another host: stop sending, log the resume numbers
+        // (handshake.py XRSP_ATTACH) to the native log, close USB. Final for this process.
+        public static void Shutdown()
+        {
+            try { ql_shutdown(); }
+            catch (Exception e) when (e is EntryPointNotFoundException || e is DllNotFoundException) { }
+        }
+
         public void Dispose()
         {
             if (session == IntPtr.Zero)

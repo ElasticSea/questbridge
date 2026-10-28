@@ -232,6 +232,7 @@ ql_status ql_host_get_info(ql_host* host, ql_info* out) {
     out->next_frame_index = s.next_frame_index();
     out->control_seq = s.control_seq();
     out->video_seq = s.stream_seq(topic::kVideoFirst);
+    for (int t = 0; t < 64; ++t) out->tx_seq[t] = s.stream_seq(uint8_t(t));
     for (auto [t, n] : s.rx_counts())
         if (t < 64) out->rx_counts[t] = n;
     return QL_OK;
