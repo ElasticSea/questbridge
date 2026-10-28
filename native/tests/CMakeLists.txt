@@ -34,6 +34,12 @@ target_link_libraries(questlink_runtime_tests PRIVATE questlink_api questlink_co
 target_compile_definitions(questlink_runtime_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
 add_test(NAME questlink_runtime_tests COMMAND questlink_runtime_tests)
 
+# Session API runtime recovering from every kind of disconnect, against a reactive fake headset
+add_executable(questlink_recovery_tests test_main.cpp test_recovery.cpp $<TARGET_OBJECTS:questlink_api>)
+target_link_libraries(questlink_recovery_tests PRIVATE questlink_api questlink_core)
+target_compile_definitions(questlink_recovery_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
+add_test(NAME questlink_recovery_tests COMMAND questlink_recovery_tests)
+
 # macOS: the real Metal + VideoToolbox texture encoder behind the Session API, fake Quest
 if(APPLE)
   add_executable(questlink_metal_tests test_main.cpp test_metal.mm ../src/texture_encoder_metal.mm
