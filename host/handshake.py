@@ -142,6 +142,10 @@ class Host:
             else:
                 if os.environ.get("XRSP_SLICES"):
                     tree["s"][1] = int(os.environ["XRSP_SLICES"])  # v3 CONFIG data word 1: slices per frame
+                if os.environ.get("XRSP_CODEC"):
+                    # v3 CONFIG u16 at byte 6: video codec (Meta sends 0 = H.264; 1 = HEVC, inferred)
+                    w = tree["s"][0] & ~(0xFFFF << 48)
+                    tree["s"][0] = w | int(os.environ["XRSP_CODEC"]) << 48
                 for f in filter(None, os.environ.get("XRSP_FEATURES_ADD", "").split(",")):
                     # Selected session features: u16 list at p1 (Meta: 1,3,2,19,7,14,15)
                     feats = tree["p"][1]
