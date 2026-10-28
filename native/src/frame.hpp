@@ -6,6 +6,8 @@
 // (SPS+PPS, optional) and the Annex-B slice NALs, the last two padded to 4 bytes (flag 0x08).
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -20,6 +22,11 @@ struct Pose {
     float position[3];     // metres
 };
 
+// Per-eye FovPort: positive half-angle tangents in the order the EncodedSlice stores them
+struct FovPort {
+    float left, right, up, down;
+};
+
 struct SliceData {
     std::span<const uint8_t> csd;    // Annex-B SPS + PPS; empty = none
     std::span<const uint8_t> video;  // Annex-B slice NAL(s)
@@ -29,12 +36,22 @@ struct FrameParams {
     uint64_t index = 0;               // frame.index, must increase across the whole session
     int64_t target_vsync_quest_ns = 0;  // in the Quest clock
     std::optional<Pose> render_pose;  // unset = keep the template's identity pose
+    // Unset = keep the template's (Meta's loading screen: mesh 0, zero FOV, no reprojection).
+    // Timewarp needs Meta's game-frame values: mesh 1001 and the real per-eye FOV.
+    std::optional<uint32_t> rectify_mesh_id;
+    std::optional<std::array<FovPort, 2>> fov;  // left eye, right eye
     bool intra = true;
 };
+
+// Largest XRSP message (header + padded body) the headset accepts with margin: ~128 KiB
+// works, 148,544 B ends the session with "buffer too small". Each slice's csd and NAL data
+// go in one message each and may not be split.
+constexpr size_t kMaxStreamMessage = 120 * 1024;
 
 // EncodedSlice data-section layout (byte offsets from the start of the data section)
 namespace encoded_slice {
 constexpr size_t kIndex = 0;            // u64 frame.index
+constexpr size_t kRectifyMeshId = 8;    // u32
 constexpr size_t kPose = 12;            // f32 quat xyzw, then f32 translation xyz
 constexpr size_t kSliceIndex = 48;      // u8
 constexpr size_t kSliceFlags = 49;      // bit0 isIntraFrame, bit1 isLastSliceOfAFrame
@@ -44,7 +61,11 @@ constexpr size_t kVideoLength = 64;     // u32
 // estimatedGpuEnd, latency marker. All shift together so targetVsync hits the target.
 constexpr size_t kTimingWords[] = {5, 9, 11, 12, 13, 14};
 constexpr size_t kTargetVsyncWord = 11;
+constexpr size_t kFovWord = 18;         // pointers to the left / right eye FovPort (4x f32)
 }  // namespace encoded_slice
+
+// True if every slice's csd and video fit in one message of at most kMaxStreamMessage.
+bool fits_message_cap(std::span<const SliceData> slices);
 
 // Throws std::invalid_argument for 0 slices or more slices than recorded templates (5).
 std::vector<StreamMessage> build_frame(std::span<const SliceData> slices, const FrameParams& p);

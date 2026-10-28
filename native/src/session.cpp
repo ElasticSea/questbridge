@@ -153,11 +153,14 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     if (state_ != State::Streaming) return Submit::NotStreaming;
     if (!quest_offset_) return Submit::NoClock;  // need one clock ping to map our clock onto the Quest's
     if (slices.empty() || slices.size() > templates::slice_headers().size()) return Submit::BadSlices;
+    if (!fits_message_cap(slices)) return Submit::TooLarge;
     FrameParams p;
     p.index = opt.index ? opt.index : next_frame_index_;
     p.target_vsync_quest_ns = opt.target_vsync_quest_ns ? opt.target_vsync_quest_ns
                                                         : clock_() + *quest_offset_ + opt.vsync_lead_ns;
     p.render_pose = opt.render_pose;
+    p.rectify_mesh_id = opt.rectify_mesh_id;
+    p.fov = opt.fov;
     p.intra = opt.intra;
     send_stream(build_frame(slices, p));
     next_frame_index_ = p.index + 1;

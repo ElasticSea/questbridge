@@ -191,6 +191,12 @@ typedef struct ql_frame_info {
     int has_render_pose;           /* 0 = keep the template's identity pose */
     ql_pose render_pose;           /* the pose the frame was rendered with */
     int is_intra;
+    /* Timewarp: the headset reprojects to render_pose only with rectify_mesh_id 1001 and the
+     * real per-eye FOV (Meta's game frames). 0 / has_fov 0 keep the template's mesh 0 and
+     * zero FOV (Meta's loading screen: shown head-locked, no reprojection). */
+    uint32_t rectify_mesh_id;
+    int has_fov;
+    ql_fov fov_left, fov_right; /* the projections the eyes were rendered with */
 } ql_frame_info;
 
 typedef struct ql_info {
@@ -228,7 +234,9 @@ QL_API ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out);
 QL_API ql_status ql_host_get_head_pose(ql_host* host, ql_head_pose* out);
 
 /* Send one encoded frame: count slices (1..5) on topics 10.., in one USB transfer.
- * info may be NULL (next index, now + 20 ms, template pose, intra). */
+ * info may be NULL (next index, now + 20 ms, template pose, intra). Each slice's csd and
+ * video must each fit one XRSP message (~120 KiB, the headset drops the session above
+ * ~128 KiB); otherwise nothing is sent and QL_ERR_ARGUMENT is returned (see ql_host_get_error). */
 QL_API ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uint32_t count,
                                              const ql_frame_info* info);
 

@@ -4,6 +4,11 @@
 
 Unity 6000.3, Input System 1.19. Works in Editor Play mode. Without the native library the rig uses a mock backend.
 
+## Native plugin (Windows)
+`unity\install-native.ps1` builds `questlink.dll` (Release, `native\build.ps1`, C++ tests included) and copies it to `Runtime/Plugins/Windows/x86_64/` with Editor + Win64 import settings. The binary is git-ignored, so run the script after every clone or native change; `-NoBuild` only copies. Close the Unity Editor first: Windows locks a loaded DLL until the Editor exits.
+
+The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`); with another graphics API the rig warns and falls back to the mock. Set `QL_LOG_FILE=<path>` (and `QL_LOG=1` for every protocol message) before starting the Editor to get the native log, because the Editor drops plugin stderr. OVRService must be stopped (`host\ovr_service.ps1 stop`), or the XRSP interface is busy and the rig stays in Connecting.
+
 ## Use
 1. Add the package (Package Manager → Add package from disk → `package.json`, or `"com.elasticsea.questlink": "file:<path>"` in `manifest.json`).
 2. Put `QuestLinkRig` on an empty GameObject at the tracking origin (floor level). It creates `Head/LeftEye` and `Head/RightEye` cameras. Use `cameraTemplate` to copy clear flags, culling mask and similar settings onto both eyes.
@@ -14,9 +19,10 @@ Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it dir
 
 ## How it works
 - **Stereo texture.** One encode-sized RT, 4096×2240 on Quest 3, from the HELLO device description, in BGRA32 sRGB. The left eye renders into the left half and the right eye into the right half. Each eye camera gets an off-axis projection built from the per-eye FOV tangents (`QuestLinkMath.Projection`) and sits ±IPD/2 from the head.
-  - The half-per-eye layout is an **assumption**: Meta's IDR frame we replay leaves the EncodedSlice FovPorts at zero, and no capture has shown which half is which eye yet. To flip it, change `QuestLinkMath.EyeViewport`.
+  - Left half = left eye, confirmed on the bench (PROTOCOL_NOTES.md, M2b). The native layer sends each frame with rectifyMeshId 1001 and the device's per-eye FOV, which the headset needs to reproject (timewarp) to the frame's renderPose.
+  - Unity stores render textures bottom row first where UV v=0 is the top of memory (D3D11, Metal), so the native backend blits a vertically flipped copy and submits that; the encoder reads rows top-down.
 - **Late latch.** In `Application.onBeforeRender` the rig reads the newest head pose, moves `Head`, and stores that exact pose with an increasing `FrameIndex`.
-- **Submit.** Once both eye cameras have rendered (`Camera.onPostRender` in the built-in pipeline, end of the SRP context otherwise), the rig calls `SubmitFrame(rt, renderPose, frameIndex)` once. The native backend passes `GetNativeTexturePtr()` (an `id<MTLTexture>` on Metal) to the render thread through `CommandBuffer.IssuePluginEventAndData`.
+- **Submit.** Once both eye cameras have rendered (`Camera.onPostRender` in the built-in pipeline, end of the SRP context otherwise), the rig calls `SubmitFrame(rt, renderPose, frameIndex)` once. The native backend passes the (flipped) texture's `GetNativeTexturePtr()` (`ID3D11Texture2D*` on D3D11, `id<MTLTexture>` on Metal) to the render thread through `CommandBuffer.IssuePluginEventAndData`.
 - **Input.** `QuestLinkHMD : XRHMD` and two `QuestLinkController : XRControllerWithRumble`, with `LeftHand`/`RightHand` usages. Control names follow Unity's Oculus Touch layout, and usages follow XR feature usages (`TriggerButton`, `GripButton`, `Primary2DAxis`, `PrimaryButton`, `MenuButton`, …). `SendImpulse` and any `SendHapticImpulseCommand` go to the backend's `SendHaptic`.
 - **Defaults.** Quest 3 values from PROTOCOL_NOTES.md: FOV in up/down/left/right degrees is 44/55/54/40 for the left eye and mirrored for the right, IPD is 63.5 mm, and the stream runs at 72 Hz. The native layer overrides them when it reports device info.
 
@@ -62,4 +68,7 @@ Notes for the native side:
 "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe" -batchmode -projectPath unity/BridgeTest -runTests -testPlatform EditMode -testFilter ElasticSea.QuestLink.Tests -testResults results.xml
 ```
 
-Use `-testPlatform PlayMode` for the smoke test. Batchmode doesn't render, so that test drives a frame by hand there. EditMode covers projection math against FOV tangents, the RT layout and per-eye viewports, IPD offsets, late-latch/submit pose consistency, coordinate conversion, device registration, XR binding paths, controller state and haptics.
+Use `-testPlatform PlayMode` for the smoke test. The tests use the mock backend, so they never open the headset.
+
+## First live scene
+`unity/BridgeTest` scene `Assets/FirstLight/FirstLight.unity` (`FirstLightScene`): sky colour, 1 m floor grid, cubes 1–3 m away and instructions, on the native backend. The first head pose recentres the rig (instructions straight ahead; floor 1.6 m below the head if the Link origin is at eye level). The Console logs the backend, the first head pose and every 720 frames the state and frame count. Batchmode doesn't render, so that test drives a frame by hand there. EditMode covers projection math against FOV tangents, the RT layout and per-eye viewports, IPD offsets, late-latch/submit pose consistency, coordinate conversion, device registration, XR binding paths, controller state and haptics.
