@@ -145,12 +145,19 @@ def main():
     def log(direction, what, seq):
         print(f"{time.time() - t0:8.3f} {direction:6} {what}" + (f" seq={seq}" if seq is not None else ""), flush=True)
 
-    # The Quest sends HELLO once per connection: reset so it re-enumerates and greets us
-    link = XrspLink()
-    link.dev.reset()
-    link.close()
-    time.sleep(3)
-    link = XrspLink()
+    # The Quest sends HELLO once, ~1.5 s after it enumerates, and drops it if no host
+    # is reading. Like Meta's hotplug watcher, wait for the interface and open it at once.
+    wait = float(os.environ.get("XRSP_WAIT", "600"))
+    log("info", f"waiting up to {wait:.0f}s for the Quest to be plugged in", None)
+    link, end = None, time.time() + wait
+    while link is None:
+        try:
+            link = XrspLink()
+        except (RuntimeError, OSError):
+            if time.time() > end:
+                raise
+            time.sleep(0.02)
+    log("info", "XRSP interface opened", None)
     try:
         Host(link, log).run(seconds)
     finally:
