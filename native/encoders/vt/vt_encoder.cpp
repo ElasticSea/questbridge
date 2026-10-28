@@ -1,4 +1,4 @@
-// VideoToolbox H.264 backend (macOS).
+// VideoToolbox H.264 / HEVC backend (macOS).
 //
 // Layout::Strips (the one to use): one VTCompressionSession per strip (5 x 4096x448), all
 // submitted together. Each strip is its own stream (SPS/PPS, IDR, frame_num), which maps onto
@@ -182,6 +182,7 @@ private:
 
     bool create_session(Strip& strip, std::string* error) {
         const bool strips = cfg_.layout == Layout::Strips;
+        const CMVideoCodecType codec = hevc() ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
         CfRef<CFMutableDictionaryRef> spec(CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
                                                                       &kCFTypeDictionaryValueCallBacks));
         // Low-latency rate control (macOS 11.3+): no frame delay, frame sizes held to the rate
@@ -191,12 +192,12 @@ private:
             CFDictionarySetValue(spec, kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
         else if (cfg_.hardware)
             CFDictionarySetValue(spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
-        OSStatus st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, kCMVideoCodecType_H264, spec, nullptr,
+        OSStatus st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, codec, spec, nullptr,
                                                  nullptr, &VtEncoder::on_output, this, &strip.session);
         low_latency_ = st == noErr && cfg_.low_latency_rc;
         if (st != noErr) {  // retry without low-latency RC (e.g. a size it doesn't support)
             CFDictionaryRemoveValue(spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl);
-            st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, kCMVideoCodecType_H264, spec, nullptr,
+            st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, codec, spec, nullptr,
                                             nullptr, &VtEncoder::on_output, this, &strip.session);
         }
         if (st != noErr) return fail(error, os_err("VTCompressionSessionCreate", st));
@@ -204,8 +205,9 @@ private:
         const int n = int(strips_.size());
         set(s, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
         set(s, kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue);
-        if (!set(s, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel))
-            return fail(error, "Constrained Baseline profile not supported");
+        if (!set(s, kVTCompressionPropertyKey_ProfileLevel,
+                 hevc() ? kVTProfileLevel_HEVC_Main_AutoLevel : kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel))
+            return fail(error, hevc() ? "HEVC Main profile not supported" : "Constrained Baseline profile not supported");
         set(s, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse);
         set(s, kVTCompressionPropertyKey_AllowOpenGOP, kCFBooleanFalse);
         CfRef<CFNumberRef> fps(num(int64_t(cfg_.fps))), zero(num(int64_t(0))), huge(num(int64_t(1) << 30));
@@ -298,9 +300,15 @@ private:
             for (auto& nal : s.nals) {
                 Slice sl;
                 sl.index = int(out.slices.size());
-                h264::SliceHeader sh;
-                h264::parse_slice_header(nal, sh);
-                sl.first_mb = sh.first_mb;
+                if (hevc()) {
+                    // first_slice_segment_in_pic_flag (first bit after the 2-byte header); a later
+                    // segment would need slice_segment_address, which strips never have
+                    sl.first_mb = nal.size() > 2 && (nal[2] & 0x80) ? 0 : -1;
+                } else {
+                    h264::SliceHeader sh;
+                    h264::parse_slice_header(nal, sh);
+                    sl.first_mb = sh.first_mb;
+                }
                 h264::append_annexb(sl.nal, nal);
                 if (strips) sl.csd = s.csd;
                 out.slices.push_back(std::move(sl));
@@ -319,19 +327,26 @@ private:
         if (--self->pending_ == 0) self->cv_.notify_all();
     }
 
-    // AVCC sample -> csd (Annex-B SPS+PPS, fixed_frame_rate_flag set) + slice NALs.
+    bool hevc() const { return cfg_.codec == Codec::HEVC; }
+
+    // AVCC/HVCC sample -> csd (Annex-B parameter sets; an H.264 SPS gets a VUI) + slice NALs.
     void collect(Strip& s, CMSampleBufferRef sample) {
         CMFormatDescriptionRef fd = CMSampleBufferGetFormatDescription(sample);
+        auto param_set = [&](size_t k, const uint8_t** p, size_t* n, size_t* count, int* len) {
+            return hevc() ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(fd, k, p, n, count, len)
+                          : CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fd, k, p, n, count, len);
+        };
         size_t count = 0;
         int len_size = 4;
-        CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fd, 0, nullptr, nullptr, &count, &len_size);
+        param_set(0, nullptr, nullptr, &count, &len_size);
         s.csd.clear();
         for (size_t k = 0; k < count; k++) {
             const uint8_t* p = nullptr;
             size_t n = 0;
-            if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fd, k, &p, &n, nullptr, nullptr) != noErr) continue;
+            if (param_set(k, &p, &n, nullptr, nullptr) != noErr) continue;
             Bytes ps(p, p + n);
-            if (h264::nal_type(ps) == h264::kSps && !h264::add_vui(ps, cfg_.fps)) h264::set_fixed_frame_rate(ps);
+            if (!hevc() && h264::nal_type(ps) == h264::kSps && !h264::add_vui(ps, cfg_.fps))
+                h264::set_fixed_frame_rate(ps);
             h264::append_annexb(s.csd, ps);
         }
         CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sample);
@@ -344,9 +359,15 @@ private:
             o += size_t(len_size);
             if (o + n > data.size()) break;
             std::span<const uint8_t> nal(data.data() + o, n);
-            uint8_t t = h264::nal_type(nal);
-            if (t == h264::kSlice || t == h264::kIdr) s.nals.emplace_back(nal.begin(), nal.end());
-            if (t == h264::kIdr) s.idr = true;
+            if (hevc()) {
+                uint8_t t = n ? (nal[0] >> 1) & 0x3F : 63;
+                if (t < 32) s.nals.emplace_back(nal.begin(), nal.end());  // VCL (7.4.2.2)
+                if (t == 19 || t == 20) s.idr = true;                       // IDR_W_RADL, IDR_N_LP
+            } else {
+                uint8_t t = h264::nal_type(nal);
+                if (t == h264::kSlice || t == h264::kIdr) s.nals.emplace_back(nal.begin(), nal.end());
+                if (t == h264::kIdr) s.idr = true;
+            }
             o += n;
         }
     }

@@ -18,6 +18,11 @@ using Bytes = std::vector<uint8_t>;
 
 enum class PixelFormat { NV12, BGRA };
 
+enum class Codec {
+    H264,  // Constrained Baseline (what Meta's host sends)
+    HEVC,  // Main; VideoToolbox only, headset support untested (CONFIG codec 2)
+};
+
 enum class Layout {
     Slices,  // one picture, `slices` equal bands of MB rows
     Strips,  // `slices` independent width x (height/slices) streams, one per headset decoder
@@ -28,6 +33,7 @@ struct EncoderConfig {
     int height = 2240;
     int fps = 72;
     int slices = 5;                    // equal bands of MB rows; 0 = encoder default
+    Codec codec = Codec::H264;
     Layout layout = Layout::Slices;    // VideoToolbox has no slice-count control: use Strips
     size_t max_slice_bytes = 120'000;  // per slice NAL; the headset drops messages over ~128 KiB
     uint32_t bitrate = 100'000'000;    // bits/s
@@ -58,7 +64,7 @@ struct Slice {
     int index = 0;      // position in the picture, 0..slices-1
     int first_mb = 0;   // first_mb_in_slice from the slice header
     Bytes nal;          // Annex-B: 00 00 00 01 + slice NAL
-    Bytes csd;          // Strips: this strip's SPS + PPS; Slices: empty (use EncodedFrame::csd)
+    Bytes csd;          // Strips: this strip's SPS + PPS (HEVC: VPS + SPS + PPS); Slices: empty
 };
 
 struct EncodedFrame {
