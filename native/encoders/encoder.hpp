@@ -4,7 +4,8 @@
 // 28 macroblock rows (first_mb_in_slice 0/7168/14336/21504/28672), SPS+PPS as csd.
 // The headset runs one decoder per strip, so the strips can also be independent streams
 // (Layout::Strips: 5 pictures of 4096x448, each with its own SPS/PPS and first_mb 0).
-// Backends: Media Foundation (Windows, mf/, Slices), VideoToolbox (macOS, vt/, both).
+// Backends: Media Foundation (Windows, mf/, both), OpenH264 (Windows software fallback,
+// openh264/, Strips), VideoToolbox (macOS, vt/, both). select.hpp picks one per machine.
 #pragma once
 
 #include <cstdint>
@@ -16,7 +17,7 @@ namespace ql::enc {
 
 using Bytes = std::vector<uint8_t>;
 
-enum class PixelFormat { NV12, BGRA };
+enum class PixelFormat { NV12, BGRA, RGBA };  // RGBA: Windows backends only (D3D11 read back)
 
 enum class Codec {
     H264,  // Constrained Baseline (what Meta's host sends)
@@ -26,6 +27,7 @@ enum class Codec {
 enum class Layout {
     Slices,  // one picture, `slices` equal bands of MB rows
     Strips,  // `slices` independent width x (height/slices) streams, one per headset decoder
+    Auto,    // the backend picks (Windows: per GPU vendor, checked on a probe frame; see select.hpp)
 };
 
 struct EncoderConfig {
@@ -43,12 +45,14 @@ struct EncoderConfig {
     int gop = 72;                      // IDR interval in frames; 1 = all intra, 0 = first frame only
     bool hardware = true;              // try the GPU encoder first
     bool allow_software = true;        // fall back to a software encoder
+    std::string backend = "auto";      // Windows: auto | nvidia | amd | intel | mf-software | openh264
+                                       // (QL_ENCODER in the runtime); others: ignored
     bool low_latency_rc = false;       // VideoToolbox: low-latency RC (h264.rtvc: long-term refs, MMCO)
     void* gpu_device = nullptr;        // ID3D11Device* (Windows) for texture input; null = CPU input only
                                        // (macOS: unused, GpuFrame takes a CVPixelBuffer)
 };
 
-// CPU frame. NV12: plane[0] = Y, plane[1] = interleaved UV. BGRA: plane[0] only.
+// CPU frame. NV12: plane[0] = Y, plane[1] = interleaved UV. BGRA/RGBA: plane[0] only.
 struct CpuFrame {
     PixelFormat format = PixelFormat::NV12;
     const uint8_t* plane[2] = {};
@@ -94,6 +98,8 @@ public:
 
     virtual std::string name() const = 0;           // backend + device, for logs
     virtual const std::string& error() const = 0;   // last failure
+    virtual Layout layout() const { return Layout::Slices; }  // what encode() produces (never Auto)
+    virtual std::string selection() const { return {}; }      // backends tried before this one, and why not
 };
 
 // Create the platform backend. Returns null and sets *error on failure.
