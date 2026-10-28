@@ -143,3 +143,54 @@ Our host refuses to send anything above 120 KiB (`kMaxStreamMessage` in `native/
 - The headset tracks seq for the whole Link session. A host that re-attaches must continue the
   numbering; restarting video topics at 0 makes the headset wait forever
   (`timed out waiting for new decode frame index`) (verified).
+
+## 3. Encoding
+
+### 3.1 Cap'n Proto
+
+Most structured payloads are standard [Cap'n Proto](https://capnproto.org/encoding.html)
+messages (verified: `tools/capnp_codec.py`, schema-less decode/encode).
+
+- Always **one segment**; no far pointers, no capabilities seen. Segment table =
+  `u32 segment_count − 1 (= 0)`, `u32 segment_words`.
+- Only `video.capnp:EncodedSlice` (and a few unrelated schemas) are embedded in Meta's binaries
+  (`tools/capnp_extract.py` → `schemas/`). All other messages are decoded structurally; field
+  names in this spec are ours unless they come from that schema or from log strings.
+- **Allocation order.** Meta's builder places pointer targets in the order fields are
+  initialised, not in pointer-slot order (e.g. CONFIG v3: p1, then p3, then p2), and leaves
+  zeroed holes where it re-allocated an object. Any valid Cap'n Proto layout is accepted by the
+  headset as far as we know (semantic match for all 15 handshake messages), but to be
+  byte-identical to Meta an encoder takes an explicit per-message order with gaps
+  (`allocation_order` / `layout` in `tools/capnp_codec.py`). Verified: 15/15 handshake control
+  messages re-encode byte-exact (`test_capnp_bodies_reencode`, `native/tests/test_capnp.cpp`).
+
+### 3.2 Control body (topic 1)
+
+Topic-1 bodies start with an 8-byte inner header (verified: `test_inner_header_reencode`,
+`test_inner_header_size_field`):
+
+| Off | Type | Field |
+|---|---|---|
+| 0 | u8 | message type (§4) |
+| 1 | u8 | inner flags: `0x80` for clock sync; handshake messages use `0x0c`, `0x8c` or `0x2c` (meaning unknown; we copy Meta's value per message, see §4.2) |
+| 2 | u16 | payload size in 16-byte units, rounded up. Cap'n Proto messages: `ceil((8 + words*8) / 16)` (segment table included). Clock messages: 2 |
+| 4 | u32 | counter: 1 on every handshake message; per-sender sequence on clock messages (§4.4) |
+| 8 | … | payload: a Cap'n Proto message **with its segment table inline**, or the 32-byte clock record. Zero bytes may follow up to the XRSP body end |
+
+### 3.3 Cap'n Proto on stream topics
+
+On every other topic that carries Cap'n Proto, one message is sent as **two XRSP messages** with
+consecutive seq: first the 8-byte segment table (flags `0x10`), then the segment itself (flags
+`0x10`, or `0x18` when padded per §2.2). Video then appends raw payload messages after the
+segment (§6). Receivers should pair a table with the next message on the same topic and also
+accept a table inline at the start of a body (`segments()` in `tools/decode_pose.py`).
+
+### 3.4 Non-Cap'n Proto payloads
+
+| Payload | Format |
+|---|---|
+| Clock sync (topic 1, types `0x06`/`0x16`) | 4 × u64 (§4.4) |
+| Topic 2 Command | 32-byte packed record (§7.6) |
+| Topics 8/9 Hands/Skeleton | packed little-endian C structs (§7.3) |
+| Topic 31 RuntimeIPC | Meta's RIPC "Reflect V2" serialization inside a small Cap'n Proto envelope (§7.8) |
+| Video csd / slice data (topics 10–14) | Annex-B H.264 (§6) |
