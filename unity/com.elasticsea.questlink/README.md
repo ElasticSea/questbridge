@@ -5,9 +5,9 @@
 Unity 6000.3, Input System 1.19. Works in Editor Play mode. Without the native library the rig uses a mock backend.
 
 ## Native plugin (Windows)
-`unity\install-native.ps1` builds `questlink.dll` (Release, `native\build.ps1`, C++ tests included) and copies it to `Runtime/Plugins/Windows/x86_64/` with Editor + Win64 import settings. The binary is git-ignored, so run the script after every clone or native change; `-NoBuild` only copies. Close the Unity Editor first: Windows locks a loaded DLL until the Editor exits.
+`unity\install-native.ps1` builds `questlink.dll` (Release, `native\build.ps1`, C++ tests included) and copies it to `Runtime/Plugins/Windows/x86_64/` with Editor + Win64 import settings. The binary is committed (UPM git installs need it), so run the script and commit `questlink.dll` after a native change the package needs; `-NoBuild` only copies. macOS: `unity/install-native.sh` on the Mac builds `Runtime/Plugins/macOS/libquestlink.dylib` (arm64); copy it back and commit it the same way. Close the Unity Editor first: Windows locks a loaded DLL until the Editor exits.
 
-The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`); with another graphics API the rig warns and falls back to the mock. Set `QL_LOG_FILE=<path>` (and `QL_LOG=1` for every protocol message) before starting the Editor to get the native log, because the Editor drops plugin stderr. OVRService must be stopped (`host\ovr_service.ps1 stop`), or the XRSP interface is busy and the rig stays in Connecting.
+The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`); with another graphics API the rig warns and falls back to the mock. Set `QL_LOG_FILE=<path>` (and `QL_LOG=1` for every protocol message) before starting the Editor to get the native log, because the Editor drops plugin stderr. OVRService holds the XRSP interface while it runs: when the Quest is plugged in, the library stops it through one elevated helper (one UAC prompt per Editor session) that starts it again when the Editor exits (`QL_OVR_STOP=0` before starting the Editor turns this off; then `host\ovr_service.ps1 stop` by hand). **QuestLink > Check Setup** shows what's missing on a machine.
 
 Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
 
@@ -20,7 +20,7 @@ Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
 - **No headset:** `ql_open` and the per-frame calls never block; USB is polled on the runtime's own thread. The rig logs its state changes and, after 15 s without streaming, a hint (OVRService / press Launch). The rig inspector shows the state and setup problems with fixes (Direct3D 11, missing `questlink.dll`, Meta's service running, Input System off).
 
 ## Use
-1. Add the package (Package Manager → Add package from disk → `package.json`, or `"com.elasticsea.questlink": "file:<path>"` in `manifest.json`).
+1. Add the package: Package Manager → Add package from git URL → `https://github.com/ElasticSea/meta-quest-link-for-mac.git?path=/unity/com.elasticsea.questlink#v0.1.0` (testers: [TESTERS.md](../../TESTERS.md)), or from disk (`package.json`, or `"com.elasticsea.questlink": "file:<path>"` in `manifest.json`).
 2. Put `QuestLinkRig` on an empty GameObject at the tracking origin (floor level). It creates `Head/LeftEye` and `Head/RightEye` cameras. Use `cameraTemplate` to copy clear flags, culling mask and similar settings onto both eyes.
 3. Bind to the generic XR paths with stock components such as TrackedPoseDriver or XRI: `<XRHMD>/centerEyePosition`, `<XRController>{LeftHand}/devicePosition`, `{RightHand}/{TriggerButton}`, `/primary2DAxis`, …
 4. Hands: add `QuestLinkHands` to the rig object; `HandJointsVisualizer` draws each joint as a sphere. With Unity XR Hands (`com.unity.xr.hands` 1.3+) in the project, also add `QuestLinkXRHands` to run an `XRHandSubsystem` fed by QuestLink, so XR Hands visualizers and XRI hand interaction work; parent their visuals to the rig (joint poses are relative to the tracking origin).

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "displayName": "Quest Link for Mac",
   "description": "Streams a Unity scene to a Meta Quest over USB using Meta's Link protocol (native libquestlink) and exposes head and controller poses as Input System XR devices.",
+  "author": {
+    "name": "ElasticSea",
+    "url": "https://github.com/ElasticSea"
+  },
+  "changelogUrl": "https://github.com/ElasticSea/meta-quest-link-for-mac/blob/main/unity/com.elasticsea.questlink/CHANGELOG.md",
+  "documentationUrl": "https://github.com/ElasticSea/meta-quest-link-for-mac/blob/main/TESTERS.md",
   "unity": "6000.3",
   "dependencies": {
     "com.unity.inputsystem": "1.19.0",
