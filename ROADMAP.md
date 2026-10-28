@@ -30,3 +30,4 @@
 - [ ] M9: passthrough: alpha-blend frames + passthrough layer; Unity transparent clear
 - [ ] M10: standalone macOS player build; latency tuning
 - [ ] later: environment depth / body tracking over Link; XR SDK display provider; raw camera pixels via a small APK; 90/120 Hz modes; menu-bar app
+- [ ] M11 (last): public release as **QuestBridge for Mac** once a working Unity sample exists. Apache-2.0, fixes from docs/PUBLIC_RELEASE_AUDIT.md, targeted filter-repo rewrite into a new repo `questbridge-mac` as the very last step
