@@ -81,6 +81,14 @@ std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
     return info;
 }
 
+const char* codec::name(uint16_t c) {
+    switch (c) {
+        case kH264: return "H.264";
+        case kHevc: return "HEVC";
+    }
+    return "codec ?";
+}
+
 const char* state_name(State s) {
     switch (s) {
         case State::WaitHello: return "wait_hello";
@@ -162,6 +170,8 @@ void Session::send_control(uint8_t type, uint16_t version) {
         // Data word 2 = refresh rate, Hz (the recorded one is 72)
         if (refresh_hz_) tree->data.at(2) = (tree->data.at(2) & ~0xFFFFFFFFull) | refresh_hz_;
         refresh_hz_ = uint32_t(tree->data.at(2));
+        // u16 @ byte 6 (top of data word 0) = video codec
+        tree->data.at(0) = (tree->data.at(0) & ~(0xFFFFull << 48)) | uint64_t(codec_) << 48;
     }
     Bytes capnp = capnp::encode(tree, words);  // recorded offsets: Meta's allocation order
     Bytes body(8);
@@ -399,6 +409,18 @@ uint32_t Session::pick_refresh() const {
     return offered(def) ? def : 0;
 }
 
+uint16_t Session::pick_codec() const {
+    const auto& offered = device_info_ ? device_info_->codecs : std::vector<uint16_t>{};
+    auto lists = [&](uint16_t c) { return std::find(offered.begin(), offered.end(), c) != offered.end(); };
+    if (cfg_.codec >= 0) {
+        uint16_t c = uint16_t(cfg_.codec);
+        if (!offered.empty() && !lists(c)) log("info", std::string(codec::name(c)) + " not listed by the headset; sending it anyway");
+        return c;
+    }
+    // An empty list (Quest 3, Quest Pro) says nothing: stay on H.264, which every headset plays
+    return cfg_.prefer_hevc && lists(codec::kHevc) ? codec::kHevc : codec::kH264;
+}
+
 void Session::begin_phase(uint16_t version) {
     if (version != 1 && version != 3) {
         fail("unsupported HELLO version " + std::to_string(version));
@@ -414,7 +436,11 @@ void Session::begin_phase(uint16_t version) {
         ripc_ = ripc::from_setup();  // RuntimeIPC starts over with the replayed setup
         haptics_connected_ = false;
     }
-    if (version == 3) refresh_hz_ = pick_refresh();
+    if (version == 3) {
+        refresh_hz_ = pick_refresh();
+        codec_ = pick_codec();
+        log("info", std::string("stream codec ") + codec::name(codec_));
+    }
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
     expected_ = control::kAck;
     send_control(control::kConfig, version);

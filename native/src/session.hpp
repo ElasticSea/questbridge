@@ -52,6 +52,13 @@ constexpr uint8_t kReady = 0x80, kHello = 0x81, kConfig = 0x82, kAck = 0x83, kBy
 constexpr uint8_t kClockPing = 0x06, kClockPong = 0x16, kClockFlags = 0x80;
 }  // namespace control
 
+// Video codec ids: HELLO v3 device description p6.p0 (what the headset decodes) and CONFIG v3
+// data u16 @ byte 6 (what we send). Meta sends 0; 1 = HEVC is inferred (RemoteHeadset.dll)
+namespace codec {
+constexpr uint16_t kH264 = 0, kHevc = 1;
+const char* name(uint16_t c);
+}  // namespace codec
+
 enum class State {
     WaitHello,
     Phase1,
@@ -108,6 +115,10 @@ struct SessionConfig {
     // CONFIG v3 refresh: 0 = the device's default rate when the HELLO offers it, else the
     // recorded 72 Hz; another value must be in the HELLO's refresh list
     uint32_t refresh_hz = 0;
+    // CONFIG v3 codec: -1 = auto (HEVC when prefer_hevc and the HELLO v3 lists it, else H.264);
+    // otherwise sent as is, offered or not
+    int codec = -1;
+    bool prefer_hevc = false;  // this platform's encoder is faster at HEVC (VideoToolbox)
 };
 
 class Session {
@@ -135,6 +146,7 @@ public:
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
     uint32_t refresh_hz() const { return refresh_hz_; }  // CONFIG v3's rate; 0 before phase 2
+    uint16_t codec() const { return codec_; }             // CONFIG v3's codec (codec::k*)
     uint64_t head_pose_count() const { return head_pose_count_; }
     const std::optional<HandsFrame>& hands() const { return hands_; }  // latest topic 8
     uint64_t hands_count() const { return hands_count_; }
@@ -190,6 +202,7 @@ private:
     void wait_hello(int64_t bye_in_ns);
     void begin_phase(uint16_t version);
     uint32_t pick_refresh() const;
+    uint16_t pick_codec() const;
     void advance_phase(uint8_t type);
     void finish_handshake();
     void enter(State s, int64_t timeout_ns);
@@ -216,6 +229,7 @@ private:
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
     uint32_t refresh_hz_ = 0;
+    uint16_t codec_ = codec::kH264;
     uint64_t head_pose_count_ = 0;
     std::optional<HandsFrame> hands_;
     uint64_t hands_count_ = 0;
