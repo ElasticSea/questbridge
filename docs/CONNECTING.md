@@ -27,6 +27,22 @@ That's all. No replug, no reboot, no Link quit, in any of these cases:
 Inside one process (Unity Editor, a player) the native runtime keeps the USB link and the
 headset session across Play sessions, so only a real new stream needs Launch.
 
+## While the app keeps running
+
+The runtime recovers inside a running app (Play mode or a player) without a restart:
+
+| Disconnect | Runtime | User step | Verified |
+|---|---|---|---|
+| USB error, Quest back within 500 ms (`QL_RESUME_MS`) | reopens and resumes the same stream: frame index and every seq continue, IDR first; BYE + new handshake if nothing arrives within 1 s | none | fake headset + unit tests |
+| USB gone longer (Link quit, cable, headset reboot) | reopens when it is back, BYE, new handshake (fresh numbering, IDR) | Launch | fake headset; Link quit on the bench earlier (qlhost) |
+| Headset BYE / new HELLO mid-stream | new handshake | Launch | fake headset + unit tests |
+| No Quest message for 3 s (`QL_SILENCE_MS`): asleep or wedged | BYE, new handshake once it answers | Launch | fake headset + unit tests |
+
+Audio restarts with the stream, hands are turned on again, haptics reconnect. Stale head,
+hand and controller data are dropped while the link is down. `ql_get_link_status` (Unity:
+`QuestLinkConnectionStatus`) reports the state and raises Connected / Disconnected /
+Reconnecting. Live check: `docs/RECOVERY_LIVE_CHECK.md`.
+
 ## If it still doesn't connect
 
 Logs: `QL_LOG=1` (and `QL_LOG_FILE=<path>` for Unity) on the host; `adb logcat -s xrspd
