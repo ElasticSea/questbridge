@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -42,12 +41,6 @@ namespace ElasticSea.QuestLink.Editor
                         fixLabel = "Use Direct3D 11",
                         fix = UseDirect3D11,
                     });
-                if (MetaLinkRunning())
-                    problems.Add(new Problem
-                    {
-                        message = "Meta Horizon Link is running and holds the headset's Link connection. Quit it and stop the \"Oculus VR Runtime Service\" (Services, needs admin) before pressing Play.",
-                        type = MessageType.Warning,
-                    });
             }
 #if !ENABLE_INPUT_SYSTEM
             problems.Add(new Problem
@@ -59,13 +52,6 @@ namespace ElasticSea.QuestLink.Editor
             });
 #endif
             return problems;
-        }
-
-        // OVRServer_x64 runs while Meta's OVRService is up
-        static bool MetaLinkRunning()
-        {
-            try { return Process.GetProcessesByName("OVRServer_x64").Length > 0; }
-            catch (Exception) { return false; }
         }
 
         static void UseDirect3D11()
@@ -114,7 +100,7 @@ namespace ElasticSea.QuestLink.Editor
                 EditorGUILayout.HelpBox(text, rig.State == QuestLinkState.Streaming ? MessageType.Info : MessageType.None);
             }
 
-            // Process lookups aren't free; refresh the checks every few seconds
+            // Asset lookups every repaint are wasteful; refresh the checks every few seconds
             if (problems == null || EditorApplication.timeSinceStartup - checkedAt > 3)
             {
                 problems = QuestLinkSetup.Check();
