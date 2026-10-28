@@ -1,7 +1,8 @@
-// C API over Session + Transport.
+// Host API (ql_host_*): one connection, Session + Transport.
 #include "questlink.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -15,6 +16,7 @@ namespace {
 using namespace ql;
 
 constexpr int kWriteTimeoutMs = 1000;
+static_assert(int(State::Streaming) == QL_STATE_STREAMING && int(State::Failed) == QL_STATE_FAILED);
 
 // Adapts a caller-provided ql_transport
 class CallbackTransport final : public Transport {
@@ -55,7 +57,7 @@ struct ql_host {
     Reassembler rx;
     bool broken = false;
     std::string error;
-    std::string error_out;  // returned by ql_get_error
+    std::string error_out;  // returned by ql_host_get_error
 
     // Called with mu held; releases it. Writes queued transfers in queue order.
     ql_status flush(std::unique_lock<std::mutex>& lock) {
@@ -119,25 +121,25 @@ static ql_status open_with(const ql_config* cfg, std::unique_ptr<Transport> t, q
     }
 }
 
-ql_status ql_open(const ql_config* cfg, ql_host** out) {
+ql_status ql_host_open(const ql_config* cfg, ql_host** out) {
     if (!out) return QL_ERR_ARGUMENT;
     *out = nullptr;
     OpenError err;
     std::string detail;
     auto t = open_usb(err, detail);
-    if (!t) return err == OpenError::Busy || err == OpenError::NotFound ? QL_ERR_NO_DEVICE : QL_ERR_TRANSPORT;
+    if (!t) return err == OpenError::Busy || err == OpenError::NotFound ? QL_ERR_NO_DEVICE : QL_ERR_UNSUPPORTED;
     return open_with(cfg, std::move(t), out);
 }
 
-ql_status ql_open_transport(const ql_config* cfg, const ql_transport* transport, ql_host** out) {
+ql_status ql_host_open_transport(const ql_config* cfg, const ql_transport* transport, ql_host** out) {
     if (!out || !transport || !transport->read || !transport->write) return QL_ERR_ARGUMENT;
     *out = nullptr;
     return open_with(cfg, std::make_unique<CallbackTransport>(*transport), out);
 }
 
-void ql_close(ql_host* host) { delete host; }
+void ql_host_close(ql_host* host) { delete host; }
 
-ql_status ql_poll(ql_host* host, int timeout_ms) {
+ql_status ql_host_poll(ql_host* host, int timeout_ms) {
     if (!host) return QL_ERR_ARGUMENT;
     {
         std::lock_guard<std::mutex> lock(host->mu);
@@ -169,7 +171,7 @@ ql_status ql_poll(ql_host* host, int timeout_ms) {
     return failed ? QL_ERR_FAILED : QL_OK;
 }
 
-ql_state ql_get_state(ql_host* host) {
+ql_state ql_host_get_state(ql_host* host) {
     if (!host) return QL_STATE_FAILED;
     std::lock_guard<std::mutex> lock(host->mu);
     return ql_state(int(host->session->state()));
@@ -177,14 +179,14 @@ ql_state ql_get_state(ql_host* host) {
 
 const char* ql_state_name(ql_state state) { return state_name(State(int(state))); }
 
-const char* ql_get_error(ql_host* host) {
+const char* ql_host_get_error(ql_host* host) {
     if (!host) return "no host";
     std::lock_guard<std::mutex> lock(host->mu);
     host->error_out = !host->error.empty() ? host->error : host->session->error();
     return host->error_out.c_str();
 }
 
-ql_status ql_get_info(ql_host* host, ql_info* out) {
+ql_status ql_host_get_info(ql_host* host, ql_info* out) {
     if (!host || !out) return QL_ERR_ARGUMENT;
     std::lock_guard<std::mutex> lock(host->mu);
     const Session& s = *host->session;
@@ -203,24 +205,39 @@ ql_status ql_get_info(ql_host* host, ql_info* out) {
     return QL_OK;
 }
 
-int ql_get_head_pose(ql_host* host, ql_head_pose* out) {
-    if (!host || !out) return 0;
+ql_status ql_host_get_device_info(ql_host* host, ql_device_info* out) {
+    if (!host || !out) return QL_ERR_ARGUMENT;
+    std::lock_guard<std::mutex> lock(host->mu);
+    const auto& d = host->session->device_info();
+    if (!d) return QL_ERR_NO_DATA;
+    auto tan_deg = [](float deg) { return float(std::tan(double(deg) * 3.14159265358979323846 / 180.0)); };
+    std::memset(out, 0, sizeof *out);
+    out->encode_width = d->encode_width;
+    out->encode_height = d->encode_height;
+    out->refresh_hz = d->refresh_hz;
+    out->ipd_m = d->ipd_m;
+    out->fov_left = {tan_deg(d->fov_deg[0]), tan_deg(d->fov_deg[1]), tan_deg(d->fov_deg[2]), tan_deg(d->fov_deg[3])};
+    out->fov_right = {out->fov_left.up, out->fov_left.down, out->fov_left.right, out->fov_left.left};  // mirrored
+    return QL_OK;
+}
+
+ql_status ql_host_get_head_pose(ql_host* host, ql_head_pose* out) {
+    if (!host || !out) return QL_ERR_ARGUMENT;
     std::lock_guard<std::mutex> lock(host->mu);
     const auto& p = host->session->head_pose();
-    if (!p) return 0;
-    std::memcpy(out->pose.orientation, p->orientation, sizeof p->orientation);
-    std::memcpy(out->pose.position, p->position, sizeof p->position);
+    if (!p) return QL_ERR_NO_DATA;
+    out->pose = {p->orientation[0], p->orientation[1], p->orientation[2], p->orientation[3],
+                 p->position[0],    p->position[1],    p->position[2],    p->sample_time_ns};
     std::memcpy(out->angular_velocity, p->angular_velocity, sizeof p->angular_velocity);
     std::memcpy(out->linear_velocity, p->linear_velocity, sizeof p->linear_velocity);
     std::memcpy(out->angular_acceleration, p->angular_acceleration, sizeof p->angular_acceleration);
     std::memcpy(out->linear_acceleration, p->linear_acceleration, sizeof p->linear_acceleration);
-    out->sample_time_ns = p->sample_time_ns;
     out->vsync_ns = p->vsync_ns;
     out->count = host->session->head_pose_count();
-    return 1;
+    return QL_OK;
 }
 
-ql_status ql_submit_frame_slices(ql_host* host, const ql_slice* slices, uint32_t count, const ql_frame_info* info) {
+ql_status ql_host_submit_frame_slices(ql_host* host, const ql_slice* slices, uint32_t count, const ql_frame_info* info) {
     if (!host || !slices || count == 0) return QL_ERR_ARGUMENT;
     std::vector<SliceData> data;
     for (uint32_t i = 0; i < count; ++i) {
@@ -233,10 +250,8 @@ ql_status ql_submit_frame_slices(ql_host* host, const ql_slice* slices, uint32_t
         opt.index = info->frame_index;
         opt.target_vsync_quest_ns = info->target_vsync_quest_ns;
         if (info->has_render_pose) {
-            Pose p;
-            std::memcpy(p.orientation, info->render_pose.orientation, sizeof p.orientation);
-            std::memcpy(p.position, info->render_pose.position, sizeof p.position);
-            opt.render_pose = p;
+            const ql_pose& r = info->render_pose;
+            opt.render_pose = Pose{{r.qx, r.qy, r.qz, r.qw}, {r.px, r.py, r.pz}};
         }
         opt.intra = info->is_intra != 0;
     }

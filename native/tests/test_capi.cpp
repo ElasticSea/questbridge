@@ -1,5 +1,6 @@
 // The shared library through its C API, over a fake transport that plays the Quest's side
 // of Meta's recorded session. Our USB transfers must equal Meta's.
+#include <cmath>
 #include <deque>
 
 #include "clip.hpp"
@@ -47,7 +48,7 @@ std::vector<Bytes> meta_transfers(const char* dir) {
 
 ql_head_pose pose_after(ql_host* h) {
     ql_head_pose p{};
-    ql_get_head_pose(h, &p);
+    ql_host_get_head_pose(h, &p);
     return p;
 }
 
@@ -61,10 +62,10 @@ TEST(capi_handshake_transfers_match_meta) {
     ql_config_init(&cfg);
     ql_transport t = usb.transport();
     ql_host* h = nullptr;
-    REQUIRE(ql_open_transport(&cfg, &t, &h) == QL_OK);
-    CHECK_EQ(ql_get_state(h), QL_STATE_WAIT_HELLO);
-    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_poll(h, 0), QL_OK);
-    CHECK_EQ(ql_get_state(h), QL_STATE_SETUP);
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    CHECK_EQ(ql_host_get_state(h), QL_STATE_WAIT_HELLO);
+    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
+    CHECK_EQ(ql_host_get_state(h), QL_STATE_SETUP);
 
     auto meta = meta_transfers("pc_to_quest");
     REQUIRE(usb.written.size() >= 9 && meta.size() >= 8);
@@ -82,12 +83,21 @@ TEST(capi_handshake_transfers_match_meta) {
         }
     CHECK(setup_seen);
 
+    ql_device_info dev;
+    REQUIRE(ql_host_get_device_info(h, &dev) == QL_OK);
+    CHECK_EQ(dev.encode_width, uint32_t(4096));
+    CHECK_EQ(dev.encode_height, uint32_t(2240));
+    CHECK_EQ(dev.refresh_hz, 72.0f);
+    CHECK(std::abs(dev.fov_left.up - std::tan(44.0 * 3.14159265358979 / 180)) < 1e-6);
+    CHECK_EQ(dev.fov_left.left, dev.fov_right.right);  // mirrored eyes
+    CHECK_EQ(dev.fov_left.right, dev.fov_right.left);
+
     ql_info info;
-    REQUIRE(ql_get_info(h, &info) == QL_OK);
+    REQUIRE(ql_host_get_info(h, &info) == QL_OK);
     CHECK_EQ(info.session_id, uint64_t(6936518381556450372ull));
     CHECK(info.has_clock_offset);
     CHECK(info.rx_counts[1] > 15);
-    ql_close(h);
+    ql_host_close(h);
 }
 
 TEST(capi_attach_pose_and_frame) {
@@ -111,27 +121,28 @@ TEST(capi_attach_pose_and_frame) {
     cfg.first_frame_index = 1000;
     ql_transport t = usb.transport();
     ql_host* h = nullptr;
-    REQUIRE(ql_open_transport(&cfg, &t, &h) == QL_OK);
-    CHECK_EQ(ql_get_state(h), QL_STATE_STREAMING);
+    REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);
+    CHECK_EQ(ql_host_get_state(h), QL_STATE_STREAMING);
 
     uint8_t csd[] = {0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x68};
     uint8_t nal[] = {0, 0, 0, 1, 0x65, 1, 2, 3, 4, 5};
     ql_slice slices[5];
     for (auto& s : slices) s = {csd, sizeof csd, nal, sizeof nal};
-    CHECK_EQ(ql_submit_frame_slices(h, slices, 5, nullptr), QL_ERR_NO_CLOCK);
-    CHECK_EQ(ql_get_head_pose(h, nullptr), 0);
+    CHECK_EQ(ql_host_submit_frame_slices(h, slices, 5, nullptr), QL_ERR_NO_CLOCK);
+    ql_head_pose none;
+    CHECK_EQ(ql_host_get_head_pose(h, &none), QL_ERR_NO_DATA);
 
-    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_poll(h, 0), QL_OK);
+    while (usb.rx_pos < usb.rx.size()) CHECK_EQ(ql_host_poll(h, 0), QL_OK);
     ql_head_pose p = pose_after(h);
     CHECK_EQ(p.count, uint64_t(1));
-    CHECK_EQ(p.sample_time_ns, uint64_t(344814707924000));
+    CHECK_EQ(p.pose.time_ns, uint64_t(344814707924000));
 
     usb.written.clear();
     ql_frame_info fi{};
     fi.is_intra = 1;
     fi.has_render_pose = 1;
     fi.render_pose = p.pose;
-    REQUIRE(ql_submit_frame_slices(h, slices, 5, &fi) == QL_OK);
+    REQUIRE(ql_host_submit_frame_slices(h, slices, 5, &fi) == QL_OK);
     REQUIRE(usb.written.size() == 1);
     const Bytes& x = usb.written[0];
     CHECK_EQ(x.size() % 1024, size_t(0));
@@ -143,14 +154,14 @@ TEST(capi_attach_pose_and_frame) {
     CHECK_EQ(rd64(hdr + 8), uint64_t(1000));
     float q3;
     std::memcpy(&q3, hdr + 8 + 12 + 12, 4);
-    CHECK_EQ(q3, p.pose.orientation[3]);
+    CHECK_EQ(q3, p.pose.qw);
 
     ql_info info;
-    ql_get_info(h, &info);
+    ql_host_get_info(h, &info);
     CHECK_EQ(info.next_frame_index, uint64_t(1001));
     CHECK_EQ(info.video_seq, uint16_t(7 + 4));
     CHECK(info.quest_clock_offset_ns > 71'000'000'000);
-    ql_close(h);
+    ql_host_close(h);
 }
 
 TEST(clip_splits_back_into_slices) {
@@ -175,10 +186,10 @@ TEST(capi_transport_errors) {
     t.write = [](void*, const uint8_t*, size_t, int) { return 0; };
     t.read = [](void*, uint8_t*, size_t, int) { return -1; };
     ql_host* h = nullptr;
-    REQUIRE(ql_open_transport(nullptr, &t, &h) == QL_OK);
-    CHECK_EQ(ql_poll(h, 0), QL_ERR_TRANSPORT);
-    CHECK_EQ(std::string(ql_get_error(h)), std::string("USB read failed"));
+    REQUIRE(ql_host_open_transport(nullptr, &t, &h) == QL_OK);
+    CHECK_EQ(ql_host_poll(h, 0), QL_ERR_TRANSPORT);
+    CHECK_EQ(std::string(ql_host_get_error(h)), std::string("USB read failed"));
     CHECK_EQ(std::string(ql_state_name(QL_STATE_WAIT_LINK_REQUEST)), std::string("wait_link_request"));
-    ql_close(h);
-    CHECK_EQ(ql_open_transport(nullptr, nullptr, &h), QL_ERR_ARGUMENT);
+    ql_host_close(h);
+    CHECK_EQ(ql_host_open_transport(nullptr, nullptr, &h), QL_ERR_ARGUMENT);
 }

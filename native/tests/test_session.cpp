@@ -1,5 +1,7 @@
 // Handshake state machine: replay the Quest's side of Meta's recorded handshake and check
 // that our PC messages are Meta's bytes (mirrors tests/test_handshake.py Transcript).
+#include <cmath>
+
 #include "harness.hpp"
 #include "session.hpp"
 #include "templates.hpp"
@@ -193,4 +195,24 @@ TEST(attach_continues_numbering) {
     CHECK_EQ(r.s.control_seq(), uint16_t(20));
     CHECK_EQ(r.s.stream_seq(12), uint16_t(500));
     CHECK(r.s.take_outgoing().empty());
+}
+
+TEST(device_info_from_hello) {
+    // Golden facts as in tests/test_handshake.py QuestHello
+    Rig r;
+    r.s.start();
+    CHECK(!r.s.device_info());
+    r.s.on_message((*entries("quest_to_pc")[0])["raw"].as_hex());
+    REQUIRE(r.s.device_info());
+    const DeviceInfo& d = *r.s.device_info();
+    CHECK_EQ(d.panel_width, uint32_t(4128));
+    CHECK_EQ(d.panel_height, uint32_t(2208));
+    CHECK_EQ(d.encode_width, uint32_t(4096));
+    CHECK_EQ(d.encode_height, uint32_t(2240));
+    CHECK_EQ(d.refresh_hz, 72.0f);
+    CHECK(std::abs(d.ipd_m - 0.0635f) < 1e-6f);
+    CHECK_EQ(d.fov_deg[0], 44.0f);
+    CHECK_EQ(d.fov_deg[1], 55.0f);
+    CHECK_EQ(d.fov_deg[2], 54.0f);
+    CHECK_EQ(d.fov_deg[3], 40.0f);
 }

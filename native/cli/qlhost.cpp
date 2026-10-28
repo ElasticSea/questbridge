@@ -60,14 +60,14 @@ public:
             auto last = Clock::now();
             ql_info prev{};
             while (!stop_) {
-                ql_status st = ql_poll(h_, 100);
+                ql_status st = ql_host_poll(h_, 100);
                 if (st == QL_ERR_TRANSPORT) {
                     lost_ = true;
                     return;
                 }
-                if (Clock::now() - last >= std::chrono::seconds(2) && ql_get_state(h_) == QL_STATE_STREAMING) {
+                if (Clock::now() - last >= std::chrono::seconds(2) && ql_host_get_state(h_) == QL_STATE_STREAMING) {
                     ql_info info;
-                    ql_get_info(h_, &info);
+                    ql_host_get_info(h_, &info);
                     std::string line = "rx";
                     for (int t = 2; t < 64; ++t)
                         if (info.rx_counts[t] != prev.rx_counts[t])
@@ -91,10 +91,10 @@ public:
     bool wait_streaming() {
         for (;;) {
             if (lost_) return false;
-            ql_state s = ql_get_state(h_);
+            ql_state s = ql_host_get_state(h_);
             if (s == QL_STATE_STREAMING) return true;
             if (s == QL_STATE_FAILED) {
-                log_line("info", std::string("session failed: ") + ql_get_error(h_));
+                log_line("info", std::string("session failed: ") + ql_host_get_error(h_));
                 return false;
             }
             sleep_s(0.01);
@@ -112,10 +112,10 @@ public:
         }
         ql_info info;
         // Need one clock ping to map our clock onto the Quest's
-        while (ql_get_info(h_, &info) == QL_OK && !info.has_clock_offset && !lost_) sleep_s(0.05);
+        while (ql_host_get_info(h_, &info) == QL_OK && !info.has_clock_offset && !lost_) sleep_s(0.05);
         ql_head_pose fixed{};
         if (pose_mode != "template")
-            while (!ql_get_head_pose(h_, &fixed) && !lost_) sleep_s(0.01);
+            while (ql_host_get_head_pose(h_, &fixed) != QL_OK && !lost_) sleep_s(0.01);
         if (lost_) return Outcome::TransportLost;
 
         const auto period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 72));
@@ -129,12 +129,12 @@ public:
             if (pose_mode != "template") {
                 ql_head_pose live{};
                 fi.has_render_pose = 1;
-                fi.render_pose = pose_mode == "fixed" || !ql_get_head_pose(h_, &live) ? fixed.pose : live.pose;
+                fi.render_pose = pose_mode == "fixed" || ql_host_get_head_pose(h_, &live) != QL_OK ? fixed.pose : live.pose;
             }
-            ql_status st = ql_submit_frame_slices(h_, slices.data(), uint32_t(slices.size()), &fi);
+            ql_status st = ql_host_submit_frame_slices(h_, slices.data(), uint32_t(slices.size()), &fi);
             if (st == QL_ERR_TRANSPORT) return Outcome::TransportLost;
             if (st != QL_OK) {
-                log_line("info", "submit failed: " + std::to_string(st) + " " + ql_get_error(h_));
+                log_line("info", "submit failed: " + std::to_string(st) + " " + ql_host_get_error(h_));
                 return Outcome::Failed;
             }
             ++sent;
@@ -148,7 +148,7 @@ public:
     void log_resume() {
         // What a later XRSP_ATTACH run needs to continue this headset session
         ql_info info;
-        if (ql_get_info(h_, &info) != QL_OK) return;
+        if (ql_host_get_info(h_, &info) != QL_OK) return;
         log_line("info", "attach later with XRSP_CONTROL_SEQ=" + std::to_string(info.control_seq) +
                              " XRSP_VIDEO_SEQ=" + std::to_string(info.video_seq) +
                              " XRSP_FRAME_START=" + std::to_string(info.next_frame_index));
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
     for (;;) {
         ql_host* h = nullptr;
         ql_status st;
-        while ((st = ql_open(&cfg, &h)) != QL_OK) {
+        while ((st = ql_host_open(&cfg, &h)) != QL_OK) {
             if (Clock::now() > deadline) {
                 std::fprintf(stderr, "Quest XRSP interface not available (status %d)\n", st);
                 return 1;
@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
             run.stop();
             if (outcome != Outcome::TransportLost) run.log_resume();
         }
-        ql_close(h);
+        ql_host_close(h);
         if (outcome == Outcome::Done) return 0;
         if (outcome == Outcome::Failed) return 1;
         // Unplugged/replugged mid-session: wait for it to come back and start over

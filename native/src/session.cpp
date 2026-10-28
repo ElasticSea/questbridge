@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <stdexcept>
 #include <utility>
 
@@ -24,6 +25,29 @@ const templates::Control& control_template(uint8_t type, uint16_t version) {
 }
 
 }  // namespace
+
+std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
+    // HELLO root p3 -> p0: display struct; its p3: eye FOV in degrees
+    const capnp::Node* desc = hello ? hello->child(3) : nullptr;
+    const capnp::Node* d = desc ? desc->child(0) : nullptr;
+    if (!d || d->data.size() < 6) return std::nullopt;
+    auto f32 = [](const capnp::Node& n, size_t word, int half) {
+        uint32_t u = n.u32(word, half);
+        float f;
+        std::memcpy(&f, &u, 4);
+        return f;
+    };
+    DeviceInfo info;
+    info.panel_width = d->u32(0, 1);
+    info.panel_height = d->u32(1, 0);
+    info.refresh_hz = f32(*d, 1, 1);
+    info.ipd_m = f32(*d, 2, 0);
+    info.encode_width = d->u32(5, 0);
+    info.encode_height = d->u32(5, 1);
+    if (const capnp::Node* fov = d->child(3); fov && fov->data.size() >= 2)
+        for (int i = 0; i < 4; ++i) info.fov_deg[i] = f32(*fov, size_t(i / 2), i % 2);
+    return info;
+}
 
 const char* state_name(State s) {
     switch (s) {
@@ -188,6 +212,8 @@ void Session::on_clock(uint8_t type, std::span<const uint8_t> body) {
 void Session::on_control(uint8_t type, const capnp::Ptr& tree, int seq) {
     uint16_t version = tree ? uint16_t(tree->word(0) & 0xFFFF) : 0;
     log("Q->PC", hex2(type) + " v" + std::to_string(version), seq);
+    if (type == control::kHello)
+        if (auto info = parse_device_info(tree)) device_info_ = info;
     switch (state_) {
         case State::WaitHello:
         case State::WaitHelloV3:

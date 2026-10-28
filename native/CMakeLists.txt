@@ -48,11 +48,28 @@ else()
   endif()
 endif()
 
+# H.264 encoders (Media Foundation on Windows; VideoToolbox later)
+add_subdirectory(encoders)
+
+# Texture capture + encode for ql_submit_frame_texture
+if(WIN32)
+  set(QL_TEXTURE_SOURCES src/texture_encoder_d3d11.cpp)
+  set(QL_TEXTURE_LIBS questlink_encoders d3d11)
+else()
+  set(QL_TEXTURE_SOURCES src/texture_encoder_none.cpp)
+endif()
+
+# C API implementation, shared by the library and the runtime tests (which bring fake USB
+# and encoder backends)
+add_library(questlink_api OBJECT src/questlink.cpp src/link_runtime.cpp)
+target_compile_definitions(questlink_api PUBLIC QL_BUILD_SHARED)
+target_link_libraries(questlink_api PUBLIC questlink_core)
+
 # The C API: questlink.dll / libquestlink.dylib
-add_library(questlink SHARED src/questlink.cpp ${QL_USB_SOURCES})
+add_library(questlink SHARED $<TARGET_OBJECTS:questlink_api> ${QL_USB_SOURCES} ${QL_TEXTURE_SOURCES})
 target_compile_definitions(questlink PRIVATE QL_BUILD_SHARED)
 target_include_directories(questlink PUBLIC include)
-target_link_libraries(questlink PRIVATE questlink_core ${QL_USB_LIBS})
+target_link_libraries(questlink PRIVATE questlink_core ${QL_USB_LIBS} ${QL_TEXTURE_LIBS})
 
 # CLI on the C API only (plus the JSON reader for replay clips)
 add_executable(qlhost cli/qlhost.cpp src/json.cpp)

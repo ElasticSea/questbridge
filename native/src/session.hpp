@@ -48,6 +48,16 @@ enum class State {
 };
 const char* state_name(State s);
 
+// From the HELLO device description (PROTOCOL_NOTES "Device description")
+struct DeviceInfo {
+    uint32_t panel_width = 0, panel_height = 0;
+    uint32_t encode_width = 0, encode_height = 0;
+    float refresh_hz = 0;
+    float ipd_m = 0;
+    float fov_deg[4] = {};  // left eye up, down, left, right; the right eye mirrors left/right
+};
+std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello);
+
 struct SessionConfig {
     // Attach to a headset session an earlier host left running: skip handshake and setup,
     // continue control seq, per-topic video seq and frame index (XRSP_ATTACH in handshake.py).
@@ -84,6 +94,7 @@ public:
     std::optional<int64_t> quest_clock_offset_ns() const { return quest_offset_; }
     const std::map<uint8_t, uint64_t>& rx_counts() const { return rx_counts_; }
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
+    const std::optional<DeviceInfo>& device_info() const { return device_info_; }
     uint64_t head_pose_count() const { return head_pose_count_; }
 
     // Raw stream send: numbers seq per topic, all messages in one transfer
@@ -129,6 +140,7 @@ private:
     uint32_t clock_count_ = 0;
     std::optional<int64_t> quest_offset_;
     std::optional<HeadPose> head_pose_;
+    std::optional<DeviceInfo> device_info_;
     uint64_t head_pose_count_ = 0;
     std::map<uint8_t, uint64_t> rx_counts_;
     std::map<uint8_t, uint32_t> stream_seq_;
