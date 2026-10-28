@@ -30,6 +30,8 @@
 #include <thread>
 
 #include "audio.hpp"
+#include "fake_quest.hpp"
+#include "frame.hpp"
 #include "questlink.h"
 #include "texture_encoder.hpp"
 
@@ -41,8 +43,9 @@
 
 // Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
-static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 248 && offsetof(ql_device_info, features) == 104 &&
-              offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240);
+static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 256 && offsetof(ql_device_info, features) == 104 &&
+              offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240 &&
+              offsetof(ql_device_info, max_slice_bytes) == 244 && offsetof(ql_device_info, max_message_bytes) == 248);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
@@ -240,6 +243,9 @@ private:
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
     uint64_t refits_ = 0;   // encode thread only
+    uint64_t failed_ = 0;   // encode thread only
+    std::shared_ptr<FakeQuest> fake_quest_;  // io thread only
+    bool fake_failed_ = false;
     std::string encoder_name_;  // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
     // USB back within this long after an error while streaming: try to resume (0 = never)
@@ -266,6 +272,7 @@ private:
             TextureEncoderConfig cfg;
             if (hz) cfg.fps = int(hz);
             cfg.hevc = known && dev.stream_codec == QL_CODEC_HEVC;
+            if (known && dev.max_slice_bytes) cfg.max_slice_bytes = dev.max_slice_bytes;
 #ifdef __APPLE__
             // All-intra VideoToolbox runs ~3x over the bitrate (~90 KB per strip per frame) and
             // the Quest Pro ends the session within seconds ("buffer too small"); P frames are
@@ -327,6 +334,24 @@ private:
         return cfg;
     }
 
+    // QL_FAKE_QUEST=<file>: the offline bench headset (fake_quest.hpp) instead of USB
+    ql_status open_host(const ql_config& cfg, ql_host** out) {
+        const char* fake = std::getenv("QL_FAKE_QUEST");
+        if (!fake || !*fake) return ql_host_open(&cfg, out);
+        if (fake_quest_ || fake_failed_) return QL_ERR_NO_DEVICE;  // one session, one try
+        std::string err;
+        fake_quest_ = load_fake_quest(fake, kConservativeCap.message,
+                                      [](const std::string& s) { stderr_log(nullptr, "info", s.c_str(), -1); }, &err);
+        if (!fake_quest_) {
+            stderr_log(nullptr, "info", ("QL_FAKE_QUEST: " + err).c_str(), -1);
+            fake_failed_ = true;
+            return QL_ERR_NO_DEVICE;
+        }
+        stderr_log(nullptr, "info", (std::string("QL_FAKE_QUEST: offline bench headset from ") + fake).c_str(), -1);
+        ql_transport t = fake_quest_transport(fake_quest_);
+        return ql_host_open_transport(&cfg, &t, out);
+    }
+
     void io_loop() {
         // QL_USB=0: never touch USB (Unity tests load the real library with a headset plugged in)
         if (env_int("QL_USB", 1) == 0) {
@@ -352,7 +377,7 @@ private:
             } else {
                 ql_config cfg = host_config();
                 ql_host* raw = nullptr;
-                if (ql_host_open(&cfg, &raw) == QL_OK) {
+                if (open_host(cfg, &raw) == QL_OK) {
                     h.reset(raw, ql_host_close);
                     seen_losses_ = 0;
                 } else {
@@ -405,8 +430,11 @@ private:
     void encode_loop() {
         uint64_t idr_generation = 0;  // force an IDR on the first frame of each connection
         int stream_frames = 0;        // frames encoded in this stream; the first few are logged
-        uint64_t rate_bytes = 0;      // video bytes since rate_since, logged every 10 s
-        int64_t rate_since = ql_now_ns();
+        // Video stats, logged every 10 s: average and peak 1 s rate, largest slice, refits and
+        // frames not sent (failed encodes, slices over the cap)
+        uint64_t rate_bytes = 0, second_bytes = 0, peak_second_bytes = 0, rate_frames = 0;
+        size_t rate_largest = 0;
+        int64_t rate_since = ql_now_ns(), second_since = rate_since;
         for (;;) {
             Job job;
             std::shared_ptr<ql_host> h;
@@ -430,7 +458,7 @@ private:
             if (have_info) gen = (gen << 32) | info.streams;
             EncodedSlices out;
             if (!enc->encode(job.slot, gen != idr_generation, out)) {
-                stderr_log(nullptr, "info", ("encode failed: " + enc->error()).c_str(), -1);
+                stderr_log(nullptr, "info", ("encode failed: " + enc->error() + " (" + std::to_string(++failed_) + " so far)").c_str(), -1);
                 continue;
             }
             stream_frames = gen != idr_generation ? 1 : stream_frames + 1;
@@ -479,14 +507,30 @@ private:
                 fi.fov_left = dev.fov_left;
                 fi.fov_right = dev.fov_right;
             }
-            for (auto& sl : slices) rate_bytes += sl.csd_len + sl.video_len;
-            if (int64_t now = ql_now_ns(); now - rate_since >= 10'000'000'000) {
-                stderr_log(nullptr, "info",
-                           ("video: " + std::to_string(rate_bytes * 8 * 1'000'000'000 / uint64_t(now - rate_since) / 1'000'000) +
-                            " Mbit/s, " + std::to_string(refits_) + " refits so far").c_str(),
-                           -1);
-                rate_bytes = 0;
-                rate_since = now;
+            for (auto& sl : slices) {
+                rate_bytes += sl.csd_len + sl.video_len;
+                second_bytes += sl.csd_len + sl.video_len;
+                rate_largest = std::max({rate_largest, sl.csd_len, sl.video_len});
+            }
+            ++rate_frames;
+            if (int64_t now = ql_now_ns(); now - second_since >= 1'000'000'000) {
+                peak_second_bytes = std::max(peak_second_bytes, second_bytes * 1'000'000'000 / uint64_t(now - second_since));
+                second_bytes = 0;
+                second_since = now;
+                if (now - rate_since >= 10'000'000'000) {
+                    const uint64_t ns = uint64_t(now - rate_since);
+                    stderr_log(nullptr, "info",
+                               ("video: " + std::to_string(rate_frames * 1'000'000'000 / ns) + " fps, " +
+                                std::to_string(rate_bytes * 8'000 / ns) + " Mbit/s avg, " +
+                                std::to_string(peak_second_bytes * 8 / 1'000'000) + " peak (1 s), largest slice " +
+                                std::to_string(rate_largest) + " B; so far " + std::to_string(refits_) + " refits, " +
+                                std::to_string(failed_) + " failed encodes, " + std::to_string(dropped_) + " frames over the cap")
+                                   .c_str(),
+                               -1);
+                    rate_bytes = peak_second_bytes = rate_frames = 0;
+                    rate_largest = 0;
+                    rate_since = now;
+                }
             }
             if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT)
                 stderr_log(nullptr, "info",
