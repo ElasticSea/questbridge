@@ -1,5 +1,7 @@
 #include "h264.hpp"
 
+#include <algorithm>
+
 namespace ql::enc::h264 {
 
 namespace {
@@ -56,6 +58,43 @@ private:
     bool ok_ = true;
 };
 
+class BitWriter {
+public:
+    void u(uint32_t v, int n) {
+        for (int i = n - 1; i >= 0; i--) {
+            if (bits_ % 8 == 0) d_.push_back(0);
+            if ((v >> i) & 1) d_.back() |= uint8_t(0x80 >> (bits_ % 8));
+            bits_++;
+        }
+    }
+    void ue(uint32_t v) {
+        int len = 0;
+        while ((v + 1) >> (len + 1)) len++;
+        u(0, len);
+        u(v + 1, len + 1);
+    }
+    const Bytes& bytes() const { return d_; }  // zero-padded to a byte
+
+private:
+    Bytes d_;
+    size_t bits_ = 0;
+};
+
+// NAL from header byte + RBSP (7.4.1): 00 00 0x with x <= 3 gets an emulation_prevention_three_byte.
+Bytes escape(uint8_t header, const Bytes& data) {
+    Bytes out{header};
+    int zeros = 0;
+    for (uint8_t b : data) {
+        if (zeros >= 2 && b <= 3) {
+            out.push_back(3);
+            zeros = 0;
+        }
+        out.push_back(b);
+        zeros = b == 0 ? zeros + 1 : 0;
+    }
+    return out;
+}
+
 }  // namespace
 
 std::vector<std::span<const uint8_t>> split_annexb(std::span<const uint8_t> es) {
@@ -105,7 +144,7 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
         b.se();
         for (uint32_t n = b.ue(), i = 0; i < n && b.ok(); i++) b.se();
     }
-    b.ue();   // max_num_ref_frames
+    out.max_num_ref_frames = int(b.ue());
     b.u(1);   // gaps_in_frame_num_value_allowed_flag
     out.width_mbs = int(b.ue()) + 1;
     int map_units = int(b.ue()) + 1;
@@ -116,6 +155,7 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
     if (b.u(1))
         for (int i = 0; i < 4; i++) b.ue();  // frame_crop offsets
     out.fixed_frame_rate_bit = -1;
+    out.vui_flag_bit = int(b.pos());
     if (b.u(1)) {  // VUI (E.1.1) up to fixed_frame_rate_flag
         if (b.u(1) && b.u(8) == 255) b.u(32);  // aspect_ratio_idc, sar
         if (b.u(1)) b.u(1);                    // overscan
@@ -140,18 +180,35 @@ bool set_fixed_frame_rate(Bytes& nal) {
     Bytes data = rbsp(nal, nal.size());
     size_t bit = size_t(sps.fixed_frame_rate_bit);
     data[bit >> 3] |= uint8_t(0x80 >> (bit & 7));
-    // Re-escape (7.4.1): 00 00 0x with x <= 3 gets an emulation_prevention_three_byte.
-    Bytes out{nal[0]};
-    int zeros = 0;
-    for (uint8_t b : data) {
-        if (zeros >= 2 && b <= 3) {
-            out.push_back(3);
-            zeros = 0;
-        }
-        out.push_back(b);
-        zeros = b == 0 ? zeros + 1 : 0;
-    }
-    nal = std::move(out);
+    nal = escape(nal[0], data);
+    return true;
+}
+
+bool add_vui(Bytes& nal, int fps) {
+    Sps sps;
+    if (!parse_sps(nal, sps) || sps.vui_flag_bit < 0) return false;
+    Bytes data = rbsp(nal, nal.size());
+    size_t at = size_t(sps.vui_flag_bit);
+    if ((data[at >> 3] >> (7 - (at & 7))) & 1) return false;
+    BitWriter w;
+    for (size_t i = 0; i < at; i++) w.u((data[i >> 3] >> (7 - (i & 7))) & 1, 1);
+    w.u(1, 1);              // vui_parameters_present_flag
+    w.u(0, 4);              // aspect_ratio, overscan, video_signal_type, chroma_loc: absent
+    w.u(1, 1);              // timing_info_present_flag
+    w.u(1000, 32);          // num_units_in_tick
+    w.u(uint32_t(2000 * fps), 32);  // time_scale
+    w.u(1, 1);              // fixed_frame_rate_flag
+    w.u(0, 3);              // nal_hrd, vcl_hrd, pic_struct_present
+    w.u(1, 1);              // bitstream_restriction_flag
+    w.u(1, 1);              // motion_vectors_over_pic_boundaries_flag
+    w.ue(0);                // max_bytes_per_pic_denom
+    w.ue(0);                // max_bits_per_mb_denom
+    w.ue(15);               // log2_max_mv_length_horizontal
+    w.ue(15);               // log2_max_mv_length_vertical
+    w.ue(0);                // max_num_reorder_frames
+    w.ue(uint32_t(std::max(sps.max_num_ref_frames, 1)));  // max_dec_frame_buffering
+    w.u(1, 1);              // rbsp_stop_one_bit
+    nal = escape(nal[0], w.bytes());
     return true;
 }
 

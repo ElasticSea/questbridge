@@ -24,6 +24,8 @@ struct Sps {
     int width_mbs = 0;
     int height_mbs = 0;
     int log2_max_frame_num = 0;
+    int max_num_ref_frames = 0;
+    int vui_flag_bit = -1;          // RBSP bit offset of vui_parameters_present_flag
     int fixed_frame_rate_bit = -1;  // RBSP bit offset of vui fixed_frame_rate_flag; -1 = no timing info
 };
 
@@ -32,6 +34,11 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out);
 // Set the VUI fixed_frame_rate_flag (encoders that can't be told the rate is constant).
 // False if the SPS has no VUI timing info.
 bool set_fixed_frame_rate(Bytes& sps_nal);
+
+// Give an SPS without VUI one (encoders that write none, e.g. VideoToolbox): timing 1000 /
+// (2000 * fps) fixed like Meta's, and bitstream_restriction with no reordering and a DPB of
+// max_num_ref_frames, so the decoder outputs each picture at once. False if it already has VUI.
+bool add_vui(Bytes& sps_nal, int fps);
 
 struct SliceHeader {
     int first_mb = 0;
