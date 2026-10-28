@@ -172,16 +172,19 @@ TEST(config_refresh_from_device) {
 }
 
 TEST(config_codec_auto_and_override) {
-    // Default and macOS auto with Quest 3's empty list: H.264, Meta's recorded CONFIG byte for byte
+    // Default (Windows) auto with Quest 3's empty list: H.264, Meta's recorded CONFIG byte for byte
     Bytes meta = meta_config_v3();
     REQUIRE(!meta.empty());
     Run def({});
     CHECK_EQ(def.s->codec(), codec::kH264);
     CHECK_EQ(def.config_word0 >> 48, uint64_t(0));
     CHECK(Bytes(def.config_v3.begin() + 8, def.config_v3.end()) == Bytes(meta.begin() + 8, meta.end()));  // seq aside
+    // macOS auto with an empty list: HEVC (the Quest Pro lists nothing and decodes it)
     SessionConfig mac;
     mac.prefer_hevc = true;
-    CHECK_EQ(Run(mac).s->codec(), codec::kH264);
+    Run mac_empty(mac);
+    CHECK_EQ(mac_empty.s->codec(), codec::kHevc);
+    CHECK_EQ(mac_empty.config_word0, def.config_word0 | 1ull << 48);
     // A headset listing HEVC: auto picks it only where HEVC is preferred
     auto lists_hevc = [](const Bytes& raw) { return hello_v3_with_codecs(raw, {0, 1}); };
     Run mac_hevc(mac, lists_hevc);

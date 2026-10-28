@@ -204,8 +204,9 @@ typedef void (*ql_log_fn)(void* user, const char* direction, const char* what, i
 
 /* Video codec (CONFIG v3 u16 @ byte 6; 1 = HEVC is inferred from Meta's host) */
 typedef enum ql_codec {
-    QL_CODEC_AUTO = -1, /* HEVC when the headset lists it and this platform encodes it faster
-                         * (macOS), else H.264. Quest 3 / Pro list nothing: H.264 */
+    QL_CODEC_AUTO = -1, /* HEVC where this platform encodes it faster (macOS), unless the headset
+                         * lists codecs without HEVC; else H.264. Quest 3 / Pro list nothing
+                         * (the Pro decodes HEVC): HEVC on macOS, H.264 on Windows */
     QL_CODEC_H264 = 0,
     QL_CODEC_HEVC = 1
 } ql_codec;
