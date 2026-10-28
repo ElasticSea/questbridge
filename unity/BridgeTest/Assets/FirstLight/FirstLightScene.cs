@@ -234,7 +234,7 @@ namespace ElasticSea.QuestLink.BridgeTest
                       (eyeLevel ? $"eye-level origin, head placed at {standingHeight} m" : "floor-level origin"));
         }
 
-        static void Floor()
+        internal static void Floor()
         {
             const int size = 40;
             var floor = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -265,7 +265,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             return tex;
         }
 
-        static void Cube(Vector3 position, float size, Color color)
+        internal static void Cube(Vector3 position, float size, Color color)
         {
             var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             cube.transform.position = position;
@@ -273,7 +273,7 @@ namespace ElasticSea.QuestLink.BridgeTest
             cube.GetComponent<Renderer>().material.color = color;
         }
 
-        static TextMesh Text(string text, Vector3 position, float boardHeight)
+        internal static TextMesh Text(string text, Vector3 position, float boardHeight)
         {
             var go = new GameObject("Instructions");
             go.transform.position = position;
