@@ -34,7 +34,10 @@ namespace ElasticSea.QuestLink.Tests
         public void ListenerMixGoesToBackendAndIsMutedLocally()
         {
             var audio = go.AddComponent<QuestLinkAudio>();
-            Assert.IsNotNull(go.GetComponent<AudioListener>());
+            var listener = go.GetComponent<AudioListener>();
+            Assert.IsNotNull(listener);
+            // Otherwise Unity's DSP thread also calls OnAudioFilterRead and adds its own frames
+            listener.enabled = false;
             var mock = new MockQuestLink();
             audio.SetBackend(mock, 44100);
 
