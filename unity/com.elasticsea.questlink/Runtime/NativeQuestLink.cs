@@ -20,6 +20,9 @@ namespace ElasticSea.QuestLink
         IntPtr session;
         readonly IntPtr renderEvent;
         readonly CommandBuffer commands = new CommandBuffer { name = "QuestLink Submit" };
+        // Top-down copy of the eye texture handed to the encoder (see SubmitFrame)
+        RenderTexture upright;
+        IntPtr uprightPtr;
 
         public string Name => "Native";
 
@@ -40,6 +43,13 @@ namespace ElasticSea.QuestLink
         // Null when the library is missing or ql_open fails.
         public static NativeQuestLink TryCreate()
         {
+            // The native texture path takes ID3D11Texture2D on Windows, id<MTLTexture> on macOS
+            var api = SystemInfo.graphicsDeviceType;
+            if (api != GraphicsDeviceType.Direct3D11 && api != GraphicsDeviceType.Metal)
+            {
+                Debug.LogWarning($"[QuestLink] libquestlink needs Direct3D11 (Windows) or Metal, not {api}.");
+                return null;
+            }
             try
             {
                 var s = ql_open();
@@ -122,17 +132,34 @@ namespace ElasticSea.QuestLink
 
         public void SubmitFrame(RenderTexture eyes, QuestLinkPose renderPose, ulong frameIndex)
         {
+            commands.Clear();
+            var source = eyes;
+            if (NeedsFlip)
+            {
+                // Unity stores render textures bottom row first on D3D/Metal; the encoder reads
+                // rows top-down, so hand it a flipped copy (this also resolves MSAA).
+                if (upright == null || upright.width != eyes.width || upright.height != eyes.height)
+                {
+                    ReleaseUpright();
+                    upright = new RenderTexture(eyes.width, eyes.height, 0, eyes.format,
+                        eyes.sRGB ? RenderTextureReadWrite.sRGB : RenderTextureReadWrite.Linear) { name = "QuestLink Upright" };
+                    upright.Create();
+                    uprightPtr = upright.GetNativeTexturePtr();
+                }
+                commands.Blit(eyes, upright, new Vector2(1f, -1f), new Vector2(0f, 1f));
+                source = upright;
+            }
+
             var payload = ring[ringNext];
             ringNext = (ringNext + 1) % RingSize;
             Marshal.StructureToPtr(new ql_frame_submit
             {
                 session = session,
-                native_texture = eyes.GetNativeTexturePtr(),
+                native_texture = source == upright ? uprightPtr : source.GetNativeTexturePtr(),
                 render_pose = ToLink(renderPose),
                 frame_index = frameIndex,
             }, payload, false);
 
-            commands.Clear();
             commands.IssuePluginEventAndData(renderEvent, EventSubmitFrame, payload);
             Graphics.ExecuteCommandBuffer(commands);
         }
@@ -145,6 +172,21 @@ namespace ElasticSea.QuestLink
             ql_close(session);
             session = IntPtr.Zero;
             commands.Release();
+            ReleaseUpright();
+        }
+
+        // Render textures are stored upside down where UV v=0 is the top row of memory.
+        internal static bool NeedsFlip => SystemInfo.graphicsUVStartsAtTop;
+
+        void ReleaseUpright()
+        {
+            if (upright == null)
+                return;
+            upright.Release();
+            if (Application.isPlaying) UnityEngine.Object.Destroy(upright);
+            else UnityEngine.Object.DestroyImmediate(upright);
+            upright = null;
+            uprightPtr = IntPtr.Zero;
         }
 
         static EyeFov ToFov(ql_fov f) => new EyeFov { up = f.up, down = f.down, left = f.left, right = f.right };
