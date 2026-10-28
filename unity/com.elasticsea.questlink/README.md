@@ -25,6 +25,7 @@ Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
 3. Bind to the generic XR paths with stock components such as TrackedPoseDriver or XRI: `<XRHMD>/centerEyePosition`, `<XRController>{LeftHand}/devicePosition`, `{RightHand}/{TriggerButton}`, `/primary2DAxis`, …
 4. Hands: add `QuestLinkHands` to the rig object; `HandJointsVisualizer` draws each joint as a sphere. With Unity XR Hands (`com.unity.xr.hands` 1.3+) in the project, also add `QuestLinkXRHands` to run an `XRHandSubsystem` fed by QuestLink, so XR Hands visualizers and XRI hand interaction work; parent their visuals to the rig (joint poses are relative to the tracking origin).
 5. Sample: Package Manager → Quest Link for Mac → Samples → Basic Scene.
+6. Disconnects: keep playing. libquestlink recovers by itself (USB glitch: resumes the stream; Link quit, cable, headset sleep or reboot: new handshake, the user presses Launch). Add `QuestLinkConnectionStatus` next to the rig for `Connected` / `Disconnected(reason)` / `Reconnecting(status)` events and a Game-view banner while the link is down.
 
 Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it directly.
 
@@ -73,6 +74,7 @@ typedef struct { ql_session* session; void* native_texture; ql_pose render_pose;
 ql_session* ql_open(void);              // non-blocking; NULL on failure. USB/handshake run in the background
 void ql_close(ql_session*);             // must tolerate submit events for it still queued on the render thread
 int  ql_poll(ql_session*);              // 0 idle, 1 connecting, 2 streaming
+int  ql_get_link_status(ql_session*, ql_link_status*);  // API 4: recovery state and counters (QuestLinkConnectionStatus)
 int  ql_get_device_info(ql_session*, ql_device_info*);   // nonzero until HELLO arrived
 int  ql_get_head_pose(ql_session*, ql_pose*);            // newest (ideally predicted) head pose
 int  ql_get_controller(ql_session*, int hand /*0 L,1 R*/, ql_controller*);

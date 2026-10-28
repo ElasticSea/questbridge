@@ -9,7 +9,7 @@ namespace ElasticSea.QuestLink
 {
     // Backend over libquestlink. The native session outlives Play mode in the Editor
     // (native plugins stay loaded); this object only owns one ql_open/ql_close pair.
-    public sealed class NativeQuestLink : IQuestLinkBackend
+    public sealed class NativeQuestLink : IQuestLinkBackend, IQuestLinkStatusSource
     {
         // Submit payloads in flight to the render thread; a ring deep enough for a few queued frames.
         // Process-lifetime on purpose: a queued render event may still read one after Dispose.
@@ -19,6 +19,7 @@ namespace ElasticSea.QuestLink
 
         volatile IntPtr session;  // also read on the audio thread
         volatile bool audioAvailable = true;
+        bool statusAvailable = true;
         readonly object micScratchLock = new object();
         short[] micScratch = new short[4800];
         readonly IntPtr renderEvent;
@@ -76,6 +77,29 @@ namespace ElasticSea.QuestLink
                 case StateConnecting: return QuestLinkState.Connecting;
                 default: return QuestLinkState.Idle;
             }
+        }
+
+        public bool TryGetStatus(out QuestLinkStatus status)
+        {
+            status = default;
+            if (!statusAvailable)
+                return false;
+            ql_link_status s;
+            try
+            {
+                if (ql_get_link_status(session, out s) != 0)
+                    return false;
+            }
+            catch (EntryPointNotFoundException) { statusAvailable = false; return false; }  // older libquestlink
+            status = new QuestLinkStatus
+            {
+                state = (QuestLinkLinkState)s.state,
+                lastLoss = (QuestLinkLossReason)s.last_loss,
+                connects = (int)s.connects,
+                disconnects = (int)s.disconnects,
+                resumes = (int)s.resumes,
+            };
+            return true;
         }
 
         public bool TryGetDeviceInfo(out QuestLinkDeviceInfo info)

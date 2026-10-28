@@ -120,10 +120,24 @@ namespace ElasticSea.QuestLink.Native
             public ulong frame_index;
         }
 
+        // API version 4: link status (questlink.h ql_link_status)
+        [StructLayout(LayoutKind.Sequential)]
+        public struct ql_link_status
+        {
+            public int state;      // ql_link_state = QuestLinkLinkState
+            public int last_loss;  // ql_loss = QuestLinkLossReason
+            public uint connects;
+            public uint disconnects;
+            public uint resumes;
+            public uint reserved;
+            public long state_since_ns;
+        }
+
         [DllImport(Library)] public static extern IntPtr ql_open();
         [DllImport(Library)] public static extern void ql_close(IntPtr session);
         [DllImport(Library)] public static extern void ql_shutdown();
         [DllImport(Library)] public static extern int ql_poll(IntPtr session);
+        [DllImport(Library)] public static extern int ql_get_link_status(IntPtr session, out ql_link_status status);
         [DllImport(Library)] public static extern int ql_get_device_info(IntPtr session, out ql_device_info info);
         [DllImport(Library)] public static extern int ql_get_head_pose(IntPtr session, out ql_pose pose);
         [DllImport(Library)] public static extern int ql_get_controller(IntPtr session, int hand, out ql_controller controller);

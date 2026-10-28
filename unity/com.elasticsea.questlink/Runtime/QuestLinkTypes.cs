@@ -8,6 +8,30 @@ namespace ElasticSea.QuestLink
 
     public enum QuestLinkState { Idle, Connecting, Streaming }
 
+    // Values of questlink.h ql_link_state
+    public enum QuestLinkLinkState
+    {
+        NoDevice,          // no Link interface on USB: unplugged, asleep, Link quit, or Meta's service holds it
+        Connecting,        // handshake or stream setup running
+        WaitingForLaunch,  // the user presses Launch in the headset
+        Streaming,
+        Resuming,          // USB came back right after an error; continuing the stream if the headset still has it
+    }
+
+    // Why the latest stream ended (questlink.h ql_loss)
+    public enum QuestLinkLossReason { None, Usb, HeadsetBye, NewHello, Silence }
+
+    public struct QuestLinkStatus
+    {
+        public QuestLinkLinkState state;
+        public QuestLinkLossReason lastLoss;
+        public int connects;     // streams started or resumed
+        public int disconnects;  // streams lost
+        public int resumes;      // streams that continued after a USB error without a new handshake
+
+        public bool Reconnecting => disconnects > 0 && state != QuestLinkLinkState.Streaming;
+    }
+
     // Pose in Unity convention (left-handed, +Y up, +Z forward), relative to the tracking origin.
     public struct QuestLinkPose
     {

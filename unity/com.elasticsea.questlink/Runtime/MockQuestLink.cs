@@ -5,7 +5,7 @@ namespace ElasticSea.QuestLink
     // Hardware-free backend: Quest 3 device info, a slowly looking-around head, two
     // controllers held in front of it and two hands curling their fingers (through the same
     // forward kinematics as libquestlink). Frames are counted, not sent.
-    public sealed class MockQuestLink : IQuestLinkBackend
+    public sealed class MockQuestLink : IQuestLinkBackend, IQuestLinkStatusSource
     {
         public const float StandingHeight = 1.6f;
 
@@ -27,7 +27,38 @@ namespace ElasticSea.QuestLink
 
         float T => timeOverride ?? Time.realtimeSinceStartup;
 
-        public QuestLinkState Poll() => QuestLinkState.Streaming;
+        QuestLinkStatus status = new QuestLinkStatus { state = QuestLinkLinkState.Streaming, connects = 1 };
+        float reconnectAt = -1f;
+
+        public QuestLinkState Poll() => Status().state == QuestLinkLinkState.Streaming ? QuestLinkState.Streaming : QuestLinkState.Connecting;
+
+        public bool TryGetStatus(out QuestLinkStatus s)
+        {
+            s = Status();
+            return true;
+        }
+
+        // Tests and demos: lose the stream for `seconds` (waiting for Launch), then reconnect.
+        public void SimulateLoss(QuestLinkLossReason reason, float seconds)
+        {
+            Status();
+            if (status.state == QuestLinkLinkState.Streaming)
+                status.disconnects++;
+            status.lastLoss = reason;
+            status.state = QuestLinkLinkState.WaitingForLaunch;
+            reconnectAt = T + seconds;
+        }
+
+        QuestLinkStatus Status()
+        {
+            if (reconnectAt >= 0f && T >= reconnectAt)
+            {
+                reconnectAt = -1f;
+                status.state = QuestLinkLinkState.Streaming;
+                status.connects++;
+            }
+            return status;
+        }
 
         public bool TryGetDeviceInfo(out QuestLinkDeviceInfo info)
         {
