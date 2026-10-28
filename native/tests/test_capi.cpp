@@ -60,6 +60,7 @@ TEST(capi_handshake_transfers_match_meta) {
         if (e["dir"].as_string() == "quest_to_pc") usb.queue_message(e["raw"].as_hex());
     ql_config cfg;
     ql_config_init(&cfg);
+    cfg.codec = QL_CODEC_H264;  // Meta's recording is H.264 (auto picks HEVC on macOS)
     ql_transport t = usb.transport();
     ql_host* h = nullptr;
     REQUIRE(ql_host_open_transport(&cfg, &t, &h) == QL_OK);

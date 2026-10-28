@@ -2,7 +2,8 @@
 // Session API, a fake Quest behind open_usb(). A 4096x2240 texture with one colour per strip
 // goes through the render event; every strip on the wire is decoded again and its colour
 // checked, which proves the GPU split (rows, order) and the per-strip SPS/PPS.
-// QL_CODEC=hevc (the questlink_metal_hevc_tests run) does the same with HEVC strips.
+// Default (auto) is HEVC on macOS (questlink_metal_hevc_tests); QL_CODEC=h264 (questlink_metal_tests)
+// does the same with H.264 strips.
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
@@ -89,7 +90,7 @@ TEST(metal_frame_submit) {
     [tex replaceRegion:MTLRegionMake2D(0, 0, kW, kH) mipmapLevel:0 withBytes:pixels.data() bytesPerRow:kW * 4];
 
     const char* env_codec = std::getenv("QL_CODEC");
-    const bool hevc = env_codec && std::string(env_codec) == "hevc";
+    const bool hevc = !env_codec || std::string(env_codec) != "h264";  // auto: HEVC on macOS
     ql_session* s = ql_open();
     REQUIRE(s);
     plug_recorded_quest();
