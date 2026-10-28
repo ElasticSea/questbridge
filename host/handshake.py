@@ -6,11 +6,13 @@ replaced. Each step is logged so a run can be compared with Meta's transcript.
 
 Usage: py host/handshake.py [seconds]
 """
+import collections
 import copy
 import json
 import os
 import struct
 import sys
+import threading
 import time
 
 from usb_link import XrspLink
@@ -45,6 +47,9 @@ class Host:
         self.seq = 0
         self.clock_count = 0
         self.session_id = 0
+        self.send_lock = threading.Lock()
+        self.stream_seq = collections.defaultdict(int)
+        self.rx_counts = collections.Counter()
 
     # --- sending -------------------------------------------------------------
     def send_control(self, typ, version, patch=None):
@@ -62,9 +67,19 @@ class Host:
         self._send(inner + struct.pack("<4Q", *stamps), f"clock 0x{typ:02x}")
 
     def _send(self, body, label):
-        self.link.send([encode_message(0x10, TOPIC_CONTROL, self.seq, body)])
-        self.log("PC->Q", label, self.seq)
-        self.seq += 1
+        with self.send_lock:
+            self.link.send([encode_message(0x10, TOPIC_CONTROL, self.seq, body)])
+            self.log("PC->Q", label, self.seq)
+            self.seq += 1
+
+    def send_stream(self, msgs):
+        """Send (topic, flags, body) stream messages in one transfer, numbering seq per topic."""
+        raw = []
+        with self.send_lock:
+            for topic, flags, body in msgs:
+                raw.append(encode_message(flags, topic, self.stream_seq[topic] & 0xFFFF, body))
+                self.stream_seq[topic] += 1
+            self.link.send(raw)
 
     # --- receiving -----------------------------------------------------------
     def expect(self, wanted, timeout=3.0):
@@ -130,12 +145,70 @@ class Host:
         self.phase(hello, 3)
         self.log("info", "phase 2 done; starting clock sync", None)
         self.send_clock(CLOCK_PING, (0, 0, time.perf_counter_ns(), 0))
-        end = time.time() + 5
+        replay = os.environ.get("XRSP_REPLAY")
+        if not replay:
+            end = time.time() + 5
+            while time.time() < end:
+                try:
+                    self.expect(-1, timeout=end - time.time())
+                except TimeoutError:
+                    break
+            return
+        stop = threading.Event()
+        reader = threading.Thread(target=self.read_loop, args=(stop,), daemon=True)
+        reader.start()
+        try:
+            self.replay(replay, seconds)
+        finally:
+            stop.set()
+            reader.join(timeout=2)
+
+    # --- streaming -----------------------------------------------------------
+    def read_loop(self, stop):
+        """Drain Quest->PC traffic in the background: answer clock pings, count the rest."""
+        last = time.time()
+        while not stop.is_set():
+            msg = self.link.recv(timeout_ms=100)
+            if msg is not None:
+                topic = msg[1]
+                if topic == TOPIC_CONTROL and msg[9] == 0x80 and msg[8] in (CLOCK_PING, CLOCK_PONG):
+                    self.on_clock(msg[8], msg[8:])
+                elif topic == TOPIC_CONTROL:
+                    self.log("Q->PC", f"control 0x{msg[8]:02x}", struct.unpack_from("<H", msg, 4)[0])
+                else:
+                    self.rx_counts[topic] += 1
+            if time.time() - last >= 2:
+                self.log("info", "rx " + " ".join(f"t{t}:{n}" for t, n in sorted(self.rx_counts.items())), None)
+                self.rx_counts.clear()
+                last = time.time()
+
+    def replay(self, path, seconds):
+        """Replay Meta's post-handshake setup, then loop one recorded frame at 72 Hz."""
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        prev_t = None
+        for m in data["setup"]:
+            if prev_t is not None:
+                time.sleep(min(m["t"] - prev_t, 0.5))
+            prev_t = m["t"]
+            self.send_stream([(m["topic"], m["flags"], bytes.fromhex(m["body"]))])
+        self.log("info", f"sent {len(data['setup'])} setup msgs; streaming frame {data['frame_index']} at 72 Hz", None)
+        frame = [(m["topic"], m["flags"], bytearray.fromhex(m["body"])) for m in data["frame"]]
+        headers = [body for i, (t, fl, body) in enumerate(frame)
+                   if i > 0 and len(frame[i - 1][2]) == 8 and frame[i - 1][0] == t]
+        period, index = 1 / 72, data["frame_index"]
+        nxt, end, sent = time.perf_counter(), time.time() + seconds, 0
         while time.time() < end:
-            try:
-                self.expect(-1, timeout=end - time.time())
-            except TimeoutError:
-                break
+            for body in headers:
+                # EncodedSlice.frame.index is the first data word of the root struct
+                root = struct.unpack_from("<Q", body, 0)[0]
+                struct.pack_into("<Q", body, 8 + 8 * ((root & 0xFFFFFFFF) >> 2), index)
+            self.send_stream([(t, fl, bytes(b)) for t, fl, b in frame])
+            index += 1
+            sent += 1
+            nxt += period
+            time.sleep(max(0.0, nxt - time.perf_counter()))
+        self.log("info", f"streamed {sent} frames", None)
 
 
 def main():
