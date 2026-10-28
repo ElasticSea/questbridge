@@ -2,6 +2,7 @@
 // Session API, a fake Quest behind open_usb(). A 4096x2240 texture with one colour per strip
 // goes through the render event; every strip on the wire is decoded again and its colour
 // checked, which proves the GPU split (rows, order) and the per-strip SPS/PPS.
+// QL_CODEC=hevc (the questlink_metal_hevc_tests run) does the same with HEVC strips.
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
@@ -12,8 +13,11 @@
 #include "fake_quest.hpp"
 #include "harness.hpp"
 #include "questlink.h"
+#include "vt_decode.hpp"
 
 namespace {
+
+using vtdec::split_annexb;
 
 constexpr int kW = 4096, kH = 2240, kStrips = 5, kStripH = kH / kStrips;
 // BGRA per strip; one more for the bottom 32 rows of each strip
@@ -54,69 +58,6 @@ std::vector<std::vector<WireSlice>> wire_frames() {
     return out;
 }
 
-std::vector<std::span<const uint8_t>> split_annexb(const Bytes& b) {
-    std::vector<std::span<const uint8_t>> nals;
-    size_t start = std::string::npos;
-    for (size_t i = 0; i + 3 <= b.size(); ++i) {
-        if (b[i] == 0 && b[i + 1] == 0 && b[i + 2] == 1) {
-            if (start != std::string::npos) {
-                size_t end = i;
-                while (end > start && b[end - 1] == 0) --end;
-                nals.emplace_back(b.data() + start, end - start);
-            }
-            start = i + 3;
-            i += 2;
-        }
-    }
-    if (start != std::string::npos && start < b.size()) nals.emplace_back(b.data() + start, b.size() - start);
-    return nals;
-}
-
-void on_decoded(void* out, void*, OSStatus status, VTDecodeInfoFlags, CVImageBufferRef img, CMTime, CMTime) {
-    if (status == noErr && img) *static_cast<CVPixelBufferRef*>(out) = CVPixelBufferRetain(img);
-}
-
-// Decode one strip (Annex-B SPS+PPS and IDR) to BGRA; null on failure
-CVPixelBufferRef decode_strip(const WireSlice& s) {
-    std::vector<const uint8_t*> ps;
-    std::vector<size_t> ps_len;
-    for (auto n : split_annexb(s.csd)) {
-        ps.push_back(n.data());
-        ps_len.push_back(n.size());
-    }
-    if (ps.size() < 2) return nullptr;
-    CMFormatDescriptionRef fd = nullptr;
-    if (CMVideoFormatDescriptionCreateFromH264ParameterSets(nullptr, ps.size(), ps.data(), ps_len.data(), 4, &fd) != noErr)
-        return nullptr;
-    Bytes avcc;
-    for (auto n : split_annexb(s.video)) {
-        for (int k = 3; k >= 0; --k) avcc.push_back(uint8_t(n.size() >> (8 * k)));
-        avcc.insert(avcc.end(), n.begin(), n.end());
-    }
-    const size_t avcc_len = avcc.size();
-    NSDictionary* attrs = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
-    CVPixelBufferRef out = nullptr;
-    VTDecompressionOutputCallbackRecord cb{on_decoded, &out};
-    VTDecompressionSessionRef session = nullptr;
-    CMBlockBufferRef bb = nullptr;
-    CMSampleBufferRef sample = nullptr;
-    if (VTDecompressionSessionCreate(nullptr, fd, nullptr, (__bridge CFDictionaryRef)attrs, &cb, &session) == noErr &&
-        CMBlockBufferCreateWithMemoryBlock(nullptr, avcc.data(), avcc.size(), kCFAllocatorNull, nullptr, 0, avcc.size(), 0,
-                                           &bb) == noErr &&
-        CMSampleBufferCreateReady(nullptr, bb, fd, 1, 0, nullptr, 1, &avcc_len, &sample) == noErr) {
-        VTDecompressionSessionDecodeFrame(session, sample, 0, nullptr, nullptr);
-        VTDecompressionSessionWaitForAsynchronousFrames(session);
-    }
-    if (sample) CFRelease(sample);
-    if (bb) CFRelease(bb);
-    if (session) {
-        VTDecompressionSessionInvalidate(session);
-        CFRelease(session);
-    }
-    CFRelease(fd);
-    return out;
-}
-
 bool near(const uint8_t* px, const uint8_t* want) {
     for (int c = 0; c < 3; ++c)
         if (std::abs(int(px[c]) - int(want[c])) > 40) return false;
@@ -147,10 +88,15 @@ TEST(metal_frame_submit) {
     }
     [tex replaceRegion:MTLRegionMake2D(0, 0, kW, kH) mipmapLevel:0 withBytes:pixels.data() bytesPerRow:kW * 4];
 
+    const char* env_codec = std::getenv("QL_CODEC");
+    const bool hevc = env_codec && std::string(env_codec) == "hevc";
     ql_session* s = ql_open();
     REQUIRE(s);
     plug_recorded_quest();
     REQUIRE(wait_for([&] { return ql_poll(s) == 2; }));
+    ql_device_info info{};
+    REQUIRE(ql_get_device_info(s, &info) == QL_OK);
+    CHECK_EQ(info.stream_codec, uint32_t(hevc ? QL_CODEC_HEVC : QL_CODEC_H264));
 
     ql_frame_submit f{};
     f.session = s;
@@ -172,13 +118,22 @@ TEST(metal_frame_submit) {
     for (int i = 0; i < kStrips; ++i) {
         const WireSlice& sl = frame[size_t(i)];
         auto csd = split_annexb(sl.csd);
-        REQUIRE(csd.size() >= 2);
-        CHECK_EQ(int(csd[0][0] & 0x1F), 7);  // SPS, then PPS: each strip is its own stream
-        CHECK_EQ(int(csd[1][0] & 0x1F), 8);
         auto nals = split_annexb(sl.video);
         REQUIRE(nals.size() == 1);
-        CHECK_EQ(int(nals[0][0] & 0x1F), 5);  // IDR
-        CVPixelBufferRef img = decode_strip(sl);
+        if (hevc) {
+            REQUIRE(csd.size() == 3);  // VPS, SPS, PPS: each strip is its own stream
+            CHECK_EQ(vtdec::hevc_type(csd[0]), 32);
+            CHECK_EQ(vtdec::hevc_type(csd[1]), 33);
+            CHECK_EQ(vtdec::hevc_type(csd[2]), 34);
+            CHECK(vtdec::hevc_type(nals[0]) == 19 || vtdec::hevc_type(nals[0]) == 20);  // IDR
+        } else {
+            REQUIRE(csd.size() >= 2);
+            CHECK_EQ(vtdec::h264_type(csd[0]), 7);  // SPS, then PPS: each strip is its own stream
+            CHECK_EQ(vtdec::h264_type(csd[1]), 8);
+            CHECK_EQ(vtdec::h264_type(nals[0]), 5);  // IDR
+        }
+        vtdec::StripDecoder dec;
+        CVPixelBufferRef img = dec.decode(sl.csd, sl.video);
         REQUIRE(img);
         CHECK_EQ(int(CVPixelBufferGetWidth(img)), kW);
         CHECK_EQ(int(CVPixelBufferGetHeight(img)), kStripH);
