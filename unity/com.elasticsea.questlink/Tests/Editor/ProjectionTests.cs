@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using ElasticSea.QuestLink.Native;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -29,6 +31,15 @@ namespace ElasticSea.QuestLink.Tests
             Assert.AreEqual(0.0635f, info.ipd, Eps);
             Assert.AreEqual(4096, info.encodeWidth);
             Assert.AreEqual(2240, info.encodeHeight);
+        }
+
+        [Test]
+        public void NativeDeviceInfoLayoutMatchesHeader()
+        {
+            // questlink.h: ql_device_info 240 B, features at 104, firmware at 176
+            Assert.AreEqual(240, Marshal.SizeOf<QuestLinkNative.ql_device_info>());
+            Assert.AreEqual(104, (int)Marshal.OffsetOf<QuestLinkNative.ql_device_info>("features"));
+            Assert.AreEqual(176, (int)Marshal.OffsetOf<QuestLinkNative.ql_device_info>("firmware"));
         }
 
         [Test]
