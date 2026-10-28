@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <mutex>
 
 #include "encoder.hpp"
@@ -81,6 +82,10 @@ public:
         return error_;
     }
 
+    // Encode thread only (the encoder is created there)
+    std::string name() const override { return encoder_ ? encoder_->name() : ""; }
+    std::string selection() const override { return encoder_ ? encoder_->selection() : ""; }
+
 private:
     enum { kFree, kCapturing, kCaptured };
 
@@ -134,6 +139,10 @@ private:
             ec.gop = cfg_.gop;
             ec.gpu_device = device_.Get();
             ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;  // HEVC: refused below
+            // Backend and layout per machine (GPU vendor, probe frame); QL_ENCODER forces one:
+            // nvidia | amd | intel | mf | mf-software | openh264 | software
+            ec.layout = enc::Layout::Auto;
+            if (const char* b = std::getenv("QL_ENCODER"); b && *b) ec.backend = b;
             std::string err;
             encoder_ = enc::create_encoder(ec, &err);
             if (!encoder_) {
@@ -159,10 +168,13 @@ private:
         out.largest = 0;
         out.qp = -1;
         out.slices.clear();
+        out.slice_csd.clear();
+        const bool strips = encoder_->layout() == enc::Layout::Strips;
         for (auto& s : ef.slices) {
             out.largest = (std::max)(out.largest, s.nal.size());
             out.qp = (std::max)(out.qp, s.qp);
             out.slices.push_back(std::move(s.nal));
+            if (strips) out.slice_csd.push_back(std::move(s.csd));  // each strip its own stream
         }
         if (cfg_.slices && int(out.slices.size()) != cfg_.slices) {
             set_error("encoder produced " + std::to_string(out.slices.size()) + " slices");

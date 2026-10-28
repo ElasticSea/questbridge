@@ -239,6 +239,7 @@ private:
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
     uint64_t refits_ = 0;   // encode thread only
+    std::string encoder_name_;  // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
     // USB back within this long after an error while streaming: try to resume (0 = never)
     const int64_t resume_window_ns_ = int64_t(env_int("QL_RESUME_MS", 500)) * 1'000'000;
@@ -422,6 +423,13 @@ private:
                 continue;
             }
             idr_generation = gen;
+            if (std::string name = enc->name(); name != encoder_name_) {  // created by the first encode
+                encoder_name_ = name;
+                set_encoder_info(name);
+                stderr_log(nullptr, "info", ("encoder: " + name).c_str(), -1);
+                if (std::string skipped = enc->selection(); !skipped.empty())
+                    stderr_log(nullptr, "info", ("encoder skipped: " + skipped).c_str(), -1);
+            }
             if (out.refits)
                 stderr_log(nullptr, "info",
                            ("slice cap: frame re-encoded as IDR (" + std::to_string(++refits_) + " so far), largest slice " +

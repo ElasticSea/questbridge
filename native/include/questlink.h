@@ -36,7 +36,7 @@
 extern "C" {
 #endif
 
-#define QL_API_VERSION 4
+#define QL_API_VERSION 5 /* 4: recovery (ql_config, ql_info losses/resumes); 5: ql_info.encoder */
 
 typedef enum ql_status {
     QL_OK = 0,
@@ -295,6 +295,9 @@ typedef struct ql_info {
     int32_t last_loss;      /* ql_loss */
     uint32_t resumes;       /* ql_host_reopen()s the headset confirmed */
     int32_t resuming;       /* 1 after ql_host_reopen until the headset's first message */
+    /* API version 5. Video encoder backend of ql_submit_frame_texture, e.g. "mf-nvidia: NVIDIA
+     * H.264 Encoder MFT (hardware), ..." or "openh264: ..."; "" until the first frame was encoded */
+    char encoder[160];
 } ql_info;
 
 QL_API void ql_config_init(ql_config* cfg);

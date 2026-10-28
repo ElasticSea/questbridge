@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "session.hpp"
+#include "texture_encoder.hpp"
 #include "transport.hpp"
 
 namespace {
@@ -130,6 +131,25 @@ std::unique_ptr<Transport> open_logged(const ql_config* cfg, ql_status& st) {
 }
 
 }  // namespace
+
+namespace ql {
+
+namespace {
+std::mutex encoder_mu;
+std::string encoder_name;
+}  // namespace
+
+void set_encoder_info(const std::string& name) {
+    std::lock_guard<std::mutex> l(encoder_mu);
+    encoder_name = name;
+}
+
+std::string encoder_info() {
+    std::lock_guard<std::mutex> l(encoder_mu);
+    return encoder_name;
+}
+
+}  // namespace ql
 
 struct ql_host {
     std::unique_ptr<Transport> transport;
@@ -330,6 +350,8 @@ ql_status ql_host_get_info(ql_host* host, ql_info* out) {
     out->last_loss = int32_t(s.last_loss());
     out->resumes = s.resumes();
     out->resuming = s.resuming() ? 1 : 0;
+    std::string enc = encoder_info();
+    std::strncpy(out->encoder, enc.c_str(), sizeof out->encoder - 1);
     return QL_OK;
 }
 

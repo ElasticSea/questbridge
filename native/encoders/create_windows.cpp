@@ -11,6 +11,10 @@
 namespace ql::enc {
 
 std::unique_ptr<Encoder> create_encoder(const EncoderConfig& config, std::string* error) {
+    if (config.codec != Codec::H264) {
+        if (error) *error = "Windows encoders only encode H.264";
+        return nullptr;
+    }
     std::vector<Candidate> found = mf_candidates(config.gpu_device);
     std::string missing;
     if (openh264_available(&missing)) {
