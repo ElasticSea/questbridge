@@ -151,6 +151,14 @@ ql_status ql_host_open(const ql_config* cfg, ql_host** out) {
     OpenError err;
     std::string detail;
     auto t = open_usb(err, detail);
+    {
+        // Callers retry every few ms while waiting for the Quest: log each new reason once
+        static std::mutex mu;
+        static std::string last;
+        std::lock_guard<std::mutex> l(mu);
+        if (detail != last && !detail.empty() && cfg && cfg->log) cfg->log(cfg->log_user, "usb", detail.c_str(), -1);
+        last = detail;
+    }
     if (!t) return err == OpenError::Busy || err == OpenError::NotFound ? QL_ERR_NO_DEVICE : QL_ERR_UNSUPPORTED;
     return open_with(cfg, std::move(t), out);
 }
