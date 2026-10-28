@@ -55,6 +55,7 @@ namespace ElasticSea.QuestLink.Native
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string product;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string manufacturer;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string firmware;
+            public uint stream_codec;       // the codec the Link session runs (0 H.264, 1 HEVC)
         }
 
         // ql_controller.buttons / touches bits.
@@ -63,6 +64,7 @@ namespace ElasticSea.QuestLink.Native
         public const uint ButtonThumbstick = 1 << 2;
         public const uint ButtonMenu = 1 << 3;
         public const uint TouchTrigger = 1 << 4;     // touches only
+        public const uint TouchThumbrest = 1 << 5;   // touches only
 
         // ql_controller.flags bits.
         public const uint FlagConnected = 1 << 0;

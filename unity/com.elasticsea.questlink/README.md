@@ -28,6 +28,15 @@ Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
 
 Don't add a TrackedPoseDriver to the rig's `Head`, because the rig drives it directly.
 
+## XR Plug-in Management (unchanged XRI / XR Origin projects)
+Instead of a `QuestLinkRig`, an existing XR project can stream as is: Project Settings → XR Plug-in Management → Windows, Mac & Linux → untick OpenXR (or move it below), tick **Quest Link**, press Play. Needs XR Plug-in Management 4+ (XRI projects have it); the loader assembly compiles only then.
+- `QuestLinkLoader` starts a hidden `QuestLinkXRDriver` (DontDestroyOnLoad). It streams `Camera.main` (the XR Origin camera): two hidden eye cameras are added under it (copying its settings), render into the same side-by-side texture as the rig and submit with the camera's tracking-space pose, i.e. exactly the pose the frame was rendered from. The camera itself keeps rendering to the Game view as the mirror.
+- Head, controllers and haptics are the same Input System devices as with the rig, so XR Origin's `TrackedPoseDriver` (`<XRHMD>/centerEye…`) and XRI's `<XRController>{LeftHand}` bindings work unchanged. The head pose is late-latched inside the Input System's before-render update, so `TrackedPoseDriver` renders with the newest sample.
+- Hands: `QuestLinkHands` plus, with XR Hands installed, the `QuestLink-Hands` `XRHandSubsystem`. Audio/microphone components with no rig use the loader's backend.
+- Settings (Project Settings → XR Plug-in Management → Quest Link): backend (Auto/Native/Mock), tracking origin (Device: Camera Offset = XR Origin's Camera Y Offset; Floor: 0) and hand tracking.
+- Why managed and not a native XR SDK display/input provider: Unity's `XRDisplaySubsystem`/`XRInputSubsystem` can only be implemented natively against the XR SDK headers, which Unity hands out only after an access sign-up (they are not in the Editor's PluginAPI). Everything an XRI project actually consumes (Input System devices, XR Hands, the camera transform) works without them. What is missing: `XRSettings.enabled` stays false, no single-pass instanced rendering (two passes, like the rig), and the mono mirror camera still renders. A native provider can replace the driver later without changing the loader's surface.
+- Don't combine it with a `QuestLinkRig` in the same scene (both own the Input System devices).
+
 ## How it works
 - **Stereo texture.** One encode-sized RT, 4096×2240 on Quest 3, from the HELLO device description, in BGRA32 sRGB. The left eye renders into the left half and the right eye into the right half. Each eye camera gets an off-axis projection built from the per-eye FOV tangents (`QuestLinkMath.Projection`) and sits ±IPD/2 from the head.
   - Left half = left eye, confirmed on the bench (PROTOCOL_NOTES.md, M2b). The native layer sends each frame with rectifyMeshId 1001 and the device's per-eye FOV, which the headset needs to reproject (timewarp) to the frame's renderPose.

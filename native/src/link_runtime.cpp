@@ -36,8 +36,8 @@
 
 // Layouts the C# side marshals (Runtime/Native/QuestLinkNative.cs, LayoutKind.Sequential)
 static_assert(sizeof(ql_pose) == 40 && offsetof(ql_pose, time_ns) == 32);
-static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 240 && offsetof(ql_device_info, features) == 104 &&
-              offsetof(ql_device_info, firmware) == 176);
+static_assert(sizeof(ql_fov) == 16 && sizeof(ql_device_info) == 248 && offsetof(ql_device_info, features) == 104 &&
+              offsetof(ql_device_info, firmware) == 176 && offsetof(ql_device_info, stream_codec) == 240);
 static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) == 64);
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
@@ -63,6 +63,15 @@ struct Client {
 int env_int(const char* name, int fallback) {
     const char* v = std::getenv(name);
     return v && *v ? std::atoi(v) : fallback;
+}
+
+// QL_CODEC: h264 | hevc | auto, or a raw CONFIG value
+int env_codec() {
+    const char* v = std::getenv("QL_CODEC");
+    std::string s = v ? v : "";
+    if (s == "h264" || s == "avc") return QL_CODEC_H264;
+    if (s == "hevc" || s == "h265") return QL_CODEC_HEVC;
+    return !s.empty() && s[0] >= '0' && s[0] <= '9' ? std::atoi(s.c_str()) : QL_CODEC_AUTO;
 }
 
 // Sleep until a ql_now_ns() deadline with ~1 ms precision (Windows' default timer tick is
@@ -218,6 +227,7 @@ private:
     audio::PlaybackBuffer playback_;
     const bool audio_enabled_ = env_int("QL_AUDIO", 1) != 0;
     uint64_t dropped_ = 0;  // encode thread only
+    uint64_t refits_ = 0;   // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
 
     Runtime() {
@@ -228,15 +238,17 @@ private:
 
     static uint64_t id(ql_session* s) { return uint64_t(reinterpret_cast<uintptr_t>(s)); }
 
-    // Created on the first frame of the first streaming session, at that session's rate
+    // Created on the first frame of the first streaming session, at that session's rate and codec
     TextureEncoder* encoder(ql_host* h) {
-        ql_device_info dev;
-        uint32_t hz = ql_host_get_device_info(h, &dev) == QL_OK ? dev.stream_refresh_hz : 0;
+        ql_device_info dev{};
+        bool known = ql_host_get_device_info(h, &dev) == QL_OK;
+        uint32_t hz = known ? dev.stream_refresh_hz : 0;
         std::lock_guard<std::mutex> l(mu_);
         if (!encoder_tried_) {
             encoder_tried_ = true;
             TextureEncoderConfig cfg;
             if (hz) cfg.fps = int(hz);
+            cfg.hevc = known && dev.stream_codec == QL_CODEC_HEVC;
             cfg.gop = env_int("QL_GOP", 1);
             cfg.bitrate = uint32_t(env_int("QL_MBPS", 100)) * 1'000'000u;
             std::string err;
@@ -258,6 +270,8 @@ private:
             ql_config_init(&cfg);
             if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
             cfg.hands = env_int("QL_HANDS", 1);
+            cfg.haptics = env_int("QL_HAPTICS", 1);
+            cfg.codec = env_codec();
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
                 // Poll fast: the sooner we hold the interface after enumeration, the sooner the
@@ -316,6 +330,12 @@ private:
                 continue;
             }
             idr_generation = gen;
+            if (out.refits)
+                stderr_log(nullptr, "info",
+                           ("slice cap: frame re-encoded as IDR (" + std::to_string(++refits_) + " so far), largest slice " +
+                            std::to_string(out.first_try_bytes) + " B -> " + std::to_string(out.largest) + " B at QP " +
+                            std::to_string(out.qp)).c_str(),
+                           -1);
             std::vector<ql_slice> slices;
             for (size_t i = 0; i < out.slices.size(); ++i) {
                 const Bytes& csd = i < out.slice_csd.size() ? out.slice_csd[i] : out.csd;
@@ -338,9 +358,9 @@ private:
                 fi.fov_left = dev.fov_left;
                 fi.fov_right = dev.fov_right;
             }
-            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT &&
-                dropped_++ % 72 == 0)
-                stderr_log(nullptr, "info", ql_host_get_error(h.get()), -1);
+            if (ql_host_submit_frame_slices(h.get(), slices.data(), uint32_t(slices.size()), &fi) == QL_ERR_ARGUMENT)
+                stderr_log(nullptr, "info",
+                           (std::string(ql_host_get_error(h.get())) + " (" + std::to_string(++dropped_) + " so far)").c_str(), -1);
         }
     }
 
@@ -439,14 +459,18 @@ int ql_get_hands(ql_session* session, ql_hands* out) {
 }
 
 int ql_get_controller(ql_session* session, int hand, ql_controller* out) {
-    if (!out || (hand != 0 && hand != 1) || !Runtime::get().known(session)) return QL_ERR_ARGUMENT;
+    auto& rt = Runtime::get();
+    if (!out || (hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
     std::memset(out, 0, sizeof *out);
-    return QL_ERR_UNSUPPORTED;  // controller topics not decoded yet (roadmap M7)
+    auto h = rt.host();
+    return h ? ql_host_get_controller(h.get(), hand, out) : QL_ERR_NO_DATA;
 }
 
-int ql_haptic(ql_session* session, int hand, float, float) {
-    if ((hand != 0 && hand != 1) || !Runtime::get().known(session)) return QL_ERR_ARGUMENT;
-    return QL_ERR_UNSUPPORTED;
+int ql_haptic(ql_session* session, int hand, float amplitude, float duration_s) {
+    auto& rt = Runtime::get();
+    if ((hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    auto h = rt.host();
+    return h ? ql_host_haptic(h.get(), hand, amplitude, duration_s) : QL_ERR_NOT_STREAMING;
 }
 
 int ql_submit_frame_texture(ql_session* session, void* native_texture, const ql_pose* render_pose,

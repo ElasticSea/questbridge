@@ -62,5 +62,45 @@ on macOS; options as above plus `--input cvpixelbuffer`, `--low-latency`, `--max
   4096x448, one slice each, IDR 19/20) **10.9 ms**; `--size 2880x1600` H.264 (5 x 2880x320)
   **9.5 ms**, ~92 fps pipelined. Throughput varies ~20% with the Mac's desktop load (Aerial
   wallpaper, Unity open): 5 x 4096x448 H.264 measured 62 fps first, 50 fps later.
+- **HEVC strips in the native core (2026-10-28):** the session sends the codec in CONFIG v3
+  (`ql_config.codec` / `QL_CODEC`, auto = HEVC on macOS only when the HELLO v3 lists it; Quest 3/Pro
+  list nothing, so H.264), and the Metal texture encoder follows it. ave.hevc strip headers:
+  VPS + SPS + PPS per strip (csd), one slice segment per strip, IDR_N_LP (20) on forced keys in
+  every strip at once, no reordering (max_num_reorder 0, dec buffering 5), CTB 32, level 5.2,
+  POC lsb 11 bits, temporal MVP on, SAO on, **WPP on (entropy_coding_sync, entry points in the
+  slice header)**, loop filter across slices off, no VUI. 432 px strips (Quest Pro) encode without
+  a conformance window issue. `questlink_vt_tests`: HEVC 4096x2240 11.6 ms/frame, 4096x2160 11.8,
+  H.264 17.4 (sequential); every strip decodes on its own decoder incl. P frames. Noise at
+  400 Mbit/s: first HEVC try up to 1.7 MB per strip, refit lands under 120,000 B in 2 rounds
+  (slice QP isn't parsed for HEVC, so the refit starts from QP 20); even QP 51 noise is ~100 KB.
 - Strip sizes: `DataRateLimits` caps each strip at 120,000 B per frame duration; on the test
   pattern at 100 Mbit/s CBR the largest strip was 12 KB (P), 8.5 KB (IDR).
+
+## Slice cap (both backends, 2026-10-28)
+
+Every slice NAL must fit one XRSP message (`EncoderConfig::max_slice_bytes`, 120,000 B); the
+headset ends the session on larger messages. Rate control doesn't guarantee it, so `encode()`
+re-encodes a frame (MF) or strip (VT) with a slice over the cap as an IDR at a higher QP
+(+6 QP per halving needed, +2), and fails rather than returning an oversized slice.
+`EncodedFrame::refits` / `first_try_bytes` and `Slice::qp` report it; the runtime logs each one.
+
+- MF: `CODECAPI_AVEncVideoMinQP` for the re-encode, then back to 0.
+- VT: `MinAllowedFrameQP` is ignored and ave.avc has no `BaseFrameQP`, so each strip has 3 extra
+  sessions without rate control at `Quality` for QP 39/45/51 (Quality is read only up to a
+  session's first frame; one gray frame each warms them up in init, else the first use costs
+  ~40 ms). ~35 hardware sessions per process is the limit (5 main + 15 refit = 20).
+
+`py tools/slice_cap_stress.py [-- --codec hevc | --size 2880x1600]` (qlenc `--pattern
+noise|motion|cuts`, gop 1 and 72, 72 frames; also in the full `tools/test_all.ps1` run):
+
+| Backend | Largest slice | Rejected (first try) | Re-encoded frames | QP normal → re-encoded | encode() max |
+|---|---|---|---|---|---|
+| MF NVIDIA, 4096x2240 H.264 | 96,662 B | up to 1,793,380 B | 1–4 of 72 | cuts: 21–33 → 45–50 | 28 ms (normal 8–12) |
+| VT M5 Pro, 5 x 4096x448 H.264 | 118,787 B | up to 1,465,087 B | 4–11 of 72 | cuts: 26–37 → 46–47 | 39 ms (normal 17–18) |
+| VT, HEVC 5 x 4096x448 | 119,065 B | up to 1,689,673 B | 5–11 of 72 (up to 17 encodes) | (QP not parsed) | 40 ms (normal 11–15) |
+| VT, H.264 5 x 2880x320 | 112,435 B | up to 845,521 B | 8–11 of 72 | cuts: 21–31 → 45 | 30 ms (normal 10–12) |
+
+Quality cost: only the re-encoded frame, one IDR at QP ~45–51 (blocky on detail) instead of
+dropping it, plus one extra encode pass (MF +10–20 ms, VT +8–18 ms per pass). On noise/motion
+content QP is already ~50 at 100 Mbit/s, so there is no visible difference. Pure noise at QP 51
+is ~93–119 KB per 4096x448 strip, close to the cap: past that `encode()` reports an error.

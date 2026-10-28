@@ -11,7 +11,8 @@ namespace ElasticSea.QuestLink.BridgeTest
     // spheres (QuestLinkHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
     // the hand instructions instead of the audio test. "-sequence" runs BenchSequence (guided
     // volume, audio, hands and yes/no questions on the board), "-sequence-audio" its audio part
-    // plus a handover to the next host; "-mock" uses the mock backend.
+    // plus a handover to the next host, "-sequence-controllers" a controller and haptics pass
+    // answered with the controllers; "-mock" uses the mock backend.
     public class FirstLightScene : MonoBehaviour
     {
         const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
@@ -34,7 +35,7 @@ namespace ElasticSea.QuestLink.BridgeTest
         float connectingSince = -1f;
         bool staleLogged;
         GUIStyle statusStyle;
-        bool sequence, audioOnly;
+        bool sequence, audioOnly, controllersOnly;
         AudioBench bench;
         QuestLinkAudio output;
         TextMesh board;
@@ -73,6 +74,9 @@ namespace ElasticSea.QuestLink.BridgeTest
             // "-sequence-audio": volume + audio + questions, then hand the session to the next host
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-audio") >= 0)
                 sequence = audioTest = audioOnly = true;
+            // "-sequence-controllers": controllers, buttons, analog, motion and haptics; no audio
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-sequence-controllers") >= 0)
+                sequence = audioTest = controllersOnly = true;
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mock") >= 0)
                 backend = QuestLinkRig.BackendMode.Mock;
 
@@ -119,6 +123,7 @@ namespace ElasticSea.QuestLink.BridgeTest
                 seq.output = output;
                 seq.board = board;
                 seq.audioOnly = audioOnly;
+                seq.controllersOnly = controllersOnly;
             }
         }
 

@@ -136,10 +136,11 @@ bool parse_sps(std::span<const uint8_t> nal, Sps& out) {
     }
     out.log2_max_frame_num = int(b.ue()) + 4;
     uint32_t poc_type = b.ue();
+    out.poc_type = int(poc_type);
     if (poc_type == 0) {
-        b.ue();
+        out.log2_max_poc_lsb = int(b.ue()) + 4;
     } else if (poc_type == 1) {
-        b.u(1);
+        out.delta_pic_order_always_zero = b.u(1);
         b.se();
         b.se();
         for (uint32_t n = b.ue(), i = 0; i < n && b.ok(); i++) b.se();
@@ -212,12 +213,79 @@ bool add_vui(Bytes& nal, int fps) {
     return true;
 }
 
-bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out) {
-    Bytes data = rbsp(nal, 16);
+bool parse_pps(std::span<const uint8_t> nal, Pps& out) {
+    Bytes data = rbsp(nal, 64);
+    Bits b(data);
+    b.ue();  // pic_parameter_set_id
+    b.ue();  // seq_parameter_set_id
+    out.cabac = b.u(1);
+    out.bottom_field_pic_order = b.u(1);
+    if (b.ue() != 0) return false;  // num_slice_groups_minus1: slice groups not handled
+    b.ue();                          // num_ref_idx_l0_default_active_minus1
+    b.ue();                          // num_ref_idx_l1_default_active_minus1
+    out.weighted_pred = b.u(1);
+    b.u(2);                          // weighted_bipred_idc
+    out.pic_init_qp = 26 + b.se();
+    b.se();                          // pic_init_qs_minus26
+    b.se();                          // chroma_qp_index_offset
+    b.u(1);                          // deblocking_filter_control_present_flag
+    b.u(1);                          // constrained_intra_pred_flag
+    out.redundant_pic_cnt = b.u(1);
+    return b.ok();
+}
+
+bool parse_slice_header(std::span<const uint8_t> nal, SliceHeader& out, const Sps* sps, const Pps* pps) {
+    Bytes data = rbsp(nal, 96);
     Bits b(data);
     out.first_mb = int(b.ue());
     out.slice_type = int(b.ue() % 5);
+    out.qp = -1;
+    if (!sps || !pps || !b.ok()) return b.ok();
+    // 7.3.3, frame_mbs_only (Baseline): up to slice_qp_delta
+    const bool idr = nal_type(nal) == kIdr, ref = nal.size() && (nal[0] >> 5) & 3;
+    const bool intra = out.slice_type == 2 || out.slice_type == 4;
+    if (out.slice_type == 1 || (pps->weighted_pred && !intra)) return true;  // B / pred_weight_table
+    b.ue();                          // pic_parameter_set_id
+    b.u(sps->log2_max_frame_num);    // frame_num
+    if (idr) b.ue();                 // idr_pic_id
+    if (sps->poc_type == 0) {
+        b.u(sps->log2_max_poc_lsb);
+        if (pps->bottom_field_pic_order) b.se();
+    } else if (sps->poc_type == 1 && !sps->delta_pic_order_always_zero) {
+        b.se();
+        if (pps->bottom_field_pic_order) b.se();
+    }
+    if (pps->redundant_pic_cnt) b.ue();
+    if (!intra) {
+        if (b.u(1)) b.ue();          // num_ref_idx_active_override_flag
+        if (b.u(1))                  // ref_pic_list_modification_flag_l0
+            for (uint32_t op = b.ue(); op != 3 && b.ok(); op = b.ue()) b.ue();
+    }
+    if (ref) {                       // dec_ref_pic_marking
+        if (idr) {
+            b.u(2);
+        } else if (b.u(1)) {
+            for (uint32_t op = b.ue(); op != 0 && b.ok(); op = b.ue()) {
+                if (op == 1 || op == 3) b.ue();
+                if (op == 2) b.ue();
+                if (op == 3 || op == 6) b.ue();
+                if (op == 4) b.ue();
+            }
+        }
+    }
+    if (pps->cabac && !intra) b.ue();  // cabac_init_idc
+    int qp = pps->pic_init_qp + b.se();
+    if (b.ok()) out.qp = qp;
     return b.ok();
+}
+
+bool parse_csd(std::span<const uint8_t> csd, Sps& sps, Pps& pps) {
+    bool have_sps = false, have_pps = false;
+    for (auto nal : split_annexb(csd)) {
+        if (nal_type(nal) == kSps) have_sps = parse_sps(nal, sps);
+        if (nal_type(nal) == kPps) have_pps = parse_pps(nal, pps);
+    }
+    return have_sps && have_pps;
 }
 
 void append_annexb(Bytes& out, std::span<const uint8_t> nal) {

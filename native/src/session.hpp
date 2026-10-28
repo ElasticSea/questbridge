@@ -23,6 +23,7 @@
 
 #include "audio.hpp"
 #include "capnp.hpp"
+#include "controllers.hpp"
 #include "frame.hpp"
 #include "hands.hpp"
 #include "pose.hpp"
@@ -37,7 +38,9 @@ constexpr uint8_t kHands = 8;
 constexpr uint8_t kSkeleton = 9;
 constexpr uint8_t kVideoFirst = 10;  // slice i on topic 10 + i
 constexpr uint8_t kInputControl = 28;
-constexpr uint8_t kHeadPose = 34;
+constexpr uint8_t kRuntimeIpc = ripc::kTopic;
+constexpr uint8_t kHeadPose = 34;  // Pose2: head and controller poses
+constexpr uint8_t kDeviceInput = 35;
 }  // namespace topic
 
 namespace control {
@@ -48,6 +51,13 @@ constexpr uint8_t kReady = 0x80, kHello = 0x81, kConfig = 0x82, kAck = 0x83, kBy
                   kStart = 0x87, kConfirm = 0x89, kConfirmAck = 0x8A;
 constexpr uint8_t kClockPing = 0x06, kClockPong = 0x16, kClockFlags = 0x80;
 }  // namespace control
+
+// Video codec ids: HELLO v3 device description p6.p0 (what the headset decodes) and CONFIG v3
+// data u16 @ byte 6 (what we send). Meta sends 0; 1 = HEVC is inferred (RemoteHeadset.dll)
+namespace codec {
+constexpr uint16_t kH264 = 0, kHevc = 1;
+const char* name(uint16_t c);
+}  // namespace codec
 
 enum class State {
     WaitHello,
@@ -92,6 +102,7 @@ struct SessionConfig {
     uint64_t first_frame_index = 1;
     bool send_setup = true;
     bool hands = true;  // send InputControl hands-on once streaming (Meta's setup turns them off)
+    bool haptics = true;  // connect to the RuntimeIPC HapticsServer once streaming
     int64_t hello_timeout_ns = 0;  // 0 = wait forever
     int64_t step_timeout_ns = 3'000'000'000;
     int64_t link_request_timeout_ns = 0;  // waiting for the user to press Enable Link
@@ -104,6 +115,10 @@ struct SessionConfig {
     // CONFIG v3 refresh: 0 = the device's default rate when the HELLO offers it, else the
     // recorded 72 Hz; another value must be in the HELLO's refresh list
     uint32_t refresh_hz = 0;
+    // CONFIG v3 codec: -1 = auto (HEVC when prefer_hevc and the HELLO v3 lists it, else H.264);
+    // otherwise sent as is, offered or not
+    int codec = -1;
+    bool prefer_hevc = false;  // this platform's encoder is faster at HEVC (VideoToolbox)
 };
 
 class Session {
@@ -131,9 +146,14 @@ public:
     const std::optional<HeadPose>& head_pose() const { return head_pose_; }  // latest
     const std::optional<DeviceInfo>& device_info() const { return device_info_; }
     uint32_t refresh_hz() const { return refresh_hz_; }  // CONFIG v3's rate; 0 before phase 2
+    uint16_t codec() const { return codec_; }             // CONFIG v3's codec (codec::k*)
     uint64_t head_pose_count() const { return head_pose_count_; }
     const std::optional<HandsFrame>& hands() const { return hands_; }  // latest topic 8
     uint64_t hands_count() const { return hands_count_; }
+    // Controllers: latest topic 34 controller list and topic 35 input; count = both received
+    const std::array<ControllerPose, 2>& controller_poses() const { return controller_poses_; }
+    const std::optional<DeviceInput>& device_input() const { return device_input_; }
+    uint64_t controller_count() const { return controller_count_; }
     // Bind skeleton from topic 9, or nullopt (use default_skeleton)
     const std::optional<HandSkeleton>& skeleton(int hand) const { return skeletons_[hand ? 1 : 0]; }
 
@@ -168,6 +188,10 @@ public:
     size_t read_mic(int16_t* out, size_t max_frames) { return mic_.read(out, max_frames); }
     uint64_t mic_blocks() const { return mic_blocks_; }
 
+    // Haptic pulse on controller hand (0 left, 1 right), amplitude 0..1. Connects to the
+    // HapticsServer first if that has not happened yet. NotStreaming before the stream setup.
+    Submit haptic(int hand, float amplitude, uint64_t duration_ns);
+
 private:
     void send_control(uint8_t type, uint16_t version);
     void send_clock(uint8_t type, const std::array<uint64_t, 4>& stamps);
@@ -178,10 +202,12 @@ private:
     void wait_hello(int64_t bye_in_ns);
     void begin_phase(uint16_t version);
     uint32_t pick_refresh() const;
+    uint16_t pick_codec() const;
     void advance_phase(uint8_t type);
     void finish_handshake();
     void enter(State s, int64_t timeout_ns);
     void on_streaming();
+    void connect_haptics();
     void fail(const std::string& why);
     void log(const char* dir, const std::string& what, int seq = -1) const;
 
@@ -203,10 +229,16 @@ private:
     std::optional<HeadPose> head_pose_;
     std::optional<DeviceInfo> device_info_;
     uint32_t refresh_hz_ = 0;
+    uint16_t codec_ = codec::kH264;
     uint64_t head_pose_count_ = 0;
     std::optional<HandsFrame> hands_;
     uint64_t hands_count_ = 0;
     std::optional<HandSkeleton> skeletons_[2];
+    std::array<ControllerPose, 2> controller_poses_;
+    std::optional<DeviceInput> device_input_;
+    uint64_t controller_count_ = 0;
+    ripc::SetupState ripc_ = ripc::from_setup();  // lookup id; next RuntimeIPC request seq
+    bool haptics_connected_ = false;
     std::map<uint8_t, uint64_t> rx_counts_;
     std::map<uint8_t, uint32_t> stream_seq_;
     uint64_t next_frame_index_ = 1;

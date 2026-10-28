@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "templates.hpp"
@@ -78,6 +79,14 @@ std::optional<DeviceInfo> parse_device_info(const capnp::Ptr& hello) {
     info.codecs = list(video ? video->child(0) : nullptr, uint16_t{});
     info.features = list(hello->child(6), uint16_t{});
     return info;
+}
+
+const char* codec::name(uint16_t c) {
+    switch (c) {
+        case kH264: return "H.264";
+        case kHevc: return "HEVC";
+    }
+    return "codec ?";
 }
 
 const char* state_name(State s) {
@@ -161,6 +170,8 @@ void Session::send_control(uint8_t type, uint16_t version) {
         // Data word 2 = refresh rate, Hz (the recorded one is 72)
         if (refresh_hz_) tree->data.at(2) = (tree->data.at(2) & ~0xFFFFFFFFull) | refresh_hz_;
         refresh_hz_ = uint32_t(tree->data.at(2));
+        // u16 @ byte 6 (top of data word 0) = video codec
+        tree->data.at(0) = (tree->data.at(0) & ~(0xFFFFull << 48)) | uint64_t(codec_) << 48;
     }
     Bytes capnp = capnp::encode(tree, words);  // recorded offsets: Meta's allocation order
     Bytes body(8);
@@ -223,6 +234,26 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     return Submit::Ok;
 }
 
+Session::Submit Session::haptic(int hand, float amplitude, uint64_t duration_ns) {
+    if (state_ != State::Streaming) return Submit::NotStreaming;
+    if (!haptics_connected_) connect_haptics();
+    send_stream(ripc::haptic(ripc::kHapticsClient, ripc_.next_seq++, uint8_t(hand ? 2 : 1), duration_ns,
+                             std::clamp(amplitude, 0.0f, 1.0f)));
+    log("PC->Q", std::string("haptic ") + (hand ? "right " : "left ") + std::to_string(amplitude) + " " +
+                     std::to_string(duration_ns / 1'000'000) + " ms");
+    return Submit::Ok;
+}
+
+void Session::connect_haptics() {
+    // Like Meta's PC when an app starts: look the runtime service up, connect its HapticsServer
+    auto msgs = ripc::lookup(ripc_.lookup_id);
+    auto connect = ripc::connect_haptics(ripc::kHapticsClient, ripc_.next_seq++);
+    msgs.insert(msgs.end(), connect.begin(), connect.end());
+    send_stream(std::move(msgs));
+    haptics_connected_ = true;
+    log("PC->Q", "RuntimeIPC connect HapticsServer");
+}
+
 Session::Submit Session::submit_audio(std::span<const float> stereo, int64_t ts_ns) {
     if (state_ != State::Streaming) return Submit::NotStreaming;
     if (stereo.size() != audio::kBlockFrames * audio::kChannels) return Submit::BadSlices;
@@ -239,9 +270,30 @@ void Session::on_message(std::span<const uint8_t> raw) {
     auto body = unpad_body(raw[0], raw.subspan(kHeaderSize));
     ++rx_counts_[t];
     if (t == topic::kHeadPose) {
-        if (auto p = parse_head_pose(body)) {
-            head_pose_ = *p;
+        if (auto p = parse_pose2(body)) {
+            head_pose_ = p->head;
             ++head_pose_count_;
+            controller_poses_ = p->controllers;
+            ++controller_count_;
+        }
+        return;
+    }
+    if (t == topic::kDeviceInput) {
+        if (auto d = parse_device_input(body)) {
+            // Log which controllers the headset lists whenever that changes (bench diagnosis)
+            auto key = [](const DeviceInput& x) {
+                return std::make_tuple(x.flags, x.controller_mask, x.controllers[0].present, x.controllers[1].present);
+            };
+            if (!device_input_ || key(*device_input_) != key(*d)) {
+                char line[160];
+                std::snprintf(line, sizeof line, "controllers: flags 0x%x mask %u, left %s (battery %u), right %s (battery %u)",
+                              d->flags, d->controller_mask, d->controllers[0].present ? "on" : "off",
+                              d->controllers[0].battery, d->controllers[1].present ? "on" : "off",
+                              d->controllers[1].battery);
+                log("info", line);
+            }
+            device_input_ = *d;
+            ++controller_count_;
         }
         return;
     }
@@ -357,6 +409,18 @@ uint32_t Session::pick_refresh() const {
     return offered(def) ? def : 0;
 }
 
+uint16_t Session::pick_codec() const {
+    const auto& offered = device_info_ ? device_info_->codecs : std::vector<uint16_t>{};
+    auto lists = [&](uint16_t c) { return std::find(offered.begin(), offered.end(), c) != offered.end(); };
+    if (cfg_.codec >= 0) {
+        uint16_t c = uint16_t(cfg_.codec);
+        if (!offered.empty() && !lists(c)) log("info", std::string(codec::name(c)) + " not listed by the headset; sending it anyway");
+        return c;
+    }
+    // An empty list (Quest 3, Quest Pro) says nothing: stay on H.264, which every headset plays
+    return cfg_.prefer_hevc && lists(codec::kHevc) ? codec::kHevc : codec::kH264;
+}
+
 void Session::begin_phase(uint16_t version) {
     if (version != 1 && version != 3) {
         fail("unsupported HELLO version " + std::to_string(version));
@@ -369,8 +433,14 @@ void Session::begin_phase(uint16_t version) {
         stream_seq_.clear();
         next_frame_index_ = cfg_.first_frame_index;
         clock_count_ = 0;
+        ripc_ = ripc::from_setup();  // RuntimeIPC starts over with the replayed setup
+        haptics_connected_ = false;
     }
-    if (version == 3) refresh_hz_ = pick_refresh();
+    if (version == 3) {
+        refresh_hz_ = pick_refresh();
+        codec_ = pick_codec();
+        log("info", std::string("stream codec ") + codec::name(codec_));
+    }
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
     expected_ = control::kAck;
     send_control(control::kConfig, version);
@@ -416,6 +486,7 @@ void Session::on_streaming() {
     enter(State::Streaming, 0);
     ++streams_;
     if (cfg_.hands) set_hands(true);
+    if (cfg_.haptics) connect_haptics();
 }
 
 void Session::set_hands(bool on) {

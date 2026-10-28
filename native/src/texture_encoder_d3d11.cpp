@@ -133,6 +133,7 @@ private:
             ec.bitrate = cfg_.bitrate;
             ec.gop = cfg_.gop;
             ec.gpu_device = device_.Get();
+            ec.codec = cfg_.hevc ? enc::Codec::HEVC : enc::Codec::H264;  // HEVC: refused below
             std::string err;
             encoder_ = enc::create_encoder(ec, &err);
             if (!encoder_) {
@@ -153,8 +154,16 @@ private:
         std::sort(ef.slices.begin(), ef.slices.end(), [](auto& a, auto& b) { return a.index < b.index; });
         out.csd = std::move(ef.csd);
         out.idr = ef.idr;
+        out.refits = ef.refits;
+        out.first_try_bytes = ef.first_try_bytes;
+        out.largest = 0;
+        out.qp = -1;
         out.slices.clear();
-        for (auto& s : ef.slices) out.slices.push_back(std::move(s.nal));
+        for (auto& s : ef.slices) {
+            out.largest = (std::max)(out.largest, s.nal.size());
+            out.qp = (std::max)(out.qp, s.qp);
+            out.slices.push_back(std::move(s.nal));
+        }
         if (cfg_.slices && int(out.slices.size()) != cfg_.slices) {
             set_error("encoder produced " + std::to_string(out.slices.size()) + " slices");
             return false;

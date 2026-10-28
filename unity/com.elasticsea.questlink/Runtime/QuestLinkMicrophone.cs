@@ -12,7 +12,7 @@ namespace ElasticSea.QuestLink
     {
         public const int SampleRate = 48000;
 
-        [Tooltip("Rig whose backend provides the mic; empty = the first QuestLinkRig in the scene.")]
+        [Tooltip("Rig whose backend provides the mic; empty = the first QuestLinkRig in the scene, else the XR loader's.")]
         public QuestLinkRig rig;
         [Tooltip("Play the mic live through an AudioSource on this GameObject.")]
         public bool playThrough;
@@ -43,7 +43,7 @@ namespace ElasticSea.QuestLink
                     return backendOverride;
                 if (rig == null)
                     rig = FindAnyObjectByType<QuestLinkRig>();
-                return rig != null ? rig.Backend : null;
+                return rig != null ? rig.Backend : QuestLinkXRDriver.Active?.Backend;
             }
         }
 

@@ -208,16 +208,11 @@ namespace ElasticSea.QuestLink
         void ConfigureEyes(QuestLinkDeviceInfo info)
         {
             DeviceInfo = info;
-            if (EyeTexture == null || EyeTexture.width != info.encodeWidth || EyeTexture.height != info.encodeHeight ||
-                EyeTexture.antiAliasing != antiAliasing)
+            var rt = QuestLinkEyes.EnsureTexture(EyeTexture, info, antiAliasing);
+            if (rt != EyeTexture)
             {
                 ReleaseTexture();
-                EyeTexture = new RenderTexture(info.encodeWidth, info.encodeHeight, 24, RenderTextureFormat.BGRA32, RenderTextureReadWrite.sRGB)
-                {
-                    name = "QuestLink Eyes",
-                    antiAliasing = antiAliasing,
-                };
-                EyeTexture.Create();
+                EyeTexture = rt;
             }
 
             Head = Child(transform, "Head");
@@ -232,25 +227,9 @@ namespace ElasticSea.QuestLink
             var cam = t.GetComponent<Camera>();
             if (cam == null)
                 cam = t.gameObject.AddComponent<Camera>();
-            // CopyFrom also copies the template's transform, so the eye pose is set afterwards
-            if (cameraTemplate != null && cameraTemplate != cam)
-                cam.CopyFrom(cameraTemplate);
+            QuestLinkEyes.Configure(cam, eye, DeviceInfo, EyeTexture, nearClip, farClip, cameraTemplate);
+            // Shutdown disables the eyes
             cam.enabled = true;
-            t.localPosition = QuestLinkMath.EyeOffset(eye, DeviceInfo.ipd);
-            t.localRotation = Quaternion.identity;
-            t.localScale = Vector3.one;
-            cam.stereoTargetEye = StereoTargetEyeMask.None;
-            // Render straight into EyeTexture. With HDR or camera MSAA the built-in pipeline renders
-            // into an intermediate and copies it to the target only after onPostRender, so the
-            // submit (after the right eye) would carry the previous frame's right half.
-            cam.allowHDR = false;
-            cam.allowMSAA = false;
-            cam.allowDynamicResolution = false;
-            cam.targetTexture = EyeTexture;
-            cam.rect = QuestLinkMath.EyeViewport(eye);
-            cam.nearClipPlane = nearClip;
-            cam.farClipPlane = farClip;
-            cam.projectionMatrix = QuestLinkMath.Projection(DeviceInfo.Fov(eye), nearClip, farClip);
             return cam;
         }
 
@@ -366,9 +345,7 @@ namespace ElasticSea.QuestLink
             foreach (var cam in new[] { LeftEye, RightEye })
                 if (cam != null)
                     cam.targetTexture = null;
-            EyeTexture.Release();
-            if (Application.isPlaying) Destroy(EyeTexture);
-            else DestroyImmediate(EyeTexture);
+            QuestLinkEyes.Release(EyeTexture);
             EyeTexture = null;
         }
     }

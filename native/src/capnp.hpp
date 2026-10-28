@@ -94,4 +94,32 @@ uint32_t total_words(const Ptr& root);
 // Structural equality ignoring offsets
 bool same(const Ptr& a, const Ptr& b);
 
+// Zero-copy, non-throwing view of a struct in one segment (no segment table), for the
+// high-rate topics (34/35). An empty view stands for null, a bad pointer or out of bounds.
+class View {
+public:
+    View() = default;
+    // The root struct (pointer at word 0)
+    static View root(std::span<const uint8_t> segment);
+
+    explicit operator bool() const { return !seg_.empty(); }
+    uint16_t data_words() const { return dwords_; }
+    uint16_t ptr_words() const { return pwords_; }
+    // Data section bytes (empty view: none)
+    std::span<const uint8_t> data() const { return seg_.empty() ? seg_ : seg_.subspan(at_, dwords_ * 8u); }
+    // Struct pointer i
+    View ptr(size_t i) const;
+    // Composite list pointer i: element count, the first max_out elements into out
+    size_t list(size_t i, View* out, size_t max_out) const;
+
+private:
+    View(std::span<const uint8_t> seg, size_t at, uint16_t dwords, uint16_t pwords)
+        : seg_(seg), at_(at), dwords_(dwords), pwords_(pwords) {}
+    static View at_pointer(std::span<const uint8_t> seg, size_t word);
+
+    std::span<const uint8_t> seg_;
+    size_t at_ = 0;  // byte offset of the data section
+    uint16_t dwords_ = 0, pwords_ = 0;
+};
+
 }  // namespace ql::capnp

@@ -1,8 +1,9 @@
 // HELLO device description: every tests/fixtures/devices/*.json (written by
 // tools/device_info.py, also checked by tests/test_device_info.py) and what the host derives
-// from it (CONFIG refresh, strip geometry).
+// from it (CONFIG refresh and codec, strip geometry).
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 
@@ -45,27 +46,61 @@ Bytes quest_hello(uint16_t version) {
     return {};
 }
 
+// The recorded HELLO v3 with its codec list (device description p6.p0) replaced
+Bytes hello_v3_with_codecs(const Bytes& raw, const std::vector<uint16_t>& codecs) {
+    Message m;
+    if (!decode_message(raw, m)) throw std::runtime_error("bad HELLO");
+    auto body = unpad_body(m.flags, m.body);
+    capnp::Ptr tree = capnp::decode(body.subspan(8));
+    capnp::Node* list = tree->ptrs.at(3)->ptrs.at(0)->ptrs.at(6)->ptrs.at(0).get();
+    list->esz = 3;  // u16 elements
+    list->count = uint32_t(codecs.size());
+    list->bytes.assign(codecs.size() * 2, 0);
+    for (size_t i = 0; i < codecs.size(); ++i) wr16(&list->bytes[2 * i], codecs[i]);
+    Bytes out(body.begin(), body.begin() + 8);
+    Bytes seg = capnp::encode(capnp::strip_offsets(tree));
+    out.insert(out.end(), seg.begin(), seg.end());
+    return encode_message(pad_body(out), m.topic, m.seq, out);
+}
+
 // Drive a session through both handshake phases with the recorded Quest messages and keep
-// the data word 2 of the CONFIG v3 it sent (the refresh rate)
+// the data words 0 (codec) and 2 (refresh rate) of the CONFIG v3 it sent
 struct Run {
     int64_t now = 0;
     std::unique_ptr<Session> s;
-    uint64_t config_word2 = 0;
+    uint64_t config_word0 = 0, config_word2 = 0;
+    Bytes config_v3;
 
-    explicit Run(SessionConfig cfg) : s(std::make_unique<Session>(cfg, [this] { return now += 1'000'000; })) {
+    explicit Run(SessionConfig cfg, std::function<Bytes(const Bytes&)> patch_hello_v3 = {})
+        : s(std::make_unique<Session>(cfg, [this] { return now += 1'000'000; })) {
         s->start();
+        Bytes v3 = quest_hello(3);
         for (const auto& e : qltest::fixture("handshake", "control").items()) {
             if (e["dir"].as_string() != "quest_to_pc") continue;
-            s->on_message(e["raw"].as_hex());
+            Bytes raw = e["raw"].as_hex();
+            if (patch_hello_v3 && raw == v3) raw = patch_hello_v3(raw);
+            s->on_message(raw);
             for (auto& xfer : s->take_outgoing())
                 for (auto& m : xfer) {
                     if (m[1] != topic::kControl || m[8] != control::kConfig) continue;
                     auto tree = capnp::decode(std::span<const uint8_t>(m).subspan(16));
-                    if ((tree->word(0) & 0xFFFF) == 3) config_word2 = tree->word(2);
+                    if ((tree->word(0) & 0xFFFF) != 3) continue;
+                    config_word0 = tree->word(0);
+                    config_word2 = tree->word(2);
+                    config_v3 = m;
                 }
         }
     }
 };
+
+// Meta's recorded CONFIG v3 as sent (PC->Quest raw)
+Bytes meta_config_v3() {
+    for (const auto& e : qltest::fixture("handshake", "control").items())
+        if (e["dir"].as_string() == "pc_to_quest" && e.has("capnp") && e["inner"]["type"].as_u64() == control::kConfig &&
+            (e["capnp"]["tree"]["s"][0].as_u64() & 0xFFFF) == 3)
+            return e["raw"].as_hex();
+    return {};
+}
 
 }  // namespace
 
@@ -134,6 +169,38 @@ TEST(config_refresh_from_device) {
     // One it doesn't offer falls back to the default
     c.refresh_hz = 60;
     CHECK_EQ(uint32_t(Run(c).config_word2), uint32_t(72));
+}
+
+TEST(config_codec_auto_and_override) {
+    // Default and macOS auto with Quest 3's empty list: H.264, Meta's recorded CONFIG byte for byte
+    Bytes meta = meta_config_v3();
+    REQUIRE(!meta.empty());
+    Run def({});
+    CHECK_EQ(def.s->codec(), codec::kH264);
+    CHECK_EQ(def.config_word0 >> 48, uint64_t(0));
+    CHECK(Bytes(def.config_v3.begin() + 8, def.config_v3.end()) == Bytes(meta.begin() + 8, meta.end()));  // seq aside
+    SessionConfig mac;
+    mac.prefer_hevc = true;
+    CHECK_EQ(Run(mac).s->codec(), codec::kH264);
+    // A headset listing HEVC: auto picks it only where HEVC is preferred
+    auto lists_hevc = [](const Bytes& raw) { return hello_v3_with_codecs(raw, {0, 1}); };
+    Run mac_hevc(mac, lists_hevc);
+    REQUIRE(mac_hevc.s->device_info());
+    CHECK(mac_hevc.s->device_info()->codecs == (std::vector<uint16_t>{0, 1}));
+    CHECK_EQ(mac_hevc.s->codec(), codec::kHevc);
+    CHECK_EQ(mac_hevc.config_word0 >> 48, uint64_t(1));
+    CHECK_EQ(Run({}, lists_hevc).s->codec(), codec::kH264);
+    // H.264 only: auto stays on it
+    CHECK_EQ(Run(mac, [](const Bytes& raw) { return hello_v3_with_codecs(raw, {0}); }).s->codec(), codec::kH264);
+    // Override: sent as is; only u16 @ byte 6 differs from Meta's CONFIG
+    SessionConfig forced;
+    forced.codec = codec::kHevc;
+    Run f(forced);
+    CHECK_EQ(f.s->codec(), codec::kHevc);
+    CHECK_EQ(f.config_word0, def.config_word0 | 1ull << 48);
+    REQUIRE(f.config_v3.size() == def.config_v3.size());
+    for (size_t i = 8; i < f.config_v3.size(); ++i)
+        if (f.config_v3[i] != def.config_v3[i]) CHECK_EQ(i, size_t(16 + 8 + 8 + 6));  // headers, segment table, root ptr, byte 6
 }
 
 TEST(strips_follow_encode_height) {

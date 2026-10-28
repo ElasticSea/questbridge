@@ -11,6 +11,7 @@ Modes:
   timeline <pcap> <dev> <probe.log>    every change of the topic-35 buttons/touch
                                        fields, plus analog ranges per step
   golden <pcap> <dev> <out.json>       labelled messages at known events (fixture)
+  ripc <pcap> <dev> <out.json>         Meta's HapticsServer RuntimeIPC frames (fixture)
   dump <pcap> <dev> <topic> [n] [from-s] [--pc|--quest]
                                        pretty-print n Cap'n Proto messages
 
@@ -284,6 +285,64 @@ def golden(path, device, out_path):
     print(f"{len(picked)} messages -> {out_path}: {sorted(picked)}")
 
 
+RIPC_HEADER = struct.Struct("<IBIQBII")  # kind, u8, payload size, client id, u8, seq, tag; padded to 32 B
+RIPC_LOOKUP, RIPC_CONNECT, RIPC_CALL = 0x43E, 0x13E, 0x23E
+
+
+def ripc_header(b):
+    """Packed 32-byte RuntimeIPC header (PC->Q) -> dict."""
+    kind, _, size, client, _, seq, tag = RIPC_HEADER.unpack_from(b)
+    return {"kind": kind, "size": size, "client": client, "seq": seq, "tag": tag}
+
+
+def ripc_frame(kind, client, seq, tag, payload):
+    """The 4 topic-31 bodies of one PC->Q RuntimeIPC frame (before XRSP padding)."""
+    header = RIPC_HEADER.pack(kind, 0, len(payload), client, 0, seq, tag).ljust(32, b"\0")
+    return [struct.pack("<II", 0, 2), struct.pack("<4I", 0, 1, len(header), len(payload)), header, payload]
+
+
+def ripc_frames(path, device):
+    """Yield (ts, [raw XRSP messages]) for every PC->Q RuntimeIPC frame (table, sizes, header, payload)."""
+    cur = None
+    for m in messages(path, device):
+        if m.topic != 31 or not m.to_quest:
+            continue
+        b = m.body[:-m.body[-1]] if m.flags & 0x08 else m.body
+        if b == struct.pack("<II", 0, 2):
+            cur = [m.raw]
+        elif cur is not None:
+            cur.append(m.raw)
+            if len(cur) == 4:
+                yield m.ts, cur
+                cur = None
+
+
+def ripc_golden(path, device, out_path):
+    """Write Meta's HapticsServer frames (lookup, connect, haptic calls) for byte-exact tests."""
+    import json
+    from scrub import Scrubber
+    scrub = Scrubber.from_capture(path, device)
+    frames = []
+    for ts, raws in ripc_frames(path, device):
+        body = raws[2][8:]
+        if len(body) != 32:  # transport handshake frames have other parts
+            continue
+        frames.append((ts, ripc_header(body), raws))
+        if body[22:26] == HAPTIC_HASH and sum(f[1]["tag"] == int.from_bytes(HAPTIC_HASH, "little")
+                                              for f in frames) == 2:
+            break
+    haptic_client = frames[-1][1]["client"]
+    connect = next(i for i, f in enumerate(frames) if f[1]["kind"] == RIPC_CONNECT and f[1]["client"] == haptic_client)
+    lookup = max(i for i in range(connect) if frames[i][1]["kind"] == RIPC_LOOKUP)
+    picked = [("lookup", frames[lookup]), ("connect_haptics", frames[connect])]
+    picked += [(f"haptic_{n}", f) for n, f in enumerate(f for f in frames if f[1]["tag"] == int.from_bytes(HAPTIC_HASH, "little"))]
+    out = [{"label": label, "t": round(ts, 6), "header": h, "raw": [scrub(r).hex() for r in raws]}
+           for label, (ts, h, raws) in picked]
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=1)
+    print(f"{len(out)} frames -> {out_path}: {[p['label'] for p in out]}")
+
+
 def dump(path, device, topic, count, start, want_dir):
     from capnp_dump import pretty
     n = 0
@@ -308,6 +367,8 @@ if __name__ == "__main__":
         timeline(args[1], int(args[2]), args[3])
     elif mode == "golden":
         golden(args[1], int(args[2]), args[3])
+    elif mode == "ripc":
+        ripc_golden(args[1], int(args[2]), args[3])
     elif mode == "dump":
         d = True if "--pc" in flags else False if "--quest" in flags else None
         dump(args[1], int(args[2]), int(args[3]), int(args[4]) if len(args) > 4 else 5,

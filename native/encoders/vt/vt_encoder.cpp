@@ -14,7 +14,9 @@
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -71,10 +73,11 @@ public:
 
     ~VtEncoder() override {
         for (auto& s : strips_) {
-            if (s.session) {
-                VTCompressionSessionCompleteFrames(s.session, kCMTimeInvalid);
-                VTCompressionSessionInvalidate(s.session);
-                CFRelease(s.session);
+            for (auto* session : {s.session, s.refits[0], s.refits[1], s.refits[2]}) {
+                if (!session) continue;
+                VTCompressionSessionCompleteFrames(session, kCMTimeInvalid);
+                VTCompressionSessionInvalidate(session);
+                CFRelease(session);
             }
             for (auto* p : s.pools)
                 if (p) CVPixelBufferPoolRelease(p);
@@ -88,11 +91,16 @@ public:
         strip_h_ = cfg_.height / n;
         strips_.resize(n);
         for (int i = 0; i < n; i++) {
-            if (!create_session(strips_[i], error)) return false;
+            if (!create_session(&strips_[i].session, -1, error)) return false;
             strips_[i].pools[0] = make_pool(cfg_.width, strip_h_, cv_format(PixelFormat::NV12));
             strips_[i].pools[1] = make_pool(cfg_.width, strip_h_, cv_format(PixelFormat::BGRA));
             if (!strips_[i].pools[0] || !strips_[i].pools[1]) return fail(error, "CVPixelBufferPoolCreate failed");
+            for (int k = 0; k < 3; k++) {
+                std::string why;
+                if (!create_session(&strips_[i].refits[k], kRefitQp[k], &why)) refit_note_ = ", no slice cap fallback: " + why;
+            }
         }
+        if (refit_note_.empty() && !warm_up_refits(error)) return false;
         // ave.avc = the hardware encoder; low-latency RC runs h264.rtvc (long-term refs + MMCO)
         std::string id = "?";
         CFStringRef eid = nullptr;
@@ -104,7 +112,7 @@ public:
         name_ = "VideoToolbox " + id + ", " +
                 (strips ? std::to_string(n) + " strips of " + std::to_string(cfg_.width) + "x" + std::to_string(strip_h_)
                         : "1 session, MaxH264SliceBytes " + std::to_string(cfg_.max_slice_bytes)) +
-                (low_latency_ ? ", low-latency RC" : "") + (cbr_ ? ", CBR" : ", ABR") + rc_note_;
+                (low_latency_ ? ", low-latency RC" : "") + (cbr_ ? ", CBR" : ", ABR") + rc_note_ + refit_note_;
         return true;
     }
 
@@ -157,12 +165,17 @@ public:
 private:
     struct Strip {
         VTCompressionSessionRef session = nullptr;
+        VTCompressionSessionRef refits[3] = {};  // fixed QP kRefitQp[k], for the slice cap fallback
+        bool need_key = false;                    // `session`'s last frame was replaced by a refit
         CVPixelBufferPoolRef pools[2] = {};  // NV12, BGRA
         // Output of the frame in flight (callback thread)
         OSStatus status = noErr;
         Bytes csd;
         std::vector<Bytes> nals;  // slice NALs, start codes stripped
+        std::vector<int> nal_qp;  // slice QP per NAL (H.264), -1 = unknown
         bool idr = false;
+        int qp = -1;              // largest slice QP of the last output
+        int refit_qp = 0;         // kRefitQp level of the last refit, 0 = none
     };
 
     // Caller-filled strip buffers (e.g. Metal render targets over IOSurfaces) go straight in
@@ -195,28 +208,34 @@ private:
         return VTSessionSetProperty(s, key, value) == noErr;
     }
 
-    bool create_session(Strip& strip, std::string* error) {
+    // fixed_qp >= 0: a session without rate control for the slice cap fallback, at the
+    // kVTCompressionPropertyKey_Quality giving that QP. The encoder reads Quality only up to its
+    // first frame (later changes, even with PrepareToEncodeFrames, are ignored): one session per QP.
+    // Each process gets ~35 hardware sessions, and a session's first frame costs ~40 ms extra,
+    // hence a few levels per strip, warmed up in init().
+    static constexpr int kRefitQp[3] = {39, 45, 51};
+    bool create_session(VTCompressionSessionRef* out, int fixed_qp, std::string* error) {
         const bool strips = cfg_.layout == Layout::Strips;
         const CMVideoCodecType codec = hevc() ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
         CfRef<CFMutableDictionaryRef> spec(CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
                                                                       &kCFTypeDictionaryValueCallBacks));
         // Low-latency rate control (macOS 11.3+): no frame delay, frame sizes held to the rate
-        if (cfg_.low_latency_rc)
+        if (cfg_.low_latency_rc && fixed_qp < 0)
             CFDictionarySetValue(spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl, kCFBooleanTrue);
         if (cfg_.hardware && !cfg_.allow_software)
             CFDictionarySetValue(spec, kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
         else if (cfg_.hardware)
             CFDictionarySetValue(spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
         OSStatus st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, codec, spec, nullptr,
-                                                 nullptr, &VtEncoder::on_output, this, &strip.session);
-        low_latency_ = st == noErr && cfg_.low_latency_rc;
+                                                 nullptr, &VtEncoder::on_output, this, out);
+        if (fixed_qp < 0) low_latency_ = st == noErr && cfg_.low_latency_rc;
         if (st != noErr) {  // retry without low-latency RC (e.g. a size it doesn't support)
             CFDictionaryRemoveValue(spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl);
             st = VTCompressionSessionCreate(nullptr, cfg_.width, strip_h_, codec, spec, nullptr,
-                                            nullptr, &VtEncoder::on_output, this, &strip.session);
+                                            nullptr, &VtEncoder::on_output, this, out);
         }
         if (st != noErr) return fail(error, os_err("VTCompressionSessionCreate", st));
-        auto s = strip.session;
+        auto s = *out;
         const int n = int(strips_.size());
         set(s, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
         set(s, kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue);
@@ -230,6 +249,16 @@ private:
         set(s, kVTCompressionPropertyKey_MaxFrameDelayCount, zero);
         // Keyframes are forced in submit() so every strip switches on the same frame
         set(s, kVTCompressionPropertyKey_MaxKeyFrameInterval, huge);
+        if (fixed_qp >= 0) {
+            CfRef<CFNumberRef> q(num(quality_for_qp(fixed_qp)));
+            if (!set(s, kVTCompressionPropertyKey_Quality, q) || (st = VTCompressionSessionPrepareToEncodeFrames(s)) != noErr) {
+                VTCompressionSessionInvalidate(s);
+                CFRelease(s);
+                *out = nullptr;
+                return fail(error, "Quality not supported");
+            }
+            return true;
+        }
         CfRef<CFNumberRef> rate(num(int64_t(cfg_.bitrate / uint32_t(n))));
         cbr_ = cfg_.cbr && set(s, kVTCompressionPropertyKey_ConstantBitRate, rate);
         if (!cbr_) set(s, kVTCompressionPropertyKey_AverageBitRate, rate);
@@ -264,29 +293,114 @@ private:
     }
 
     // Encode one buffer per strip (consumed), wait for all outputs, assemble the frame.
+    // A strip over max_slice_bytes would end the headset session. VideoToolbox overshoots
+    // DataRateLimits (and ignores it next to ConstantBitRate) and its rate control ignores
+    // MinAllowedFrameQP, so the strip is encoded again from the same buffer on its fixed-QP
+    // refit session as an IDR, +6 QP per halving needed. The strip's main session then starts
+    // over with an IDR, since its last frame (its reference) never reaches the headset.
     bool submit(std::vector<CVPixelBufferRef>& bufs, int64_t ts, bool force_idr, EncodedFrame& out) {
+        struct Release {
+            std::vector<CVPixelBufferRef>& b;
+            ~Release() {
+                for (auto* p : b)
+                    if (p) CVPixelBufferRelease(p);
+            }
+        } release{bufs};
         bool key = force_idr || frame_ == 0 || (cfg_.gop > 0 && frame_ % cfg_.gop == 0);
         frame_++;
-        CfRef<CFDictionaryRef> props;
-        if (key) {
-            const void* k[1] = {kVTEncodeFrameOptionKey_ForceKeyFrame};
-            const void* v[1] = {kCFBooleanTrue};
-            props.ref = CFDictionaryCreate(nullptr, k, v, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        auto t0 = std::chrono::steady_clock::now();
+        std::vector<size_t> all(strips_.size());
+        for (size_t i = 0; i < all.size(); i++) all[i] = i;
+        if (!encode_strips(all, bufs, ts, key, false)) return false;
+
+        out = {};
+        std::vector<size_t> over;
+        for (size_t i = 0; i < strips_.size(); i++)
+            if (strip_bytes(strips_[i]) > cfg_.max_slice_bytes) over.push_back(i);
+        for (size_t i : over) out.first_try_bytes = std::max(out.first_try_bytes, strip_bytes(strips_[i]));
+        for (size_t i : over) strips_[i].refit_qp = 0;
+        for (int attempt = 1; !over.empty(); attempt++) {
+            auto& w = strips_[over[0]];
+            if (w.refit_qp >= kRefitQp[2] || !refit_note_.empty())
+                return fail(nullptr, "strip " + std::to_string(over[0]) + " of " + std::to_string(strip_bytes(w)) + " B over the " +
+                                         std::to_string(cfg_.max_slice_bytes) + " B cap" +
+                                         (refit_note_.empty() ? " at QP " + std::to_string(w.refit_qp) : refit_note_));
+            for (size_t i : over) {
+                auto& s = strips_[i];
+                int qp = std::max({s.qp, s.refit_qp, 20});  // QP unknown (HEVC): from 20
+                double ratio = double(strip_bytes(s)) / double(cfg_.max_slice_bytes);
+                int want = qp + int(std::ceil(6 * std::log2(ratio))) + 2;
+                int level = kRefitQp[2];
+                for (int k = 2; k >= 0; k--)
+                    if (kRefitQp[k] >= want && kRefitQp[k] > s.refit_qp) level = kRefitQp[k];
+                s.refit_qp = level;
+                s.need_key = true;
+            }
+            if (!encode_strips(over, bufs, ts, true, true)) return false;
+            out.refits = attempt;
+            std::erase_if(over, [&](size_t i) { return strip_bytes(strips_[i]) <= cfg_.max_slice_bytes; });
         }
-        CMTime pts = CMTimeMake(ts, 1'000'000'000);
+
+        out.timestamp_ns = ts;
+        out.encode_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        const bool strips = cfg_.layout == Layout::Strips;
+        out.idr = true;
+        for (size_t i = 0; i < strips_.size(); i++) {
+            auto& s = strips_[i];
+            out.idr &= s.idr;
+            if (i == 0) out.csd = s.csd;
+            for (size_t k = 0; k < s.nals.size(); k++) {
+                const auto& nal = s.nals[k];
+                Slice sl;
+                sl.index = int(out.slices.size());
+                if (hevc()) {
+                    // first_slice_segment_in_pic_flag (first bit after the 2-byte header); a later
+                    // segment would need slice_segment_address, which strips never have
+                    sl.first_mb = nal.size() > 2 && (nal[2] & 0x80) ? 0 : -1;
+                } else {
+                    h264::SliceHeader sh;
+                    h264::parse_slice_header(nal, sh);
+                    sl.first_mb = sh.first_mb;
+                }
+                sl.qp = s.nal_qp[k];
+                h264::append_annexb(sl.nal, nal);
+                if (strips) sl.csd = s.csd;
+                out.slices.push_back(std::move(sl));
+            }
+        }
+        return true;
+    }
+
+    // Encode bufs[i] (not consumed) on the sessions in `which`, wait for all outputs, check them.
+    // refit: on the strips' fixed-QP sessions at their refit_qp, as IDR.
+    bool encode_strips(const std::vector<size_t>& which, std::vector<CVPixelBufferRef>& bufs, int64_t ts, bool key,
+                       bool refit) {
+        // Refit sessions run on their own timeline, one frame duration per encode
+        CMTime pts = CMTimeMake(refit ? refit_pts_ : ts, 1'000'000'000);
+        if (refit) refit_pts_ += 1'000'000'000 / cfg_.fps;
         CMTime dur = CMTimeMake(1'000'000'000 / cfg_.fps, 1'000'000'000);
         {
             std::lock_guard<std::mutex> l(mu_);
-            pending_ = int(strips_.size());
+            pending_ = int(which.size());
         }
-        auto t0 = std::chrono::steady_clock::now();
         OSStatus bad = noErr;
-        for (size_t i = 0; i < strips_.size(); i++) {
+        for (size_t i : which) {
             auto& s = strips_[i];
             s.status = noErr;
             s.nals.clear();
-            OSStatus st = VTCompressionSessionEncodeFrame(s.session, bufs[i], pts, dur, props, reinterpret_cast<void*>(i), nullptr);
-            CVPixelBufferRelease(bufs[i]);
+            s.nal_qp.clear();
+            CfRef<CFMutableDictionaryRef> props(CFDictionaryCreateMutable(nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+                                                                           &kCFTypeDictionaryValueCallBacks));
+            if (key || s.need_key) CFDictionarySetValue(props, kVTEncodeFrameOptionKey_ForceKeyFrame, kCFBooleanTrue);
+            VTCompressionSessionRef session = s.session;
+            if (refit) {
+                for (int k = 0; k < 3; k++)
+                    if (kRefitQp[k] == s.refit_qp) session = s.refits[k];
+            } else {
+                s.need_key = false;
+            }
+            OSStatus st = VTCompressionSessionEncodeFrame(session, bufs[i], pts, dur, props,
+                                                          reinterpret_cast<void*>(i), nullptr);
             if (st != noErr) {
                 bad = st;
                 std::lock_guard<std::mutex> l(mu_);
@@ -299,37 +413,63 @@ private:
                 return fail(nullptr, "VideoToolbox output timed out");
         }
         if (bad != noErr) return fail(nullptr, os_err("VTCompressionSessionEncodeFrame", bad));
-        out = {};
-        out.timestamp_ns = ts;
-        out.encode_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         const bool strips = cfg_.layout == Layout::Strips;
-        out.idr = true;
-        for (size_t i = 0; i < strips_.size(); i++) {
+        for (size_t i : which) {
             auto& s = strips_[i];
             if (s.status != noErr) return fail(nullptr, os_err("VideoToolbox encode", s.status));
             if (s.nals.empty()) return fail(nullptr, "VideoToolbox dropped a frame");
             if (strips && s.nals.size() != 1)
                 return fail(nullptr, "strip " + std::to_string(i) + " came out as " + std::to_string(s.nals.size()) + " slices");
-            out.idr &= s.idr;
-            if (i == 0) out.csd = s.csd;
-            for (auto& nal : s.nals) {
-                Slice sl;
-                sl.index = int(out.slices.size());
-                if (hevc()) {
-                    // first_slice_segment_in_pic_flag (first bit after the 2-byte header); a later
-                    // segment would need slice_segment_address, which strips never have
-                    sl.first_mb = nal.size() > 2 && (nal[2] & 0x80) ? 0 : -1;
-                } else {
-                    h264::SliceHeader sh;
-                    h264::parse_slice_header(nal, sh);
-                    sl.first_mb = sh.first_mb;
-                }
-                h264::append_annexb(sl.nal, nal);
-                if (strips) sl.csd = s.csd;
-                out.slices.push_back(std::move(sl));
-            }
+            s.qp = -1;
+            for (int q : s.nal_qp) s.qp = std::max(s.qp, q);
         }
         return true;
+    }
+
+    // One gray frame through every refit session, so a real refit doesn't pay the first-frame cost.
+    bool warm_up_refits(std::string* error) {
+        std::vector<CVPixelBufferRef> bufs(strips_.size(), nullptr);
+        std::vector<size_t> all(strips_.size());
+        bool ok = true;
+        for (size_t i = 0; i < strips_.size() && ok; i++) {
+            all[i] = i;
+            ok = CVPixelBufferPoolCreatePixelBuffer(nullptr, strips_[i].pools[0], &bufs[i]) == kCVReturnSuccess;
+            if (!ok) break;
+            CVPixelBufferLockBaseAddress(bufs[i], 0);
+            for (size_t p = 0; p < 2; p++)
+                memset(CVPixelBufferGetBaseAddressOfPlane(bufs[i], p), 128,
+                       CVPixelBufferGetBytesPerRowOfPlane(bufs[i], p) * CVPixelBufferGetHeightOfPlane(bufs[i], p));
+            CVPixelBufferUnlockBaseAddress(bufs[i], 0);
+        }
+        for (int k = 0; k < 3 && ok; k++) {
+            for (auto& s : strips_) s.refit_qp = kRefitQp[k];
+            ok = encode_strips(all, bufs, 0, true, true);
+        }
+        for (auto& s : strips_) s.refit_qp = 0;
+        for (auto* b : bufs)
+            if (b) CVPixelBufferRelease(b);
+        return ok || fail(error, "slice cap fallback warm-up: " + error_);
+    }
+
+    // Largest slice NAL of a strip's last output, as sent (with the Annex-B start code)
+    static size_t strip_bytes(const Strip& s) {
+        size_t n = 0;
+        for (auto& nal : s.nals) n = std::max(n, nal.size() + 4);
+        return n;
+    }
+
+    // Quality -> slice QP of ave.avc (M5 Pro, macOS 26.7), measured on 4096x448 IDR strips
+    static double quality_for_qp(int qp) {
+        static const std::pair<int, double> kTable[] = {{10, 0.9}, {18, 0.8}, {23, 0.7}, {28, 0.6}, {33, 0.5}, {37, 0.4},
+                                                        {40, 0.3}, {42, 0.25}, {44, 0.2}, {46, 0.15}, {48, 0.08},
+                                                        {49, 0.05}, {50, 0.02}, {51, 0.0}};
+        if (qp <= kTable[0].first) return kTable[0].second;
+        for (size_t i = 1; i < std::size(kTable); i++) {
+            auto [q1, v1] = kTable[i];
+            auto [q0, v0] = kTable[i - 1];
+            if (qp <= q1) return v0 + (v1 - v0) * (qp - q0) / (q1 - q0);
+        }
+        return 0.0;
     }
 
     static void on_output(void* refcon, void* frame_refcon, OSStatus status, VTEncodeInfoFlags flags,
@@ -364,6 +504,9 @@ private:
                 h264::set_fixed_frame_rate(ps);
             h264::append_annexb(s.csd, ps);
         }
+        h264::Sps sps;
+        h264::Pps pps;
+        const bool have_ps = !hevc() && h264::parse_csd(s.csd, sps, pps);
         CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sample);
         Bytes data(CMBlockBufferGetDataLength(bb));
         CMBlockBufferCopyDataBytes(bb, 0, data.size(), data.data());
@@ -376,11 +519,19 @@ private:
             std::span<const uint8_t> nal(data.data() + o, n);
             if (hevc()) {
                 uint8_t t = n ? (nal[0] >> 1) & 0x3F : 63;
-                if (t < 32) s.nals.emplace_back(nal.begin(), nal.end());  // VCL (7.4.2.2)
+                if (t < 32) {  // VCL (7.4.2.2)
+                    s.nals.emplace_back(nal.begin(), nal.end());
+                    s.nal_qp.push_back(-1);
+                }
                 if (t == 19 || t == 20) s.idr = true;                       // IDR_W_RADL, IDR_N_LP
             } else {
                 uint8_t t = h264::nal_type(nal);
-                if (t == h264::kSlice || t == h264::kIdr) s.nals.emplace_back(nal.begin(), nal.end());
+                if (t == h264::kSlice || t == h264::kIdr) {
+                    s.nals.emplace_back(nal.begin(), nal.end());
+                    h264::SliceHeader sh;
+                    h264::parse_slice_header(nal, sh, have_ps ? &sps : nullptr, have_ps ? &pps : nullptr);
+                    s.nal_qp.push_back(sh.qp);
+                }
                 if (t == h264::kIdr) s.idr = true;
             }
             o += n;
@@ -388,10 +539,11 @@ private:
     }
 
     EncoderConfig cfg_;
-    std::string name_, error_, rc_note_;
+    std::string name_, error_, rc_note_, refit_note_;
     std::vector<Strip> strips_;
     int strip_h_ = 0;
     int64_t frame_ = 0;
+    int64_t refit_pts_ = 0;
     bool low_latency_ = false, cbr_ = false;
     std::mutex mu_;
     std::condition_variable cv_;

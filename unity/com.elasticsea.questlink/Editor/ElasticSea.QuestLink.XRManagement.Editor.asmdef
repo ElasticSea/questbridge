@@ -1,0 +1,28 @@
+{
+    "name": "ElasticSea.QuestLink.XRManagement.Editor",
+    "rootNamespace": "ElasticSea.QuestLink.XRManagement.Editor",
+    "references": [
+        "ElasticSea.QuestLink.XRManagement",
+        "Unity.XR.Management",
+        "Unity.XR.Management.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "QUESTLINK_XR_MANAGEMENT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.management",
+            "expression": "4.0.0",
+            "define": "QUESTLINK_XR_MANAGEMENT"
+        }
+    ],
+    "noEngineReferences": false
+}
