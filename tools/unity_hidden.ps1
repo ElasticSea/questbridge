@@ -1,11 +1,11 @@
-# The only allowed way to start Unity (Editor in batchmode) or a Unity player from scripts.
+# The only allowed way to start the Unity Editor (batchmode builds and tests) from scripts. Players
+# that stream to the headset use start_player.ps1 instead: on this hidden desktop they never submit frames.
 # The process runs on a separate, never-shown desktop (WinSta0\QuestLinkHidden), so none of its
 # windows can take focus. (SW_HIDE on the visible desktop is not enough: a test window
 # started that way still took the foreground.) Waits for exit and returns the exit code (-1 on
 # timeout, after killing it). The hidden desktop goes away with this script, so keep it running
 # while the child runs: run the script itself in the background instead of detaching the child.
 #   .\unity_hidden.ps1 -ArgLine "-batchmode -nographics -quit -projectPath ... -logFile x.log"
-#   .\unity_hidden.ps1 -Exe ..\unity\SensorProbe\Build\SensorProbe.exe -ArgLine "-probeSteps passthrough" -TimeoutS 600
 param(
     [string]$Exe = "C:\Program Files\Unity\Hub\Editor\6000.3.11f1\Editor\Unity.exe",
     [string]$ArgLine = "",

@@ -31,8 +31,22 @@ namespace ElasticSea.QuestLink.BridgeTest
             for (var i = 0; i < Drops.Length; i++)
                 yield return Drop(i + 1, Drops[i]);
             yield return Ask("came_back", "Did the picture come back\nevery time?");
-            board.text = "DONE\n\nTake the headset off.";
             Debug.Log($"[Recovery] done: {string.Join(", ", results)}");
+            // In a bench slot (tools/bench_slot.ps1) "-look-next" names the next part: hand over and quit
+            var args = System.Environment.GetCommandLineArgs();
+            var at = System.Array.IndexOf(args, "-look-next");
+            if (at < 0 || at + 1 >= args.Length)
+            {
+                board.text = "DONE\n\nTake the headset off.";
+                yield break;
+            }
+            var next = args[at + 1].Replace('|', '\n');
+            yield return Continue($"Recovery test done.\nNEXT: {next}");
+            board.text = next;
+            yield return new WaitForSecondsRealtime(1f);
+            if (rig.Backend is NativeQuestLink)
+                NativeQuestLink.Shutdown();
+            Application.Quit();
         }
 
         IEnumerator Drop(int n, string kind)
