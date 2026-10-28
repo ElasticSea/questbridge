@@ -8,7 +8,7 @@ import unittest
 from helpers import load  # noqa: I001 (sets up the tools/ import path)
 
 from capnp_codec import decode
-from decode_controllers import decode_input, decode_tracking
+from decode_controllers import RIPC_CALL, RIPC_CONNECT, RIPC_LOOKUP, decode_input, decode_tracking, ripc_frame
 
 LEFT, RIGHT = 0, 1
 
@@ -98,6 +98,46 @@ class Haptics(unittest.TestCase):
         self.assertEqual(root["s"][1], 1)       # device id 1 (then 2, 3)
         self.assertEqual(root["s"][2], 0)       # amplitude/value 0: stop
         self.assertIsNone(root["p"][0])
+
+
+def haptic_frames():
+    return {f["label"]: f for f in load("sensors", "haptics")}
+
+
+def bodies(frame):
+    """XRSP bodies of a frame's raw messages, XRSP padding removed."""
+    out = []
+    for r in (bytes.fromhex(x) for x in frame["raw"]):
+        b = r[8:]
+        out.append(b[:-b[-1]] if r[0] & 0x08 else b)
+    return out
+
+
+class HapticsServer(unittest.TestCase):
+    """Meta's PC opens a RuntimeIPC connection to the Quest's HapticsServer (lookup, connect with
+    a PC-chosen client id) and sends each haptic as a call on it (tests/fixtures/sensors/haptics.json)."""
+
+    def test_frames_rebuild_byte_exact(self):
+        for label, f in haptic_frames().items():
+            with self.subTest(label):
+                b = bodies(f)
+                h = f["header"]
+                self.assertEqual(ripc_frame(h["kind"], h["client"], h["seq"], h["tag"], b[3]), b)
+
+    def test_connect_targets_haptics_server(self):
+        f = haptic_frames()
+        self.assertEqual(f["lookup"]["header"]["kind"], RIPC_LOOKUP)
+        self.assertIn(b"com.oculus.vrruntimeservice.VrRuntimeService", bodies(f["lookup"])[3])
+        c = f["connect_haptics"]["header"]
+        self.assertEqual(c["kind"], RIPC_CONNECT)
+        self.assertIn(b"HapticsServer", bodies(f["connect_haptics"])[3])
+        for n, side in ((0, 1), (1, 2)):   # SensorProbe pulsed left, then right
+            h = f[f"haptic_{n}"]["header"]
+            self.assertEqual((h["kind"], h["client"]), (RIPC_CALL, c["client"]))
+            self.assertGreater(h["seq"], c["seq"])                               # one seq per PC request
+            payload = bodies(f[f"haptic_{n}"])[3]
+            self.assertEqual(payload[8], side)                                   # 1 left, 2 right
+            self.assertEqual(struct.unpack_from("<Qf", payload, 10), (1_000_000_000, 1.0))
 
 
 class HandsToggle(unittest.TestCase):

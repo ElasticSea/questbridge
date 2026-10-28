@@ -253,6 +253,7 @@ private:
             ql_config_init(&cfg);
             if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
             cfg.hands = env_int("QL_HANDS", 1);
+            cfg.haptics = env_int("QL_HAPTICS", 1);
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
                 // Poll fast: the sooner we hold the interface after enumeration, the sooner the
@@ -440,14 +441,18 @@ int ql_get_hands(ql_session* session, ql_hands* out) {
 }
 
 int ql_get_controller(ql_session* session, int hand, ql_controller* out) {
-    if (!out || (hand != 0 && hand != 1) || !Runtime::get().known(session)) return QL_ERR_ARGUMENT;
+    auto& rt = Runtime::get();
+    if (!out || (hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
     std::memset(out, 0, sizeof *out);
-    return QL_ERR_UNSUPPORTED;  // controller topics not decoded yet (roadmap M7)
+    auto h = rt.host();
+    return h ? ql_host_get_controller(h.get(), hand, out) : QL_ERR_NO_DATA;
 }
 
-int ql_haptic(ql_session* session, int hand, float, float) {
-    if ((hand != 0 && hand != 1) || !Runtime::get().known(session)) return QL_ERR_ARGUMENT;
-    return QL_ERR_UNSUPPORTED;
+int ql_haptic(ql_session* session, int hand, float amplitude, float duration_s) {
+    auto& rt = Runtime::get();
+    if ((hand != 0 && hand != 1) || !rt.known(session)) return QL_ERR_ARGUMENT;
+    auto h = rt.host();
+    return h ? ql_host_haptic(h.get(), hand, amplitude, duration_s) : QL_ERR_NOT_STREAMING;
 }
 
 int ql_submit_frame_texture(ql_session* session, void* native_texture, const ql_pose* render_pose,

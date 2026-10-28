@@ -106,6 +106,7 @@ namespace ElasticSea.QuestLink.Input
                 secondaryTouched = s.secondaryTouch ? 1f : 0f,
                 triggerTouched = s.triggerTouch ? 1f : 0f,
                 menu = s.menu ? 1f : 0f,
+                thumbrestTouched = s.thumbrestTouch ? 1f : 0f,
             });
         }
     }

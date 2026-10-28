@@ -43,6 +43,7 @@ SessionConfig to_session_config(const ql_config& c) {
     s.first_frame_index = c.first_frame_index ? c.first_frame_index : 1;
     s.send_setup = c.send_setup != 0;
     s.hands = c.hands != 0;
+    s.haptics = c.haptics != 0;
     s.hello_timeout_ns = int64_t(c.hello_timeout_ms) * 1'000'000;
     s.link_request_timeout_ns = int64_t(c.link_request_timeout_ms) * 1'000'000;
     s.step_timeout_ns = int64_t(c.step_timeout_ms) * 1'000'000;
@@ -50,6 +51,36 @@ SessionConfig to_session_config(const ql_config& c) {
     s.bye_retry_ns = c.bye_retry_ms > 0 ? int64_t(c.bye_retry_ms) * 1'000'000 : 0;
     s.refresh_hz = c.refresh_hz;
     return s;
+}
+
+// Raw topic 35 bits -> QL_BUTTON_* / QL_TOUCH_*: the left controller's X/Y/stick sit 8 bits up
+void to_ql_controller(const ControllerPose& p, const ControllerInput* in, ql_controller& out) {
+    std::memset(&out, 0, sizeof out);
+    if (p.has_pose) {
+        out.pose = {p.orientation[0], p.orientation[1], p.orientation[2], p.orientation[3],
+                    p.position[0],    p.position[1],    p.position[2],    p.sample_time_ns};
+        out.flags |= (p.status & pose_status::kOrientationTracked ? QL_CONTROLLER_ROTATION_TRACKED : 0u) |
+                     (p.status & pose_status::kPositionTracked ? QL_CONTROLLER_POSITION_TRACKED : 0u);
+    } else {
+        out.pose.qw = 1;
+    }
+    if (!in || !in->present) {
+        out.flags = 0;  // put down: hands are tracked instead
+        return;
+    }
+    out.flags |= QL_CONTROLLER_CONNECTED;
+    uint32_t b = in->buttons | (in->buttons >> 8);
+    out.buttons = (b & raw_button::kA ? QL_BUTTON_PRIMARY : 0u) | (b & raw_button::kB ? QL_BUTTON_SECONDARY : 0u) |
+                  (b & raw_button::kRightStick ? QL_BUTTON_THUMBSTICK : 0u) |
+                  (in->buttons & raw_button::kMenu ? QL_BUTTON_MENU : 0u);
+    uint32_t t = in->touches;
+    out.touches = (t & raw_touch::kPrimary ? QL_BUTTON_PRIMARY : 0u) | (t & raw_touch::kSecondary ? QL_BUTTON_SECONDARY : 0u) |
+                  (t & raw_touch::kStick ? QL_BUTTON_THUMBSTICK : 0u) | (t & raw_touch::kTrigger ? QL_TOUCH_TRIGGER : 0u) |
+                  (t & raw_touch::kThumbRest ? QL_TOUCH_THUMBREST : 0u);
+    out.trigger = in->trigger;
+    out.grip = in->grip;
+    out.stick_x = in->stick[0];
+    out.stick_y = in->stick[1];
 }
 
 void to_ql_hand(int hand, const HandRecord& r, const HandSkeleton* headset, ql_hand& out) {
@@ -122,6 +153,7 @@ void ql_config_init(ql_config* cfg) {
     cfg->first_frame_index = 1;
     cfg->send_setup = 1;
     cfg->hands = 1;
+    cfg->haptics = 1;
     cfg->step_timeout_ms = 3000;
     cfg->bye_retry_ms = 3000;
 }
@@ -316,6 +348,26 @@ ql_status ql_host_set_hands(ql_host* host, int enabled) {
     if (host->broken) return QL_ERR_TRANSPORT;
     if (host->session->state() != State::Streaming) return QL_ERR_NOT_STREAMING;
     host->session->set_hands(enabled != 0);
+    return host->flush(lock);
+}
+
+ql_status ql_host_get_controller(ql_host* host, int hand, ql_controller* out) {
+    if (!host || !out || (hand != 0 && hand != 1)) return QL_ERR_ARGUMENT;
+    std::memset(out, 0, sizeof *out);
+    std::lock_guard<std::mutex> lock(host->mu);
+    const Session& s = *host->session;
+    if (!s.controller_count()) return QL_ERR_NO_DATA;
+    to_ql_controller(s.controller_poses()[hand], s.device_input() ? &s.device_input()->controllers[hand] : nullptr,
+                     *out);
+    return QL_OK;
+}
+
+ql_status ql_host_haptic(ql_host* host, int hand, float amplitude, float duration_s) {
+    if (!host || (hand != 0 && hand != 1) || !(amplitude >= 0) || !(duration_s >= 0)) return QL_ERR_ARGUMENT;
+    std::unique_lock<std::mutex> lock(host->mu);
+    if (host->broken) return QL_ERR_TRANSPORT;
+    auto r = host->session->haptic(hand, amplitude, uint64_t(double(duration_s) * 1e9));
+    if (r == Session::Submit::NotStreaming) return QL_ERR_NOT_STREAMING;
     return host->flush(lock);
 }
 

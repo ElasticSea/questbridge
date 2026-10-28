@@ -61,6 +61,6 @@ namespace ElasticSea.QuestLink
         public float trigger, grip;
         public Vector2 thumbstick;
         public bool primaryButton, secondaryButton, thumbstickClick, menu;
-        public bool primaryTouch, secondaryTouch, thumbstickTouch, triggerTouch;
+        public bool primaryTouch, secondaryTouch, thumbstickTouch, triggerTouch, thumbrestTouch;
     }
 }

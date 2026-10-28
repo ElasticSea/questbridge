@@ -86,15 +86,18 @@ typedef struct ql_device_info {
 #define QL_BUTTON_PRIMARY (1u << 0)    /* A / X */
 #define QL_BUTTON_SECONDARY (1u << 1)  /* B / Y */
 #define QL_BUTTON_THUMBSTICK (1u << 2)
-#define QL_BUTTON_MENU (1u << 3)
-#define QL_TOUCH_TRIGGER (1u << 4) /* touches only */
+#define QL_BUTTON_MENU (1u << 3)       /* left controller only (the right one's is the system button) */
+#define QL_TOUCH_TRIGGER (1u << 4)     /* touches only */
+#define QL_TOUCH_THUMBREST (1u << 5)   /* touches only */
 /* ql_controller.flags bits */
 #define QL_CONTROLLER_CONNECTED (1u << 0)
 #define QL_CONTROLLER_POSITION_TRACKED (1u << 1)
 #define QL_CONTROLLER_ROTATION_TRACKED (1u << 2)
 
+/* Touch controller from topics 34 (pose) and 35 (input). Not connected (flags 0) while the
+ * controllers are put down and hands are tracked instead. Same raw Link convention as ql_pose. */
 typedef struct ql_controller {
-    ql_pose pose;
+    ql_pose pose; /* grip pose; time_ns = sample time */
     uint32_t buttons, touches;
     float trigger, grip;
     float stick_x, stick_y;
@@ -132,9 +135,11 @@ QL_API int ql_poll(ql_session* session);
 QL_API int ql_get_device_info(ql_session* session, ql_device_info* out);
 /* Newest head pose; nonzero until one arrived. */
 QL_API int ql_get_head_pose(ql_session* session, ql_pose* out);
-/* hand 0 = left, 1 = right. Not decoded yet: returns QL_ERR_UNSUPPORTED, flags = 0. */
+/* hand 0 = left, 1 = right. Newest controller state; QL_ERR_NO_DATA (flags 0) until the
+ * first topic 34/35 message. */
 QL_API int ql_get_controller(ql_session* session, int hand, ql_controller* out);
-/* Not decoded yet: returns QL_ERR_UNSUPPORTED. */
+/* Vibrate controller hand: amplitude 0..1 for duration_s seconds (RuntimeIPC HapticsServer call,
+ * as Meta's PC sends for xrApplyHapticFeedback). QL_ERR_NOT_STREAMING before the stream setup. */
 QL_API int ql_haptic(ql_session* session, int hand, float amplitude, float duration_s);
 /* Copy native_texture now (call on the graphics/render thread), encode and send it
  * asynchronously. Frames whose frame_index does not increase for this session are dropped;
@@ -172,6 +177,7 @@ typedef struct ql_config {
     uint64_t first_frame_index;  /* default 1; frame.index must increase across the session */
     int send_setup;              /* send Meta's recorded stream setup after the handshake (default 1) */
     int hands;                   /* turn hand tracking on once streaming (InputControl, default 1) */
+    int haptics;                 /* connect the RuntimeIPC HapticsServer once streaming (default 1) */
     int hello_timeout_ms;        /* 0 = wait forever (default) */
     int link_request_timeout_ms; /* waiting for "Enable Link"; 0 = forever (default) */
     int step_timeout_ms;         /* per handshake step; a stalled step restarts pairing (default 3000) */
@@ -340,6 +346,13 @@ QL_API int ql_get_hands(ql_session* session, ql_hands* out);
 QL_API ql_status ql_host_get_hands(ql_host* host, ql_hands* out);
 /* Host API: send InputControl hands on (1) or off (0) now; QL_ERR_NOT_STREAMING before setup. */
 QL_API ql_status ql_host_set_hands(ql_host* host, int enabled);
+
+/* ======================= Controllers ===================================================== */
+
+/* Host API: as ql_get_controller. */
+QL_API ql_status ql_host_get_controller(ql_host* host, int hand, ql_controller* out);
+/* Host API: as ql_haptic. */
+QL_API ql_status ql_host_haptic(ql_host* host, int hand, float amplitude, float duration_s);
 
 #ifdef __cplusplus
 }

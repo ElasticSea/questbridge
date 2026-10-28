@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "templates.hpp"
@@ -223,6 +224,26 @@ Session::Submit Session::submit_frame(std::span<const SliceData> slices, const F
     return Submit::Ok;
 }
 
+Session::Submit Session::haptic(int hand, float amplitude, uint64_t duration_ns) {
+    if (state_ != State::Streaming) return Submit::NotStreaming;
+    if (!haptics_connected_) connect_haptics();
+    send_stream(ripc::haptic(ripc::kHapticsClient, ripc_.next_seq++, uint8_t(hand ? 2 : 1), duration_ns,
+                             std::clamp(amplitude, 0.0f, 1.0f)));
+    log("PC->Q", std::string("haptic ") + (hand ? "right " : "left ") + std::to_string(amplitude) + " " +
+                     std::to_string(duration_ns / 1'000'000) + " ms");
+    return Submit::Ok;
+}
+
+void Session::connect_haptics() {
+    // Like Meta's PC when an app starts: look the runtime service up, connect its HapticsServer
+    auto msgs = ripc::lookup(ripc_.lookup_id);
+    auto connect = ripc::connect_haptics(ripc::kHapticsClient, ripc_.next_seq++);
+    msgs.insert(msgs.end(), connect.begin(), connect.end());
+    send_stream(std::move(msgs));
+    haptics_connected_ = true;
+    log("PC->Q", "RuntimeIPC connect HapticsServer");
+}
+
 Session::Submit Session::submit_audio(std::span<const float> stereo, int64_t ts_ns) {
     if (state_ != State::Streaming) return Submit::NotStreaming;
     if (stereo.size() != audio::kBlockFrames * audio::kChannels) return Submit::BadSlices;
@@ -239,9 +260,30 @@ void Session::on_message(std::span<const uint8_t> raw) {
     auto body = unpad_body(raw[0], raw.subspan(kHeaderSize));
     ++rx_counts_[t];
     if (t == topic::kHeadPose) {
-        if (auto p = parse_head_pose(body)) {
-            head_pose_ = *p;
+        if (auto p = parse_pose2(body)) {
+            head_pose_ = p->head;
             ++head_pose_count_;
+            controller_poses_ = p->controllers;
+            ++controller_count_;
+        }
+        return;
+    }
+    if (t == topic::kDeviceInput) {
+        if (auto d = parse_device_input(body)) {
+            // Log which controllers the headset lists whenever that changes (bench diagnosis)
+            auto key = [](const DeviceInput& x) {
+                return std::make_tuple(x.flags, x.controller_mask, x.controllers[0].present, x.controllers[1].present);
+            };
+            if (!device_input_ || key(*device_input_) != key(*d)) {
+                char line[160];
+                std::snprintf(line, sizeof line, "controllers: flags 0x%x mask %u, left %s (battery %u), right %s (battery %u)",
+                              d->flags, d->controller_mask, d->controllers[0].present ? "on" : "off",
+                              d->controllers[0].battery, d->controllers[1].present ? "on" : "off",
+                              d->controllers[1].battery);
+                log("info", line);
+            }
+            device_input_ = *d;
+            ++controller_count_;
         }
         return;
     }
@@ -369,6 +411,8 @@ void Session::begin_phase(uint16_t version) {
         stream_seq_.clear();
         next_frame_index_ = cfg_.first_frame_index;
         clock_count_ = 0;
+        ripc_ = ripc::from_setup();  // RuntimeIPC starts over with the replayed setup
+        haptics_connected_ = false;
     }
     if (version == 3) refresh_hz_ = pick_refresh();
     enter(version == 1 ? State::Phase1 : State::Phase2, cfg_.step_timeout_ns);
@@ -416,6 +460,7 @@ void Session::on_streaming() {
     enter(State::Streaming, 0);
     ++streams_;
     if (cfg_.hands) set_hands(true);
+    if (cfg_.haptics) connect_haptics();
 }
 
 void Session::set_hands(bool on) {
