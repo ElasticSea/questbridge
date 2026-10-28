@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Tiny test harness: TEST(name) { CHECK(...); CHECK_EQ(a, b); }
 #pragma once
 

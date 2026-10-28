@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // H.264 Annex-B helpers shared by all encoder backends (ITU-T H.264 7.3).
 #pragma once
 

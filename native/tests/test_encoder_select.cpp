@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Encoder selection (encoders/select.hpp) and the strip layout wrapper (encoders/strips.hpp)
 // with fake encoders and synthetic H.264 headers: no GPU or codec needed.
 #include <memory>

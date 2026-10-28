@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Audio (topic 6): block encoding byte-exact vs Meta, mic parsing, playback queue, pacing.
 #include <cmath>
 #include <cstring>

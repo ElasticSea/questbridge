@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Hex-dump the first N XRSP bulk transfers for a device.
 
 Usage: python dump_xrsp.py <capture.pcap> <device> [count] [bytes-per-transfer]

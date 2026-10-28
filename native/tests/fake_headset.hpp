@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Reactive fake Quest behind open_usb() for the recovery tests: answers the host like xrspd
 // with the recorded Quest messages (BYE -> HELLO v1, CONFIG/CONFIRM/START -> ACK/CONFIRM_ACK/
 // READY, Launch -> BYE + HELLO v3), streams clock pings and head poses once a stream runs, and

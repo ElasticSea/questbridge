@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Session API (what the Unity package calls) over the real runtime, with a fake Quest behind
 // open_usb() and a fake texture encoder. The runtime is a process singleton, so this is one
 // test walking through two Unity Play sessions.

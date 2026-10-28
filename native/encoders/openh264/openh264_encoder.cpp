@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // OpenH264 behind encoder.hpp. Rate control in bitrate mode with frame skipping, scene-change
 // IDRs and background/adaptive tools off, so every frame comes out; IDRs come from our own
 // frame count (gop), so all strips of a frame switch together whichever encoder runs.

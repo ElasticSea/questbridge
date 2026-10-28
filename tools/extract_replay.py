@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Extract what Meta's host sends after the handshake, for replay by our host.
 
 Writes out/clips/<name>.json:

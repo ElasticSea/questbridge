@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Per-device/endpoint traffic summary plus Quest descriptors found during enumeration.
 
 Usage: python -I pcap_summary.py <capture.pcap>

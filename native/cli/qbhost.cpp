@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // qbhost: Link host CLI on the questbridge C API (same behaviour as tools/pyhost/handshake.py).
 //
 // Waits for the Quest's XRSP interface, does the handshake (press "Enable Link" in the

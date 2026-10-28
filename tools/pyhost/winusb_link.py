@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Windows-only XRSP transport that opens just the Quest's XRSP interface.
 
 libusb on Windows opens every interface of a composite device, which fails

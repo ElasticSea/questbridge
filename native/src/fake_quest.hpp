@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Offline bench headset (QB_FAKE_QUEST=<file>, see tools/make_fake_quest.py): replays a
 // recorded Quest side (handshake, then a head pose with a slow yaw sweep at ~500 Hz) and
 // measures what the host writes: video rate (average, peak 1 s), largest message per topic,

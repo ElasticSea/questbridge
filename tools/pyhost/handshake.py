@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Our own Link host: perform Meta's XRSP handshake with the Quest.
 
 PC-side messages are built from the Cap'n Proto trees Meta's host sent in the

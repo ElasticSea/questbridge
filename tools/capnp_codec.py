@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Schema-less Cap'n Proto codec for single-segment messages.
 
 decode(buf) -> (tree, seg_words); encode(tree, seg_words) -> bytes.

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Build the Quest side for the runtime's offline bench (QB_FAKE_QUEST=<file>).
 
 The recorded Quest 3 handshake (tests/fixtures/handshake) with the HELLOs swapped for another

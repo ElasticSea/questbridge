@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 #include "d3d11_input.hpp"
 
 #define WIN32_LEAN_AND_MEAN

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Cap'n Proto bodies of Meta's control messages, byte-exact by allocation order
 // (mirrors tests/test_roundtrip.py ControlCapnp).
 #include "capnp.hpp"

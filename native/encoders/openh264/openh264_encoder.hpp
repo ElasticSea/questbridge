@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // OpenH264 software encoder (Cisco's BSD-2 encoder), the fallback when no hardware encoder
 // produces the headset's format. One picture, one slice, Constrained Baseline; wrap it in
 // make_strip_encoder for Layout::Strips. The DLL is Cisco's prebuilt binary, loaded at run

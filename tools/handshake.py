@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Print every topic-1 (control) message in order, decoded as Cap'n Proto.
 
 Body layout: 8-byte inner header [type u8][flags u8][u16 a][u32 b], then a

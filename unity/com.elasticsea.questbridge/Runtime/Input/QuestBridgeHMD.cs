@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.InputSystem.Layouts;

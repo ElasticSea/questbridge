@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Windows create_encoder: Media Foundation hardware MFTs by vendor, then OpenH264, then the
 // Microsoft software MFT (see select.hpp for the order and the probe check).
 #include <algorithm>

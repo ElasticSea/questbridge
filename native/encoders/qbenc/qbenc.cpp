@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // qbenc: encode a moving test pattern with the platform encoder, check the slice layout,
 // and write an Annex-B .h264 plus a out/clips/<name>.json clip (same format as
 // tools/encode_pattern.py, so `XRSP_REPLAY=... py tools/pyhost/handshake.py` streams it unchanged).

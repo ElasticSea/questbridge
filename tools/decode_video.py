@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Decode the PC->Quest video stream (XRSP topics 10-14) from a USB capture.
 
 Layout (see docs/protocol/spec.md):

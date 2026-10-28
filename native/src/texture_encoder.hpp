@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Graphics texture -> H.264 / HEVC slices, for qb_submit_frame_texture.
 //
 // capture() runs on the graphics (render) thread and must finish copying before it returns,

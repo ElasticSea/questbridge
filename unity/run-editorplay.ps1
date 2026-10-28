@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Live Editor Play-mode bench (BridgeTest Assets/Editor/EditorPlayBench.cs): a real, minimized
 # Unity Editor on tools\unity_hidden.ps1's hidden desktop drops the QuestBridge Rig prefab into a
 # fresh scene and plays two rounds with a Stop in between, steps and questions on the headset

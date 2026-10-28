@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Raw USB access to the Quest's XRSP interface.
 
 Interface 0 (class ff/8a/01) exposes bulk OUT 0x01 and bulk IN 0x81. Incoming

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 /* questbridge: Meta Link (XRSP over USB) host library.
  *
  * Speaks the Quest's built-in Link protocol: waits for the headset's HELLO, runs the

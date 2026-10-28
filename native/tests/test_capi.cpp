@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // The shared library through its C API, over a fake transport that plays the Quest's side
 // of Meta's recorded session. Our USB transfers must equal Meta's.
 #include <cmath>

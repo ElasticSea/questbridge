@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Head pose (topic 34) from the recorded Quest stream.
 #include <cmath>
 

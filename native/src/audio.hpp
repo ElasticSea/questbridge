@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Link audio on topic 6 (docs/protocol/spec.md, port of tools/decode_audio.py).
 //
 // One 10 ms block = one single-segment Cap'n Proto message {u64 ts (sender clock), Data pcm}

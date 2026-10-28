@@ -1,4 +1,6 @@
-﻿# Download Cisco's prebuilt OpenH264 DLL (the software encoder fallback) on this PC.
+﻿# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
+# Download Cisco's prebuilt OpenH264 DLL (the software encoder fallback) on this PC.
 # Cisco pays the H.264 patent royalties only for its own binary fetched from ciscobinary.openh264.org
 # by the end user, so it is fetched per machine, never shipped with our builds.
 # Usage: native\encoders\openh264\fetch.ps1  -> %LOCALAPPDATA%\QuestBridge\openh264\openh264-<ver>-win64.dll

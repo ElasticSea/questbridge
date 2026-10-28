@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Decode the XRSP audio streams (topic 6) and audio control (topic 26).
 
 Topic 6 carries one single-segment Cap'n Proto message per 10 ms block, sent

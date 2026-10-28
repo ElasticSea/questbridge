@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // VideoToolbox H.264 / HEVC backend (macOS).
 //
 // Layout::Strips (the one to use): one VTCompressionSession per strip (5 x 4096x448), all

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // VideoToolbox strips (macOS): HEVC and H.264 through enc::create_encoder (Layout::Strips),
 // every strip decoded again on its own decoder like the headset does, P frames included.
 // Checks the strip format the Link stream needs: one slice per strip, per-strip parameter

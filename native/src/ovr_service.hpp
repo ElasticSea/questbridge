@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Meta's OVRService (Windows) holds the Quest's XRSP interface while it runs. When a USB open
 // fails because of it, the host stops it through one elevated helper (one UAC prompt per
 // process) that starts it again when the process exits. QB_OVR_STOP=0 turns this off.

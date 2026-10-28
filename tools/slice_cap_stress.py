@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Slice cap stress test: high-entropy clips through qbenc, every slice must fit one XRSP message.
 
 Runs qbenc (the platform encoder: Media Foundation on Windows, VideoToolbox on macOS) on the

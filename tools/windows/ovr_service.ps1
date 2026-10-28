@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Stop or start Meta's Link service so our host can own the Quest's USB interface.
 #   .\ovr_service.ps1 stop | start | status
 param([ValidateSet("stop", "start", "status")][string]$Action = "status")

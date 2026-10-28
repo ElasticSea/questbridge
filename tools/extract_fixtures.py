@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Cut a raw capture into small, language-neutral test fixtures.
 
 Writes tests/fixtures/<scenario>/:

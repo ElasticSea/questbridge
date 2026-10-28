@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 using ElasticSea.QuestBridge.Input;
 using NUnit.Framework;
 using UnityEngine;

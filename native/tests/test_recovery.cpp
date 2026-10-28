@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Recovery inside a running session: the Session API runtime (what Unity calls) against a
 // reactive fake headset (fake_headset.hpp) while a "game" thread keeps submitting frames and
 // audio, as Play mode does. Every disconnect must come back to streaming on its own: resumed

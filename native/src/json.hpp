@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Minimal JSON reader for fixtures and replay clips. Numbers keep their source text so
 // 64-bit integers (Cap'n Proto data words) round-trip exactly.
 #pragma once

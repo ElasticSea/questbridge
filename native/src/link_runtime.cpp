@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Session API (qb_open, qb_poll, qb_submit_frame_texture, ...) over one process-wide Link
 // runtime. The runtime is created on first qb_open and never destroyed: the Unity Editor keeps
 // native plugins loaded across Play mode, and the headset session should survive with it.

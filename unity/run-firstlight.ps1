@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Run the FirstLight player for a bench run without taking mouse or focus: through
 # tools\start_player.ps1 (user's desktop, minimized, not activated, focus guard; on unity_hidden.ps1's
 # hidden desktop it never submits frames), small window, native log on. Blocks until the player

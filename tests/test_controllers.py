@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Golden facts about controllers and haptics over Meta's Link (Quest 3 + Touch Plus,
 OpenXR test app, runtime 1.208). Fixture: tests/fixtures/sensors/controllers.json,
 labelled messages written by `decode_controllers.py golden`."""

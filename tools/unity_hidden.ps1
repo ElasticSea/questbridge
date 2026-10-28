@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # The only allowed way to start the Unity Editor (batchmode builds and tests) from scripts. Players
 # that stream to the headset use start_player.ps1 instead: on this hidden desktop they never submit frames.
 # The process runs on a separate, never-shown desktop (WinSta0\QuestBridgeHidden), so none of its

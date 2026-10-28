@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Decode the Quest->PC pose stream (XRSP topics 34 and 35).
 
 Both topics carry single-segment Cap'n Proto messages sent as two XRSP

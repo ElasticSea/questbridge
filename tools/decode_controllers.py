@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Find and decode controller, haptics and passthrough traffic in a Link capture.
 
 Built for a guided capture run (an OpenXR test app under Meta's runtime): its log has `STEP n name begin/end` lines

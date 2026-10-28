@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Fake Quest behind open_usb() for the Session API tests: replays the Quest's side of the
 // recorded handshake and records what the runtime writes. Defines qb::open_usb, so include it
 // in exactly one file per test binary.

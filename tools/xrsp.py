@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """XRSP message splitter.
 
 Observed framing (little endian), messages packed back to back in each bulk

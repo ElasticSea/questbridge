@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Decode the Quest->PC hand-tracking streams (topic 8 Hands, topic 9 Skeleton).
 
 Both only flow after the PC sends topic 28 InputControl {u16 type 1, u16 1}.

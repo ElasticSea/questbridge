@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // VideoToolbox strip decoder for the macOS encoder tests: one strip's stream (Annex-B csd +
 // slice NALs, H.264 or HEVC) back to BGRA, the way the headset runs one decoder per strip.
 #pragma once

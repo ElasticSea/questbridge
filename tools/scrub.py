@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Replace personal identifiers in captured bytes with equal-length placeholders.
 
 Fixture and replay writers run every message and transfer through a Scrubber

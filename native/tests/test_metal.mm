@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Metal frame submission (macOS): the real Metal + VideoToolbox texture encoder behind the
 // Session API, a fake Quest behind open_usb(). A 4096x2240 texture with one colour per strip
 // goes through the render event; every strip on the wire is decoded again and its colour

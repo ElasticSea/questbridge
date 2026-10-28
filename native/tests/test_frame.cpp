@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Frame building against Meta's recorded IDR frame (tests/fixtures/replay/idr-frame.json).
 #include "frame.hpp"
 #include "harness.hpp"

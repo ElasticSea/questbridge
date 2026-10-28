@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Minimal reader for USBPcap .pcap files (linktype 249).
 
 Yields one Packet per URB event. `inbound` is True for completions coming

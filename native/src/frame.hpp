@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Video frame -> XRSP stream messages (port of the frame path in tools/pyhost/handshake.py and
 // tools/encode_pattern.py).
 //

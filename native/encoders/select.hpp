@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Encoder selection: which backend, layout and settings to use on this machine.
 //
 // Platform-neutral so it can be tested with fake encoders. The platform code lists the encoders

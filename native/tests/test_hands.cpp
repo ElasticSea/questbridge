@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Hand tracking (topics 8/9) from the hands-on bench dump (tests/fixtures/hands/messages.json);
 // mirrors tests/test_hands.py, golden joint positions from tools/decode_hands.py joints().
 #include <cmath>

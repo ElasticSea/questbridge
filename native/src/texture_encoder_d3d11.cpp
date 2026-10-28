@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Windows: copy the engine's D3D11 texture on its immediate context (render thread), then
 // encode the copy with the Media Foundation encoder on the same device (encode thread). The
 // device is made multithread-protected, so both threads' context calls are serialized and the

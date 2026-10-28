@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Link host session, sans-I/O (port of tools/pyhost/handshake.py).
 //
 // Feed it every Quest->PC message and call tick() regularly; it queues the PC->Quest

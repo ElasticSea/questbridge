@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Connect soak: cycle the native host against the plugged-in Quest and check that every cycle
 reaches phase 1 (the headset's HELLO) with no replug and nobody in the headset.
 

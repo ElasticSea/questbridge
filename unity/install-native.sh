@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # macOS: build libquestbridge.dylib (Release, arm64, libusb linked statically) and install it as
 # the Unity package's macOS native plugin:
 # com.elasticsea.questbridge/Runtime/Plugins/macOS/libquestbridge.dylib (committed, so UPM git installs

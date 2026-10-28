@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // XRSP framing: messages packed back to back in USB bulk transfers.
 //
 //   u8  flags      0x10 normal; bit 0x08 = padded body (last byte = pad count, filler 0xDE)

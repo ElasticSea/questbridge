@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Platform-neutral H.264 encoder interface for the Link video stream.
 //
 // The Quest expects H.264 Constrained Baseline, 4096x2240, one picture in 5 slices of

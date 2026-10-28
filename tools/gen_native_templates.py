@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Generate native/src/templates_data.cpp: the recorded messages the native host builds from.
 
 - PC control templates (first per (type, version)) from tests/fixtures/handshake/control.json,

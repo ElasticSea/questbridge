@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Byte-exact XRSP framing against Meta's traffic (mirrors tests/test_roundtrip.py XrspFraming).
 #include "harness.hpp"
 

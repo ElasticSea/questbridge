@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Platform-neutral half of ovr_service.hpp (tested on every OS)
 #include "ovr_service.hpp"
 

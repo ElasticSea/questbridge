@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Configure, build and test the native library on Windows with Visual Studio's bundled CMake.
 # Usage: native\build.ps1 [-Config Debug|Release]
 param([string]$Config = "Release")

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Run every test suite in the repo and print a pass/fail summary.
 # Usage: tools\test_all.ps1 [-Quick] [-Only py|native|unity] [-UnityTimeout <s>]
 #   -Quick  Python + native only (before each commit). Full run (with Unity) before merging to main.

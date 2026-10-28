@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Media Foundation backend, driven by select.hpp (create_windows.cpp).
 #pragma once
 

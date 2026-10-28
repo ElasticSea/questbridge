@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Schema-less Cap'n Proto message pretty-printer.
 
 Walks the pointer tree of a serialized message (standard segment table) and

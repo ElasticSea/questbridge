@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # One UAC prompt for a whole bench slot (tools\bench_slot.ps1): stops OVRService, then serves
 # trigger files from the non-elevated slot driver until capture\STOP exists:
 #   capture\CAP_START -> start a USB capture (out\captures\<Name>-<stamp>.pcap)  capture\CAP_STOP -> stop it

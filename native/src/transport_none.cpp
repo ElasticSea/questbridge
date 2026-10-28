@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Fallback when no USB backend is available at build time (e.g. libusb not installed).
 #include "transport.hpp"
 

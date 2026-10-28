@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Topic 34 Pose2 (~543 Hz): head pose plus, while Touch controllers are in use, a list of
 // controller poses. Each message is two XRSP messages: the 8-byte capnp segment table, then the
 // segment parsed here (272 bytes head only, 520 with two controllers). Layout in docs/protocol/spec.md.

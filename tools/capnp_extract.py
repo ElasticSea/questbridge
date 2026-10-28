@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Recover Cap'n Proto schemas embedded in a compiled binary.
 
 Generated C++ embeds each schema node as a single-segment message whose root

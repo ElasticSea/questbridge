@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Build questbridge.dll (Release) and install it as the Unity package's Windows x64 native plugin:
 # com.elasticsea.questbridge/Runtime/Plugins/Windows/x86_64/questbridge.dll (committed, so UPM git installs
 # get it: commit the new binary after a native change that the package needs).

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Decode the device description in a Quest HELLO (topic 1, inner type 0x81).
 
 Layout: docs/protocol/spec.md §8. The same parse lives in native/src/session.cpp

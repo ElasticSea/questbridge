@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // HELLO device description: every tests/fixtures/devices/*.json (written by
 // tools/device_info.py, also checked by tests/test_device_info.py) and what the host derives
 // from it (CONFIG refresh and codec, strip geometry).

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Touch controllers (topics 34/35) and haptics (RuntimeIPC on topic 31) from the sensors
 // capture (tests/fixtures/sensors/controllers.json, haptics.json); mirrors tests/test_controllers.py.
 #include <cmath>

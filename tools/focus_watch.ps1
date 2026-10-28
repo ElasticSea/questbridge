@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Logs the foreground window's process every 200 ms and fails if a forbidden process ever owns it.
 # Run it alongside a Unity run to prove nothing steals focus.
 #   .\focus_watch.ps1 -Seconds 300 -Out focus.log [-Forbidden 'Unity|FirstLight']

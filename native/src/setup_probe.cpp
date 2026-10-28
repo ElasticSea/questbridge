@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // qb_check_setup: gathers setup_check.hpp's Probe on this machine and evaluates it.
 #include <algorithm>
 #include <cstddef>

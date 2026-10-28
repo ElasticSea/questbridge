@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Encode a moving test pattern and package it as XRSP video slices for the host.
 
 Encodes with FFmpeg/x264 using the stream format the Quest expects (decoded from

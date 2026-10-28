@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Byte pipe to the Quest's XRSP interface (interface 0: bulk OUT 0x01, bulk IN 0x81).
 #pragma once
 

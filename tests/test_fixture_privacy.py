@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """No fixture may carry a headset's or a PC's identity.
 
 Every HELLO in the fixtures is run through the Scrubber: it must find nothing but placeholders

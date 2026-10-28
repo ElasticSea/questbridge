@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Scripting;

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Builds FirstLight (hidden Unity) and checks a real rendered frame: the player runs with the mock
 # backend (no USB), writes its eye texture to a PNG and fails if it is magenta-dominant (missing
 # shaders) or one flat colour. Exit 0 = build OK and picture OK. Look at the PNG too.

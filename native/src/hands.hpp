@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Hand tracking: topic 8 Hands (per-hand root pose + 24 local bone rotations, 60/s) and
 // topic 9 Skeleton (bind pose, chunked, once after hands are enabled). Packed little-endian C
 // structs, not Cap'n Proto; layout in docs/protocol/spec.md

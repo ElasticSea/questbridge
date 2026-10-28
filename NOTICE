@@ -1,0 +1,29 @@
+QuestBridge
+Copyright 2026 ElasticSea
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Interoperability
+QuestBridge talks to Meta Quest headsets over the wired Link protocol so that
+they work with computers and software that Meta's own PC app doesn't support.
+The protocol was studied from USB traffic between the author's own devices.
+QuestBridge contains no code from Meta.
+
+Test data
+tests/fixtures/ contains short protocol messages recorded from the author's own
+devices. They are kept for byte-exact interoperability tests. Device serial
+numbers, device ids, UUIDs and network addresses were replaced with
+placeholders, and the recorded video frame carries no picture content.
+docs/protocol/schemas/ lists message field names and ids as they appear on the
+wire, kept for the same purpose.
+
+Trademarks
+Meta, Meta Quest, Quest and Quest Link are trademarks of Meta Platforms, Inc.
+QuestBridge is not affiliated with, endorsed by or sponsored by Meta Platforms,
+Inc. The names are used only to describe compatibility.
+
+Third-party components
+native/encoders/openh264/include/ contains the OpenH264 API headers,
+Copyright (c) 2013, Cisco Systems, BSD 2-Clause license
+(native/encoders/openh264/LICENSE). The OpenH264 binary itself is not
+distributed; it is downloaded from Cisco on demand.

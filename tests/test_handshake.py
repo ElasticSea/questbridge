@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Golden facts about Meta's handshake (Quest 3, runtime 1.208, firmware v207)."""
 import unittest
 

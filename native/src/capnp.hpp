@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Schema-less Cap'n Proto codec for single-segment messages (port of tools/capnp_codec.py).
 //
 // A message decodes to a tree of Nodes. Every pointer target keeps its word offset in the

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Recorded messages from Meta's host that ours is built from (templates_data.cpp is generated
 // by tools/gen_native_templates.py and checked against the fixtures by the tests).
 #pragma once

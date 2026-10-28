@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Windows transport: opens just the Quest's XRSP interface through WinUSB (port of
 // tools/pyhost/winusb_link.py). libusb on Windows opens every interface of a composite device, which
 // fails while adb holds the ADB interface; WinUSB opens interface 0 alone via its path.

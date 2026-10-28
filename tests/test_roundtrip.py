@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Byte-exact round trips against Meta's own traffic."""
 import struct
 import unittest

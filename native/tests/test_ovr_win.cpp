@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Windows: runs the real OVRService helper script, unelevated and with logging stand-ins for
 // Stop-Service / Start-Service, to check the stop -> wait for the parent -> start sequence.
 #define WIN32_LEAN_AND_MEAN

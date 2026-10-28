@@ -1,4 +1,6 @@
-﻿# Starts a Unity player that streams to the headset (such as FirstLight) on the user's desktop
+﻿# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
+# Starts a Unity player that streams to the headset (such as FirstLight) on the user's desktop
 # without taking focus. Players must stay on the real desktop: on unity_hidden.ps1's hidden desktop
 # they reach Streaming but never submit frames (headset stays on Meta's loading dots). The Editor
 # and tests keep using unity_hidden.ps1.

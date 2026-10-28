@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // vtprobe: VideoToolbox throughput. S sessions of WxH, F frames submitted back to back with at most
 // `inflight` frames per session in flight (optionally paced at hz); prints fps and frame latency.
 // Usage: vtprobe S W H F inflight lowlatency [hz]   env: HEVC=1, HIGH=1 (Constrained High), Q=<0..1>

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # Launches USBPcapCMD elevated (one UAC prompt) on the hub the Quest is on.
 # Runs until tools\capture\STOP exists — create it with stop-capture.ps1.
 # Output goes to out\captures\<name>-<stamp>.pcap (and .log).

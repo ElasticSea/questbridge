@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // No texture encoder on this platform yet (macOS: Metal blit into an IOSurface-backed
 // CVPixelBuffer + VideoToolbox, roadmap M3/M6).
 #include "texture_encoder.hpp"

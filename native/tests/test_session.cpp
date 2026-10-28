@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Handshake state machine: replay the Quest's side of Meta's recorded handshake and check
 // that our PC messages are Meta's bytes (mirrors tests/test_handshake.py Transcript).
 #include <cmath>

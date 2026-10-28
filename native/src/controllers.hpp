@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Touch controllers: topic 35 DeviceInput (buttons, touches, trigger/grip/stick per controller)
 // and haptics. Controller poses ride topic 34 with the head pose (pose.hpp). Layouts in
 // docs/protocol/spec.md and tools/decode_controllers.py.

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // libusb transport (macOS, Linux): claims only the XRSP interface, so adb keeps the ADB
 // interface. The Quest's interfaces are all vendor class: macOS binds no kernel driver to
 // them; on Linux a bound driver is detached while we hold the interface.

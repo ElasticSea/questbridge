@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // D3D11 texture input for encoders that can't take the whole texture: split it into strip
 // textures (hardware MFTs per strip), or read it back to CPU memory (software encoders, or a
 // hardware MFT on another adapter than the texture's device).

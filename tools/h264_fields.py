@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Dump every SPS, PPS and slice-header field of an Annex-B H.264 stream (ITU-T H.264 7.3).
 
 Used to compare encoders field by field (e.g. the NVIDIA MFT vs x264 clips).

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 # One headset slot, back to back, every step on the board (A to continue, questions A yes / B no):
 #   1 player check   FirstLight via start_player.ps1 (minimized, no focus), "picture OK?"
 #   2 recovery       FirstLight -sequence-recovery + tools\recovery_check.py (sleep, Link quit)

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 ElasticSea
+# SPDX-License-Identifier: Apache-2.0
 """Recovery live check, PC side: follows the FirstLight player's log during "-sequence-recovery"
 and disturbs the headset over adb when the board announces each drop, then summarises.
 

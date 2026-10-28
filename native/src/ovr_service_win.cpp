@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Windows half of ovr_service.hpp: SCM query and the elevated helper.
 //
 // The helper is powershell.exe started with the "runas" verb (one UAC prompt, hidden window).

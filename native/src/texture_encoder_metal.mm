@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // macOS: draw the engine's Metal texture into one IOSurface-backed BGRA CVPixelBuffer per strip
 // (render thread) and hand those buffers to the VideoToolbox strip sessions as they are (encode
 // thread). The GPU does the split; nothing goes through the CPU.

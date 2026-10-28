@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Setup check wording/logic (setup_check.cpp) and the OVRService helper's pure parts.
 #include "harness.hpp"
 #include "ovr_service.hpp"

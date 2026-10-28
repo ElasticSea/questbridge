@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // First-run setup check (qb_check_setup, qbhost --check, Unity's QuestBridge > Check Setup).
 // setup_probe.cpp gathers the facts per platform; evaluate() turns them into checks with
 // fix-it text, so the wording is tested without a headset.

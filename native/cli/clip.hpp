@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Replay clips (out/clips/*.json, written by tools/extract_replay.py and
 // tools/encode_pattern.py) for qbhost.
 #pragma once

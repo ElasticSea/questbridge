@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 ElasticSea
+// SPDX-License-Identifier: Apache-2.0
 // Media Foundation H.264 encoder: one specific MFT (hardware or software), picked and checked
 // by select.hpp (create_windows.cpp), with that vendor's settings.
 //
