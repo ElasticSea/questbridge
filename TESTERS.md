@@ -51,7 +51,7 @@ You can Stop and Play again as often as you like and you stay in Link. Using the
 
 ## Optional: software encoder (Windows)
 QuestLink picks the GPU's hardware encoder by itself (NVIDIA, AMD, Intel) and checks that its output suits the headset. Only NVIDIA has been tried with a headset so far, so on AMD or Intel please send the native log line that starts with `encoder:`. If no hardware encoder works (no GPU encoder, a remote desktop, an old driver), QuestLink falls back to **OpenH264**, Cisco's free software encoder. It uses the CPU (a 6+ core CPU keeps up at 72 Hz on normal scenes) and isn't shipped with the package: Cisco covers the H.264 licence only when you download its binary yourself. To install it:
-- From a repo checkout: run `native\encoders\openh264etch.ps1`.
+- From a repo checkout: run `native\encoders\openh264\fetch.ps1`.
 - Without one: download [openh264-2.7.0-win64.dll.bz2](https://ciscobinary.openh264.org/openh264-2.7.0-win64.dll.bz2) (Cisco, ~450 KB), unpack it with 7-Zip and put `openh264-2.7.0-win64.dll` in `%LOCALAPPDATA%\QuestLink\openh264\`.
 
 Restart Unity afterwards. To force a backend for testing, set `QL_ENCODER=openh264` (or `nvidia`, `amd`, `intel`) before starting Unity Hub.
