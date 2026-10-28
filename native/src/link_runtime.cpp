@@ -9,6 +9,11 @@
 //
 // ql_session* values are registry tokens, never dereferenced, so render events still queued
 // for a closed session find nothing and are ignored.
+//
+// Recovery: a USB error while streaming reopens the same host within QL_RESUME_MS and resumes
+// the stream with its numbering if the headset still has it; otherwise (device gone longer,
+// headset BYE / new HELLO / silence inside the session) a new handshake runs and the user
+// presses Launch. Every new stream or resume starts with an IDR. ql_get_link_status reports it.
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -42,6 +47,7 @@ static_assert(sizeof(ql_controller) == 68 + 4 && offsetof(ql_controller, flags) 
 static_assert(sizeof(ql_hand_joint) == 32 && sizeof(ql_hand) == 944 && offsetof(ql_hand, joints) == 112);
 static_assert(sizeof(ql_hands) == 1896 && offsetof(ql_hands, count) == 1888);
 static_assert(sizeof(void*) != 8 || (sizeof(ql_frame_submit) == 64 && offsetof(ql_frame_submit, frame_index) == 56));
+static_assert(sizeof(ql_link_status) == 32 && offsetof(ql_link_status, state_since_ns) == 24);
 
 namespace {
 
@@ -172,6 +178,11 @@ public:
         stderr_log(nullptr, "info", what.c_str(), -1);
     }
 
+    ql_link_status link() {
+        std::lock_guard<std::mutex> l(mu_);
+        return link_;
+    }
+
     int submit(ql_session* s, void* texture, const ql_pose* pose) {
         if (!texture || !pose) return QL_ERR_ARGUMENT;
         auto h = host();
@@ -229,6 +240,10 @@ private:
     uint64_t dropped_ = 0;  // encode thread only
     uint64_t refits_ = 0;   // encode thread only
     const int64_t vsync_lead_ns_ = int64_t(env_int("QL_VSYNC_LEAD_MS", 16)) * 1'000'000;
+    // USB back within this long after an error while streaming: try to resume (0 = never)
+    const int64_t resume_window_ns_ = int64_t(env_int("QL_RESUME_MS", 500)) * 1'000'000;
+    ql_link_status link_{};    // mu_
+    uint32_t seen_losses_ = 0;  // io thread: host's ql_info.losses already counted
 
     Runtime() {
         io_ = std::thread([this] { io_loop(); });
@@ -258,6 +273,51 @@ private:
         return encoder_.get();
     }
 
+    // Link state transitions; loss = why a stream ended (QL_LOSS_USB unless the session says)
+    void set_link(int32_t state, int32_t loss) {
+        std::lock_guard<std::mutex> l(mu_);
+        if (state == link_.state) return;
+        int32_t prev = link_.state;
+        if (prev == QL_LINK_STREAMING) {
+            ++link_.disconnects;
+            link_.last_loss = loss ? loss : QL_LOSS_USB;
+        }
+        if (state == QL_LINK_STREAMING) {
+            ++link_.connects;
+            if (prev == QL_LINK_RESUMING) ++link_.resumes;
+        }
+        link_.state = state;
+        link_.state_since_ns = ql_now_ns();
+        static const char* names[] = {"no device", "connecting", "waiting for Launch", "streaming", "resuming"};
+        static const char* losses[] = {"", "USB", "headset BYE", "new HELLO", "silence"};
+        std::string what = std::string("link: ") + names[prev] + " -> " + names[state];
+        if (prev == QL_LINK_STREAMING) what += std::string(" (lost: ") + losses[link_.last_loss] + ")";
+        stderr_log(nullptr, "info", what.c_str(), -1);
+    }
+
+    void track(ql_host* h) {
+        ql_info info;
+        if (ql_host_get_info(h, &info) != QL_OK) return;
+        int32_t loss = info.losses != seen_losses_ ? info.last_loss : QL_LOSS_NONE;
+        seen_losses_ = info.losses;
+        int32_t state = info.state == QL_STATE_STREAMING ? (info.resuming ? QL_LINK_RESUMING : QL_LINK_STREAMING)
+                        : info.state == QL_STATE_WAIT_LINK_REQUEST ? QL_LINK_WAIT_LAUNCH
+                                                                   : QL_LINK_CONNECTING;
+        set_link(state, loss);
+    }
+
+    ql_config host_config() const {
+        ql_config cfg;
+        ql_config_init(&cfg);
+        if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
+        cfg.hands = env_int("QL_HANDS", 1);
+        cfg.haptics = env_int("QL_HAPTICS", 1);
+        cfg.codec = env_codec();
+        cfg.silence_timeout_ms = env_int("QL_SILENCE_MS", cfg.silence_timeout_ms);
+        cfg.resume_timeout_ms = env_int("QL_RESUME_TIMEOUT_MS", cfg.resume_timeout_ms);
+        return cfg;
+    }
+
     void io_loop() {
         // QL_USB=0: never touch USB (Unity tests load the real library with a headset plugged in)
         if (env_int("QL_USB", 1) == 0) {
@@ -265,37 +325,69 @@ private:
             while (!stopping_) std::this_thread::sleep_for(std::chrono::milliseconds(50));
             return;
         }
+        std::shared_ptr<ql_host> lost;  // lost USB while streaming: reopen it to resume the stream
+        int64_t lost_ns = 0, resumed_ns = 0;
         while (!stopping_) {
-            ql_config cfg;
-            ql_config_init(&cfg);
-            if (env_int("QL_LOG", 0)) cfg.log = stderr_log;
-            cfg.hands = env_int("QL_HANDS", 1);
-            cfg.haptics = env_int("QL_HAPTICS", 1);
-            cfg.codec = env_codec();
-            ql_host* raw = nullptr;
-            if (ql_host_open(&cfg, &raw) != QL_OK) {
+            std::shared_ptr<ql_host> h;
+            if (lost && ql_now_ns() - lost_ns > resume_window_ns_) {
+                // Gone this long, the headset restarted its Link stack (Link quit, replug): start over
+                stderr_log(nullptr, "info", "USB not back in time; starting a new session", -1);
+                lost.reset();
+                set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
+            }
+            if (lost) {
+                if (ql_host_reopen(lost.get(), nullptr) == QL_OK) {
+                    h = std::move(lost);
+                    resumed_ns = ql_now_ns();
+                }
+            } else {
+                ql_config cfg = host_config();
+                ql_host* raw = nullptr;
+                if (ql_host_open(&cfg, &raw) == QL_OK) {
+                    h.reset(raw, ql_host_close);
+                    seen_losses_ = 0;
+                } else {
+                    set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
+                }
+            }
+            if (!h) {
                 // Poll fast: the sooner we hold the interface after enumeration, the sooner the
                 // preluding BYE / HELLO exchange runs
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                std::this_thread::sleep_for(std::chrono::milliseconds(lost ? 10 : 50));
                 continue;
             }
-            std::shared_ptr<ql_host> h(raw, ql_host_close);
             {
                 std::lock_guard<std::mutex> l(mu_);
                 if (stopping_) return;
                 host_ = h;
-                ++host_generation_;
+                ++host_generation_;  // the next frame is an IDR
             }
+            ql_status st = QL_OK;
             while (!stopping_) {
-                ql_status st = ql_host_poll(h.get(), 50);
+                st = ql_host_poll(h.get(), 50);
+                track(h.get());
                 if (st == QL_ERR_TRANSPORT || st == QL_ERR_FAILED) break;
             }
             if (stopping_) return;  // shutdown() owns the host now
             {
-                // Unplugged, reset or handshake failed: start over with a fresh handshake
                 std::lock_guard<std::mutex> l(mu_);
                 host_.reset();
             }
+            // USB error mid-stream: try the same session once more (not again right after a
+            // resume, so a stream the headset keeps rejecting falls back to a new handshake).
+            // Otherwise (unplugged, handshake failed) start over with a fresh one.
+            ql_info info;
+            bool streaming = ql_host_get_info(h.get(), &info) == QL_OK && info.state == QL_STATE_STREAMING &&
+                             !info.resuming;
+            if (st == QL_ERR_TRANSPORT && streaming && resume_window_ns_ > 0 &&
+                (!resumed_ns || ql_now_ns() - resumed_ns > 5'000'000'000)) {
+                stderr_log(nullptr, "info", "USB lost while streaming; reopening to resume", -1);
+                lost = std::move(h);
+                lost_ns = ql_now_ns();
+                set_link(QL_LINK_RESUMING, QL_LOSS_USB);
+                continue;
+            }
+            set_link(QL_LINK_NO_DEVICE, QL_LOSS_USB);
             h.reset();
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
@@ -432,6 +524,13 @@ int ql_poll(ql_session* session) {
     auto h = rt.host();
     if (!h) return 0;
     return ql_host_get_state(h.get()) == QL_STATE_STREAMING ? 2 : 1;
+}
+
+int ql_get_link_status(ql_session* session, ql_link_status* out) {
+    auto& rt = Runtime::get();
+    if (!out || !rt.known(session)) return QL_ERR_ARGUMENT;
+    *out = rt.link();
+    return QL_OK;
 }
 
 int ql_get_device_info(ql_session* session, ql_device_info* out) {
