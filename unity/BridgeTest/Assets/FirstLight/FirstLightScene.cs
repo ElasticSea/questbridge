@@ -1,3 +1,4 @@
+using ElasticSea.QuestLink.XRHands;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -6,11 +7,13 @@ namespace ElasticSea.QuestLink.BridgeTest
     // First live scene for the headset: sky colour, a 1 m floor grid, cubes 1-3 m away and big
     // instructions, rendered through a QuestLinkRig on the real libquestlink backend. On the
     // first head pose the rig is recentred so the instructions are straight ahead and, if the
-    // Link origin is at eye level, the floor drops below the head.
+    // Link origin is at eye level, the floor drops below the head. Tracked hands show as joint
+    // spheres (QuestLinkHands + HandJointsVisualizer), also fed to Unity XR Hands; "-hands" shows
+    // the hand instructions instead of the audio test.
     public class FirstLightScene : MonoBehaviour
     {
         const string StaleHint = "Headset is still in an old Link session (poses arrive, no handshake): quit Link in the headset and press Launch again.";
-        const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nThen take the headset off.";
+        const string Instructions = "Look around:\nobjects should stay still, in 3D.\n\nHold up both hands, open and\nclose them and pinch:\nspheres follow your fingers.\n\nThen take the headset off.";
         const string AudioInstructions = "Look around:\nobjects should stay still, in 3D.\n\nAudio test below.\nThen take the headset off.";
 
         public QuestLinkRig.BackendMode backend = QuestLinkRig.BackendMode.Native;
@@ -21,6 +24,8 @@ namespace ElasticSea.QuestLink.BridgeTest
         public bool audioTest = true;
 
         QuestLinkRig rig;
+        QuestLinkHands hands;
+        QuestLinkXRHands xrHands;
         bool recentred;
         int submitted;
         QuestLinkState lastState = QuestLinkState.Idle;
@@ -41,6 +46,9 @@ namespace ElasticSea.QuestLink.BridgeTest
                 Debug.Log($"[QuestLink] quitting after {seconds} s");
                 Invoke(nameof(Quit), seconds);
             }
+            // "-hands": hand-tracking bench (hand instructions instead of the audio test)
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-hands") >= 0)
+                audioTest = false;
 
             var screen = new GameObject("Screen Camera").AddComponent<Camera>();
             screen.clearFlags = CameraClearFlags.SolidColor;
@@ -62,12 +70,15 @@ namespace ElasticSea.QuestLink.BridgeTest
             Cube(new Vector3(2.2f, 0.5f, -0.5f), 1.0f, new Color(0.8f, 0.4f, 0.85f));
             Cube(new Vector3(-2.0f, 0.35f, -1.0f), 0.7f, new Color(0.95f, 0.6f, 0.2f));
             Cube(new Vector3(0.3f, 0.2f, -2.0f), 0.4f, new Color(0.3f, 0.85f, 0.85f));
-            Text(audioTest ? AudioInstructions : Instructions, new Vector3(0f, 1.9f, 3.2f), 1.2f);
+            Text(audioTest ? AudioInstructions : Instructions, new Vector3(0f, 1.9f, 3.2f), audioTest ? 1.2f : 2.3f);
 
             var rigObject = new GameObject("QuestLink Rig");
             rigObject.SetActive(false);
             rig = rigObject.AddComponent<QuestLinkRig>();
             rig.backend = backend;
+            hands = rigObject.AddComponent<QuestLinkHands>();
+            rigObject.AddComponent<HandJointsVisualizer>();
+            xrHands = rigObject.AddComponent<QuestLinkXRHands>();
             rigObject.SetActive(true);
             if (rig.Backend != null)
                 Debug.Log($"[QuestLink] backend {rig.Backend.Name}, {SystemInfo.graphicsDeviceType}");
@@ -146,8 +157,14 @@ namespace ElasticSea.QuestLink.BridgeTest
             {
                 submitted = (int)rig.FrameIndex / 720;
                 Debug.Log($"[QuestLink] {rig.State}, frame {rig.FrameIndex}, head {rig.RenderPose.position}");
+                Debug.Log($"[QuestLink] hands data {hands.HasData}: {Describe(hands.Left)}; {Describe(hands.Right)}; " +
+                          $"XR Hands tracked L {xrHands.Subsystem?.leftHand.isTracked} R {xrHands.Subsystem?.rightHand.isTracked}");
             }
         }
+
+        static string Describe(QuestLinkHandState h) => h.tracked
+            ? $"{h.hand} tracked conf {h.confidence:F2} pinch {h.Pinch(QuestLinkFinger.Index):F2} wrist {h[QuestLinkHandJoint.Wrist].position} t {h.timeNs}"
+            : $"{h.hand} not tracked";
 
         static float SecondsArg()
         {
