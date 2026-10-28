@@ -8,7 +8,8 @@
 // Env (as handshake.py): XRSP_WAIT (600 s to wait for the device), XRSP_HELLO_WAIT (300 s),
 //   XRSP_REPLAY=<clip.json>, XRSP_POSE=fixed|live|template, XRSP_ATTACH=1 with
 //   XRSP_CONTROL_SEQ (16), XRSP_VIDEO_SEQ (0), XRSP_FRAME_START (clip's frame_index),
-//   XRSP_REFRESH (Hz; default = the headset's default rate).
+//   XRSP_REFRESH (Hz; default = the headset's default rate),
+//   QL_CODEC=h264|hevc|auto (CONFIG codec; default: the clip's, else auto).
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -106,7 +107,8 @@ public:
         ql_device_info dev{};
         ql_host_get_device_info(h_, &dev);
         const double hz = dev.stream_refresh_hz ? dev.stream_refresh_hz : 72;  // attach: no HELLO
-        log_line("info", "looping " + std::to_string(clip.frames.size()) + " frame(s) at " + std::to_string(int(hz)) + " Hz");
+        log_line("info", "looping " + std::to_string(clip.frames.size()) + " frame(s) at " + std::to_string(int(hz)) +
+                             " Hz, CONFIG codec " + std::to_string(dev.stream_codec) + (clip.hevc ? ", HEVC clip" : ", H.264 clip"));
         std::vector<std::vector<ql_slice>> prepared;
         for (const auto& f : clip.frames) {
             std::vector<ql_slice> s;
@@ -125,11 +127,11 @@ public:
         const auto period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / hz));
         auto next = Clock::now();
         const auto end = next + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(seconds));
-        size_t sent = 0;
+        size_t sent = 0, pos = 0;  // pos: clip frame, back to 0 (an IDR) for a new stream
         while (Clock::now() < end) {
-            const auto& slices = prepared[sent % prepared.size()];
+            const auto& slices = prepared[pos];
             ql_frame_info fi{};
-            fi.is_intra = 1;
+            fi.is_intra = clip.intra[pos];
             // Same lead as the runtime (QL_VSYNC_LEAD_MS): the session's 20 ms default makes the
             // headset drop frames as "~8.5 ms before deadline"
             ql_info now_info;
@@ -149,6 +151,7 @@ public:
                 if (!wait_streaming()) return lost_ ? Outcome::TransportLost : Outcome::Failed;
                 while (ql_host_get_info(h_, &info) == QL_OK && !info.has_clock_offset && !lost_) sleep_s(0.05);
                 next = Clock::now();
+                pos = 0;
                 continue;
             }
             if (st != QL_OK) {
@@ -156,6 +159,7 @@ public:
                 return Outcome::Failed;
             }
             ++sent;
+            pos = (pos + 1) % prepared.size();
             next += period;
             std::this_thread::sleep_until(next);
         }
@@ -203,6 +207,10 @@ int main(int argc, char** argv) {
     cfg.send_setup = replay.empty() ? 0 : 1;  // handshake.py sends the setup only when replaying
     cfg.hello_timeout_ms = int(env_num("XRSP_HELLO_WAIT", 300) * 1000);
     cfg.refresh_hz = uint32_t(env_num("XRSP_REFRESH", 0));
+    std::string codec = env("QL_CODEC", replay.empty() ? "auto" : clip.hevc ? "hevc" : "h264");
+    cfg.codec = codec == "hevc" || codec == "h265" || codec == "1" ? QL_CODEC_HEVC
+                : codec == "h264" || codec == "avc" || codec == "0" ? QL_CODEC_H264
+                                                                    : QL_CODEC_AUTO;
     cfg.link_request_timeout_ms = int(seconds * 1000);
     cfg.bye_retry_ms = int(env_num("XRSP_BYE_RETRY_MS", cfg.bye_retry_ms));  // < 0: never send BYE
     cfg.first_frame_index = uint64_t(env_num("XRSP_FRAME_START", 0));
