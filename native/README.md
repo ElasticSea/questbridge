@@ -20,7 +20,7 @@ cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build -j
 ctest --test-dir native/build --output-on-failure
 ```
-Output in `native/build/bin/` (`qlhost`, `libquestlink.dylib` linked to brew's libusb through `@rpath`). Over SSH, brew is not on the non-login `PATH`: run `eval "$(/opt/homebrew/bin/brew shellenv)"` first. Without libusb/pkg-config, CMake warns and builds `transport_none.cpp` (`ql_host_open` returns `QL_ERR_UNSUPPORTED`). `qlenc` needs the VideoToolbox backend (`native/encoders/vt/`); until that lands, build only `--target qlhost questlink_tests questlink_capi_tests questlink_runtime_tests`.
+Output in `native/build/bin/` (`qlhost`, `libquestlink.dylib` linked to brew's libusb through `@rpath`). Over SSH, brew is not on the non-login `PATH`: run `eval "$(/opt/homebrew/bin/brew shellenv)"` first. Without libusb/pkg-config, CMake warns and builds `transport_none.cpp` (`ql_host_open` returns `QL_ERR_UNSUPPORTED`).
 
 USB on macOS (`src/transport_libusb.cpp`): picks a VID `0x2833` device from `kQuestPids` whose interface 0 is class `ff`/`8a` with bulk `0x01`/`0x81` (Meta's own filter is `2833,ff,8A`), claims only that interface (adb keeps the ADB interface), one process-wide libusb context. No root and no kernel-driver detach needed (vendor-class interfaces). Unplug = read/write error → the runtime/`qlhost` reopens by polling `open_usb`; why an open failed is logged once per change on the `usb` log line (`QL_LOG=1`).
 
