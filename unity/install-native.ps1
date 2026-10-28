@@ -1,5 +1,6 @@
 # Build questlink.dll (Release) and install it as the Unity package's Windows x64 native plugin:
-# com.elasticsea.questlink/Runtime/Plugins/Windows/x86_64/questlink.dll (git-ignored).
+# com.elasticsea.questlink/Runtime/Plugins/Windows/x86_64/questlink.dll (committed, so UPM git installs
+# get it: commit the new binary after a native change that the package needs).
 # Close every Unity Editor that loaded the plugin first: Windows keeps a loaded DLL locked.
 # Usage: unity\install-native.ps1 [-NoBuild]
 param([switch]$NoBuild)

@@ -364,6 +364,42 @@ QL_API ql_status ql_host_get_controller(ql_host* host, int hand, ql_controller* 
 /* Host API: as ql_haptic. */
 QL_API ql_status ql_host_haptic(ql_host* host, int hand, float amplitude, float duration_s);
 
+/* ======================= Setup check ===================================================== */
+/* First-run diagnostic behind Unity's QuestLink > Check Setup and `qlhost --check`. Checks, in
+ * order (id): "os", "link_app" (Windows: Meta Horizon Link's USB driver), "quest_usb",
+ * "xrsp_interface", "ovr_service" (Windows), "xrsp_claim" (opened and released again unless
+ * QL_CHECK_NO_CLAIM or QL_USB=0; never prompts), "gpu_encoder" (opens a hardware H.264 encoder once).
+ * Text is ASCII; fix is empty when nothing needs doing.
+ *
+ * OVRService (Windows) holds the Quest's Link interface while it runs. When opening the Quest
+ * fails because of it, the library starts one elevated helper (one UAC prompt per process)
+ * that stops OVRService and starts it again when the process exits. QL_OVR_STOP=0 in the
+ * environment turns that off. */
+
+typedef enum ql_check_status {
+    QL_CHECK_OK = 0,
+    QL_CHECK_WARN = 1, /* works, but read the fix */
+    QL_CHECK_FAIL = 2,
+    QL_CHECK_SKIP = 3  /* not applicable here, or needs an earlier check to pass */
+} ql_check_status;
+
+#define QL_CHECK_NO_CLAIM 1u /* ql_check_setup flags: don't open the Link interface */
+#define QL_MAX_CHECKS 16
+
+typedef struct ql_check {
+    int32_t status; /* ql_check_status */
+    char id[32];
+    char title[64];
+    char detail[256]; /* what was found */
+    char fix[512];    /* what to do */
+} ql_check;
+
+/* Runs every check (up to ~1 s, mostly the encoder). Writes min(cap, n) checks and returns n. */
+QL_API int ql_check_setup(uint32_t flags, ql_check* out, int cap);
+/* Windows: stop OVRService now through the helper (one UAC prompt; it starts again when this
+ * process exits). 1 = prompt shown, 0 = OVRService isn't running, QL_ERR_UNSUPPORTED elsewhere. */
+QL_API int ql_stop_ovr_service(void);
+
 #ifdef __cplusplus
 }
 #endif

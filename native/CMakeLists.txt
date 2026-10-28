@@ -35,13 +35,16 @@ add_library(questlink_core STATIC
   src/controllers.cpp
   src/session.cpp
   src/templates_data.cpp
+  src/ovr_service.cpp
+  src/setup_check.cpp
 )
 target_include_directories(questlink_core PUBLIC include src)
 
 # USB backend: WinUSB on Windows (adb keeps its interface), libusb-1.0 elsewhere
 if(WIN32)
-  set(QL_USB_SOURCES src/transport_winusb.cpp)
-  set(QL_USB_LIBS winusb setupapi)
+  # OVRService helper: SCM query + an elevated PowerShell started through ShellExecuteEx
+  set(QL_USB_SOURCES src/transport_winusb.cpp src/ovr_service_win.cpp)
+  set(QL_USB_LIBS winusb setupapi advapi32 shell32 ole32)
 else()
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
@@ -88,7 +91,8 @@ target_compile_definitions(questlink_api PUBLIC QL_BUILD_SHARED)
 target_link_libraries(questlink_api PUBLIC questlink_core)
 
 # The C API: questlink.dll / libquestlink.dylib
-add_library(questlink SHARED $<TARGET_OBJECTS:questlink_api> ${QL_USB_SOURCES} ${QL_TEXTURE_SOURCES})
+add_library(questlink SHARED $<TARGET_OBJECTS:questlink_api> ${QL_USB_SOURCES} ${QL_TEXTURE_SOURCES}
+  src/setup_probe.cpp)
 target_compile_definitions(questlink PRIVATE QL_BUILD_SHARED)
 target_include_directories(questlink PUBLIC include)
 target_link_libraries(questlink PRIVATE questlink_core ${QL_USB_LIBS} ${QL_TEXTURE_LIBS})

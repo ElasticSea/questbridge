@@ -29,4 +29,16 @@ enum class OpenError { None, NotFound, Busy, Unsupported };
 // interface), libusb elsewhere.
 std::unique_ptr<Transport> open_usb(OpenError& err, std::string& detail);
 
+// What's on the bus, without opening anything (setup check)
+struct UsbScan {
+    bool quest = false;  // a device with the Quest's vendor ID
+    uint16_t pid = 0;
+    bool xrsp = false;   // its XRSP interface is visible (Windows: Meta's driver is bound to it)
+};
+UsbScan scan_usb();
+// Open the XRSP interface and release it again (no OVRService prompt): None if it's free
+OpenError try_claim(std::string& detail);
+// XRSP transports this process holds open right now
+int open_transport_count();
+
 }  // namespace ql

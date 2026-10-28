@@ -12,7 +12,11 @@ add_executable(questlink_tests
   test_audio.cpp
   test_hands.cpp
   test_controllers.cpp
+  test_setup.cpp
 )
+if(WIN32)
+  target_sources(questlink_tests PRIVATE test_ovr_win.cpp)
+endif()
 target_link_libraries(questlink_tests PRIVATE questlink_core)
 target_compile_definitions(questlink_tests PRIVATE QL_REPO_ROOT="${QL_REPO_ROOT}")
 add_test(NAME questlink_tests COMMAND questlink_tests)
