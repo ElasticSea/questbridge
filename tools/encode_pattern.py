@@ -35,15 +35,36 @@ MB_COLS, MB_TOTAL = WIDTH // 16, WIDTH // 16 * HEIGHT // 16
 TEMPLATE = os.path.join(ROOT, "host", "replay", "meta-idr.json")
 
 
+FONT = "/Windows/Fonts/arialbd.ttf"  # drive-less: a "C:" would need filtergraph escaping
+
+
 def source(src):
-    """lavfi source: "testsrc2" (moving, differs per eye) or "grid:<colour>" (static, same image in both eyes)."""
+    """lavfi source, same image in both eyes except testsrc2:
+      testsrc2                        moving pattern, differs per eye
+      grid:<colour>                   static grid with a centre cross
+      look:<colour>:<secs>:<l1>|<l2>  grid plus instruction lines and a countdown
+      text:<colour>:<secs>:<l1>|<l2>  instruction lines only
+    Text sits inside slice bands 1 (448-896 px) and 3 (1344-1792 px), never on a slice edge.
+    Lines must not contain ':' ',' or quotes."""
     if src == "testsrc2":
         return f"testsrc2=size={WIDTH}x{HEIGHT}:rate=72,format=yuv420p"
-    eye, c = WIDTH // 2, src.split(":")[1]
-    return (f"color=c={c}:s={eye}x{HEIGHT}:r=72,drawgrid=w=128:h=128:t=6:c=white,"
-            f"drawbox=x={eye // 2 - 20}:y={HEIGHT // 2 - 160}:w=40:h=320:c=black:t=fill,"
-            f"drawbox=x={eye // 2 - 160}:y={HEIGHT // 2 - 20}:w=320:h=40:c=black:t=fill,"
-            "split[l][r];[l][r]hstack,format=yuv420p")
+    kind, c, *rest = src.split(":", 3)
+    eye = WIDTH // 2
+    # look/text clips change once a second: 1 frame/s, stream with XRSP_HOLD=72
+    vf = f"color=c={c}:s={eye}x{HEIGHT}:r={1 if kind in ('look', 'text') else 72}"
+    if kind in ("grid", "look"):
+        vf += (f",drawgrid=w=128:h=128:t=6:c=white,"
+               f"drawbox=x={eye // 2 - 20}:y={HEIGHT // 2 - 160}:w=40:h=320:c=black:t=fill,"
+               f"drawbox=x={eye // 2 - 160}:y={HEIGHT // 2 - 20}:w=320:h=40:c=black:t=fill")
+    if kind in ("look", "text"):
+        secs, lines = int(rest[0]), rest[1].split("|")
+        box = "box=1:boxcolor=black:boxborderw=14"
+        for i, line in enumerate(lines[:4]):
+            vf += (f",drawtext=fontfile={FONT}:text='{line}':fontsize=64:fontcolor=white:{box}"
+                   f":x=(w-text_w)/2:y={470 + 105 * i}")
+        vf += (rf",drawtext=fontfile={FONT}:text='%{{eif\:max(0\,{secs}-t)\:d}}':fontsize=150"
+               f":fontcolor=yellow:{box}:x=(w-text_w)/2:y=1480")
+    return vf + ",split[l][r];[l][r]hstack,format=yuv420p"
 
 
 def encode(frames, crf, out, slice_params, height=HEIGHT, crop_y=None, src="testsrc2", gop=1):
