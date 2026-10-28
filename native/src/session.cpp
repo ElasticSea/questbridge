@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "templates.hpp"
@@ -228,6 +229,8 @@ Session::Submit Session::haptic(int hand, float amplitude, uint64_t duration_ns)
     if (!haptics_connected_) connect_haptics();
     send_stream(ripc::haptic(ripc::kHapticsClient, ripc_.next_seq++, uint8_t(hand ? 2 : 1), duration_ns,
                              std::clamp(amplitude, 0.0f, 1.0f)));
+    log("PC->Q", std::string("haptic ") + (hand ? "right " : "left ") + std::to_string(amplitude) + " " +
+                     std::to_string(duration_ns / 1'000'000) + " ms");
     return Submit::Ok;
 }
 
@@ -267,6 +270,18 @@ void Session::on_message(std::span<const uint8_t> raw) {
     }
     if (t == topic::kDeviceInput) {
         if (auto d = parse_device_input(body)) {
+            // Log which controllers the headset lists whenever that changes (bench diagnosis)
+            auto key = [](const DeviceInput& x) {
+                return std::make_tuple(x.flags, x.controller_mask, x.controllers[0].present, x.controllers[1].present);
+            };
+            if (!device_input_ || key(*device_input_) != key(*d)) {
+                char line[160];
+                std::snprintf(line, sizeof line, "controllers: flags 0x%x mask %u, left %s (battery %u), right %s (battery %u)",
+                              d->flags, d->controller_mask, d->controllers[0].present ? "on" : "off",
+                              d->controllers[0].battery, d->controllers[1].present ? "on" : "off",
+                              d->controllers[1].battery);
+                log("info", line);
+            }
             device_input_ = *d;
             ++controller_count_;
         }
