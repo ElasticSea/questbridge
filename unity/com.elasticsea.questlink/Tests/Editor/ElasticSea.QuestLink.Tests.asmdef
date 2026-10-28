@@ -3,6 +3,7 @@
     "rootNamespace": "ElasticSea.QuestLink.Tests",
     "references": [
         "ElasticSea.QuestLink",
+        "ElasticSea.QuestLink.Editor",
         "Unity.InputSystem",
         "Unity.InputSystem.TestFramework",
         "UnityEngine.TestRunner",

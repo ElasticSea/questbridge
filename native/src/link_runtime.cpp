@@ -259,6 +259,12 @@ private:
     }
 
     void io_loop() {
+        // QL_USB=0: never touch USB (Unity tests load the real library with a headset plugged in)
+        if (env_int("QL_USB", 1) == 0) {
+            stderr_log(nullptr, "info", "QL_USB=0: not opening USB", -1);
+            while (!stopping_) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            return;
+        }
         while (!stopping_) {
             ql_config cfg;
             ql_config_init(&cfg);

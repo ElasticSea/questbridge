@@ -12,6 +12,7 @@ namespace ElasticSea.QuestLink
     public class QuestLinkRig : MonoBehaviour
     {
         public enum BackendMode { Auto, Native, Mock }
+        public enum MirrorMode { None, LeftEye, BothEyes }
 
         [Tooltip("Auto: libquestlink if it loads, else the mock backend.")]
         public BackendMode backend = BackendMode.Auto;
@@ -20,8 +21,12 @@ namespace ElasticSea.QuestLink
         [Tooltip("Optional camera whose settings (clear flags, background, culling mask, ...) the eye cameras copy.")]
         public Camera cameraTemplate;
         [Range(1, 8)] public int antiAliasing = 1;
-        [Tooltip("Draw the stereo texture into the Game view.")]
-        public bool mirrorToScreen = true;
+        [Tooltip("What the Game view shows while playing: the left eye, both eyes side by side, or nothing.")]
+        public MirrorMode mirror = MirrorMode.LeftEye;
+        [Tooltip("While playing: eyes copy the Main Camera's settings (when no template is set) and the Main Camera (and its AudioListener, if the rig has one) is turned off.")]
+        public bool takeOverMainCamera = true;
+        [Tooltip("While playing: keep running when the Editor or player window loses focus, and render at the headset's refresh rate with vSync off.")]
+        public bool headsetFramePacing = true;
 
         public IQuestLinkBackend Backend { get; private set; }
         public QuestLinkState State { get; private set; }
@@ -37,9 +42,22 @@ namespace ElasticSea.QuestLink
 
         bool latched, leftRendered, rightRendered;
         bool hasDeviceInfo;
+        Camera mirrorCamera, hiddenMainCamera;
+        AudioListener hiddenListener;
+        bool paced, savedRunInBackground;
+        int savedVSync, savedFrameRate;
+        float stateSince;
+        bool hintLogged;
 
         void OnEnable()
         {
+            // Two streams to one headset: the XR Plug-in Management loader already drives Camera.main
+            if (QuestLinkXRDriver.Active != null)
+            {
+                Debug.LogWarning("[QuestLink] The Quest Link XR loader is already streaming; turn it off in XR Plug-in Management or remove this rig.", this);
+                enabled = false;
+                return;
+            }
             var b = CreateBackend(backend);
             if (b == null)
             {
@@ -68,8 +86,18 @@ namespace ElasticSea.QuestLink
         {
             Shutdown();
             Backend = b;
+            State = QuestLinkState.Idle;
+            stateSince = Time.realtimeSinceStartup;
+            hintLogged = false;
+            var main = Application.isPlaying && takeOverMainCamera ? MainCameraToTakeOver() : null;
+            if (main != null && cameraTemplate == null)
+                cameraTemplate = main;
             hasDeviceInfo = b.TryGetDeviceInfo(out var info);
             ConfigureEyes(hasDeviceInfo ? info : QuestLinkDeviceInfo.Quest3Default);
+            if (main != null)
+                HideMainCamera(main);
+            if (Application.isPlaying && mirror != MirrorMode.None)
+                CreateMirrorCamera();
 
             QuestLinkInput.AddDevices();
             QuestLinkInput.hapticHandler = b.SendHaptic;
@@ -95,6 +123,93 @@ namespace ElasticSea.QuestLink
             Backend.Dispose();
             Backend = null;
             ReleaseTexture();
+            // Without their texture the eyes would render to the display
+            foreach (var cam in new[] { LeftEye, RightEye })
+                if (cam != null)
+                    cam.enabled = false;
+            RestorePacing();
+            RestoreMainCamera();
+            if (mirrorCamera != null)
+                Destroy(mirrorCamera.gameObject);
+            mirrorCamera = null;
+        }
+
+        // The scene's own camera, unless it is part of this rig.
+        Camera MainCameraToTakeOver()
+        {
+            var main = Camera.main;
+            return main != null && !main.transform.IsChildOf(transform) ? main : null;
+        }
+
+        // Stops the Main Camera from rendering the scene a third time; its AudioListener goes too
+        // when the rig brings its own (two listeners make Unity warn every frame).
+        void HideMainCamera(Camera main)
+        {
+            main.enabled = false;
+            hiddenMainCamera = main;
+            // Scripts that use Camera.main (raycasts, billboards) get the left eye instead
+            LeftEye.tag = "MainCamera";
+            var listener = main.GetComponent<AudioListener>();
+            var own = GetComponentInChildren<AudioListener>();
+            if (listener != null && listener.enabled && own != null && own != listener)
+            {
+                listener.enabled = false;
+                hiddenListener = listener;
+            }
+        }
+
+        void RestoreMainCamera()
+        {
+            if (hiddenMainCamera != null)
+            {
+                hiddenMainCamera.enabled = true;
+                if (LeftEye != null)
+                    LeftEye.tag = "Untagged";
+            }
+            if (hiddenListener != null)
+                hiddenListener.enabled = true;
+            hiddenMainCamera = null;
+            hiddenListener = null;
+        }
+
+        // Clears the Game view under the OnGUI mirror (no other camera may render to the display).
+        void CreateMirrorCamera()
+        {
+            mirrorCamera = new GameObject("QuestLink Mirror") { hideFlags = HideFlags.DontSave }.AddComponent<Camera>();
+            mirrorCamera.transform.SetParent(transform, false);
+            mirrorCamera.clearFlags = CameraClearFlags.SolidColor;
+            mirrorCamera.backgroundColor = Color.black;
+            mirrorCamera.cullingMask = 0;
+            mirrorCamera.depth = -100;
+            mirrorCamera.stereoTargetEye = StereoTargetEyeMask.None;
+        }
+
+        // Without this the Editor renders as fast as it can (Game view vSync is off by default),
+        // burning GPU on frames the encoder drops, and an unfocused Editor stops playing.
+        void ApplyPacing()
+        {
+            if (!headsetFramePacing || !Application.isPlaying)
+                return;
+            if (!paced)
+            {
+                paced = true;
+                savedRunInBackground = Application.runInBackground;
+                savedVSync = QualitySettings.vSyncCount;
+                savedFrameRate = Application.targetFrameRate;
+            }
+            Application.runInBackground = true;
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = Mathf.Max(1, Mathf.RoundToInt(DeviceInfo.refreshHz));
+        }
+
+        void RestorePacing()
+        {
+            if (!paced)
+                return;
+            paced = false;
+            Application.runInBackground = savedRunInBackground;
+            QualitySettings.vSyncCount = savedVSync;
+            Application.targetFrameRate = savedFrameRate;
         }
 
         void ConfigureEyes(QuestLinkDeviceInfo info)
@@ -110,6 +225,7 @@ namespace ElasticSea.QuestLink
             Head = Child(transform, "Head");
             LeftEye = EyeCamera(QuestLinkEye.Left);
             RightEye = EyeCamera(QuestLinkEye.Right);
+            ApplyPacing();
         }
 
         Camera EyeCamera(QuestLinkEye eye)
@@ -119,6 +235,8 @@ namespace ElasticSea.QuestLink
             if (cam == null)
                 cam = t.gameObject.AddComponent<Camera>();
             QuestLinkEyes.Configure(cam, eye, DeviceInfo, EyeTexture, nearClip, farClip, cameraTemplate);
+            // Shutdown disables the eyes
+            cam.enabled = true;
             return cam;
         }
 
@@ -136,7 +254,21 @@ namespace ElasticSea.QuestLink
         {
             if (Backend == null)
                 return;
-            State = Backend.Poll();
+            var state = Backend.Poll();
+            if (state != State)
+            {
+                Debug.Log($"[QuestLink] {state} ({Backend.Name})", this);
+                State = state;
+                stateSince = Time.realtimeSinceStartup;
+                hintLogged = false;
+            }
+            else if (state != QuestLinkState.Streaming && !hintLogged && Time.realtimeSinceStartup - stateSince > 15f)
+            {
+                hintLogged = true;
+                Debug.Log(state == QuestLinkState.Idle
+                    ? "[QuestLink] No Quest on USB yet: plug it in and quit Meta Horizon Link on the PC (its service holds the headset's Link interface)."
+                    : "[QuestLink] Quest found, waiting for Link: in the headset open Quick Settings > Link and press Launch.", this);
+            }
             if (!hasDeviceInfo && Backend.TryGetDeviceInfo(out var info))
             {
                 hasDeviceInfo = true;
@@ -203,12 +335,14 @@ namespace ElasticSea.QuestLink
 
         void OnGUI()
         {
-            if (!mirrorToScreen || EyeTexture == null || Event.current.type != EventType.Repaint)
+            if (mirror == MirrorMode.None || EyeTexture == null || Event.current.type != EventType.Repaint)
                 return;
-            var aspect = (float)EyeTexture.width / EyeTexture.height;
+            var both = mirror == MirrorMode.BothEyes;
+            var aspect = (both ? 1f : 0.5f) * EyeTexture.width / EyeTexture.height;
             var w = Mathf.Min(Screen.width, Screen.height * aspect);
             var h = w / aspect;
-            GUI.DrawTexture(new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h), EyeTexture, ScaleMode.ScaleToFit, false);
+            var rect = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+            GUI.DrawTextureWithTexCoords(rect, EyeTexture, both ? new Rect(0f, 0f, 1f, 1f) : QuestLinkMath.EyeViewport(QuestLinkEye.Left), false);
         }
 
         void ReleaseTexture()
