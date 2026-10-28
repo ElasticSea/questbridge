@@ -8,3 +8,6 @@ __pycache__/
 
 # Local run logs
 capture/runs/
+
+# Native build output
+native/build/
