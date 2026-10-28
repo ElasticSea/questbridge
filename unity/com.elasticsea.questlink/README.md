@@ -9,6 +9,16 @@ Unity 6000.3, Input System 1.19. Works in Editor Play mode. Without the native l
 
 The Windows backend needs Direct3D11 (the encoder copies the `ID3D11Texture2D`); with another graphics API the rig warns and falls back to the mock. Set `QL_LOG_FILE=<path>` (and `QL_LOG=1` for every protocol message) before starting the Editor to get the native log, because the Editor drops plugin stderr. OVRService must be stopped (`host\ovr_service.ps1 stop`), or the XRSP interface is busy and the rig stays in Connecting.
 
+Testers: [QUICKSTART.md](QUICKSTART.md) (git URL, prefab, Play).
+
+## Editor Play mode
+- **Drop-in prefab.** `Runtime/Prefabs/QuestLink Rig.prefab` (GameObject → XR → QuestLink Rig): rig + `QuestLinkHands` + `HandJointsVisualizer`, `Head` with the AudioListener and `QuestLinkAudio`, and `Left/Right Controller` on stock TrackedPoseDrivers with a block shown only while tracked (`QuestLinkTrackedVisual`). No cameras in the prefab: the eyes are created at Play, so nothing renders in Edit mode. Regenerate with `BridgeTest/Assets/Editor/BuildRigPrefab.cs`.
+- **One native runtime per Editor process.** The Editor never unloads `questlink.dll`; its runtime (USB, handshake, encoder) starts at the first Play and keeps the headset session across Stop/Play and domain reloads. Each Play opens one `ql_session` and closes it on Stop (or on a script reload while playing), so nothing native leaks between Play sessions. `ql_shutdown` is only for handing the headset to another host.
+- **While playing** (`headsetFramePacing`): `Application.runInBackground = true`, vSync off and `targetFrameRate` = the headset's refresh rate, so the Editor keeps streaming at 72 Hz when unfocused or minimized and doesn't render frames the encoder drops; all restored on Stop.
+- **Main Camera** (`takeOverMainCamera`): eyes copy its settings when `cameraTemplate` is empty, it is disabled (with its AudioListener when the rig has its own) and the left eye is tagged `MainCamera`; restored on Stop.
+- **Game view** (`mirror`): left eye (default), both eyes, or nothing; a culling-mask-0 camera clears the display under it.
+- **No headset:** `ql_open` and the per-frame calls never block; USB is polled on the runtime's own thread. The rig logs its state changes and, after 15 s without streaming, a hint (OVRService / press Launch). The rig inspector shows the state and setup problems with fixes (Direct3D 11, missing `questlink.dll`, Meta's service running, Input System off).
+
 ## Use
 1. Add the package (Package Manager → Add package from disk → `package.json`, or `"com.elasticsea.questlink": "file:<path>"` in `manifest.json`).
 2. Put `QuestLinkRig` on an empty GameObject at the tracking origin (floor level). It creates `Head/LeftEye` and `Head/RightEye` cameras. Use `cameraTemplate` to copy clear flags, culling mask and similar settings onto both eyes.
@@ -76,7 +86,7 @@ Notes for the native side:
 powershell -ExecutionPolicy Bypass -File tools\unity_hidden.ps1 -ArgLine "-batchmode -nographics -projectPath unity/BridgeTest -runTests -testPlatform EditMode -testFilter ElasticSea.QuestLink.Tests -testResults results.xml"
 ```
 
-Unity (Editor or player) is only ever started through `tools\unity_hidden.ps1` (hidden desktop, so it can't take focus); `tools\test_all.ps1` does this for every suite. Use `-testPlatform PlayMode` for the smoke test. The tests use the mock backend, so they never open the headset.
+Unity (Editor or player) is only ever started through `tools\unity_hidden.ps1` (hidden desktop, so it can't take focus); `tools\test_all.ps1` does this for every suite. Use `-testPlatform PlayMode` for the smoke test. Unity runs get `QL_USB=0`, so a loaded `questlink.dll` never opens the headset; `EditorPlayTests` then plays, stops and plays a native rig twice (with and without domain reload) on Direct3D 11, and `test_all` repeats the PlayMode suite in a real, minimized Editor (`SubmitsAtHeadsetRateWhileMinimized`). Live Editor check with the headset: `unity\run-editorplay.ps1` (two Play rounds with a Stop between, questions on the headset board; `-Mock` for a dry run).
 
 ## First live scene
 `unity/BridgeTest` scene `Assets/FirstLight/FirstLight.unity` (`FirstLightScene`): sky colour, 1 m floor grid, cubes 1–3 m away and instructions, on the native backend. The first head pose recentres the rig (instructions straight ahead; floor 1.6 m below the head if the Link origin is at eye level). The Console logs the backend, the first head pose and every 720 frames the state and frame count.
