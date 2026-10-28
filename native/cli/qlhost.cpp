@@ -133,6 +133,14 @@ public:
             }
             ql_status st = ql_host_submit_frame_slices(h_, slices.data(), uint32_t(slices.size()), &fi);
             if (st == QL_ERR_TRANSPORT) return Outcome::TransportLost;
+            if (st == QL_ERR_NOT_STREAMING) {
+                // Link quit and relaunched, or the headset sent BYE: the session re-handshakes
+                log_line("info", "session restarted after " + std::to_string(sent) + " frames; waiting");
+                if (!wait_streaming()) return lost_ ? Outcome::TransportLost : Outcome::Failed;
+                while (ql_host_get_info(h_, &info) == QL_OK && !info.has_clock_offset && !lost_) sleep_s(0.05);
+                next = Clock::now();
+                continue;
+            }
             if (st != QL_OK) {
                 log_line("info", "submit failed: " + std::to_string(st) + " " + ql_host_get_error(h_));
                 return Outcome::Failed;
@@ -184,6 +192,7 @@ int main(int argc, char** argv) {
     cfg.send_setup = replay.empty() ? 0 : 1;  // handshake.py sends the setup only when replaying
     cfg.hello_timeout_ms = int(env_num("XRSP_HELLO_WAIT", 300) * 1000);
     cfg.link_request_timeout_ms = int(seconds * 1000);
+    cfg.bye_retry_ms = int(env_num("XRSP_BYE_RETRY_MS", cfg.bye_retry_ms));  // < 0: never send BYE
     cfg.first_frame_index = uint64_t(env_num("XRSP_FRAME_START", 0));
     if (!cfg.first_frame_index) cfg.first_frame_index = clip.frame_index;
     if (attach) {
@@ -192,8 +201,8 @@ int main(int argc, char** argv) {
         cfg.attach_video_seq = uint16_t(env_num("XRSP_VIDEO_SEQ", 0));
     }
 
-    // The Quest sends HELLO once, ~1.5 s after it enumerates, and drops it if no host is
-    // reading. Like Meta's hotplug watcher, wait for the interface and open it at once.
+    // The Quest sends HELLO once per pairing attempt and drops it if no host is reading; the
+    // session's preluding BYE asks for a new one. Open the interface as soon as it appears.
     double wait = env_num("XRSP_WAIT", 600);
     log_line("info", "waiting up to " + std::to_string(int(wait)) + "s for the Quest to be plugged in");
     const auto deadline = Clock::now() + std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(wait));

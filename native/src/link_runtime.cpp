@@ -249,7 +249,9 @@ private:
             cfg.hands = env_int("QL_HANDS", 1);
             ql_host* raw = nullptr;
             if (ql_host_open(&cfg, &raw) != QL_OK) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                // Poll fast: the sooner we hold the interface after enumeration, the sooner the
+                // preluding BYE / HELLO exchange runs
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
             }
             std::shared_ptr<ql_host> h(raw, ql_host_close);
@@ -270,7 +272,7 @@ private:
                 host_.reset();
             }
             h.reset();
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }
 
@@ -293,6 +295,10 @@ private:
                 enc->release(job.slot);
                 continue;
             }
+            // A new streaming session (Link relaunched, same USB link) also needs an IDR
+            ql_info info;
+            bool have_info = ql_host_get_info(h.get(), &info) == QL_OK;
+            if (have_info) gen = (gen << 32) | info.streams;
             EncodedSlices out;
             if (!enc->encode(job.slot, gen != idr_generation, out)) {
                 stderr_log(nullptr, "info", ("encode failed: " + enc->error()).c_str(), -1);
@@ -310,8 +316,7 @@ private:
             fi.rectify_mesh_id = kRectifyMeshId;
             // Target vsync = now + lead in the Quest clock. 20 ms (qlhost's default) made the
             // headset log "Frame arrived ~7.6 ms before deadline, frame drop", so aim ~4 ms closer
-            ql_info info;
-            if (ql_host_get_info(h.get(), &info) == QL_OK && info.has_clock_offset)
+            if (have_info && info.has_clock_offset)
                 fi.target_vsync_quest_ns = ql_now_ns() + info.quest_clock_offset_ns + vsync_lead_ns_;
             ql_device_info dev;
             if (ql_host_get_device_info(h.get(), &dev) == QL_OK) {
