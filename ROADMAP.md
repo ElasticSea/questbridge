@@ -18,6 +18,7 @@
 - [x] M2: video into the headset: own x264 test pattern at 72 fps, 0 glitches
 - [x] M2a: encoder gate (bench): headset accepts a VideoToolbox-compatible stream: 5 independent 4096×448 streams (one decoder per strip) at 72 fps incl. P frames; each slice message ≤ ~128 KiB; <5 slices not shown with CONFIG slices=5 (2026-10-28)
 - [x] M2b: timewarp check: constant renderPose stays world-locked, needs rectifyMeshId=1001 + per-eye FOV in EncodedSlice (2026-10-28)
+- [ ] backlog: Windows HW encoder P frames (deblocking off, bench pass 2026-10-28): confirmation run with logcat streamed during the run (72 fps, Glitches 0); qlenc per-eye test content (counter/bar in both eyes) to judge slice-edge smearing
 - [ ] M2c: sensor gate (bench): hands + controller input + haptics found on the wire via Meta-Link captures with the Unity sensor-probe app; feature bits identified
        → if M2a or M2c fails: decide on the own-APK path before M3
 - [ ] M3: Mac encoder bench: VideoToolbox 4096×2240 (or chosen size) in real time, slice layout from M2a
