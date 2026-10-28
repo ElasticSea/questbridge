@@ -102,6 +102,31 @@ namespace ElasticSea.QuestLink.Tests
             }
         }
 
+        // The XR loader path (no rig) paces the same way
+        [UnityTest]
+        public IEnumerator XRDriverPacesAndRestores()
+        {
+            var rate = Application.targetFrameRate;
+            var background = Application.runInBackground;
+            try
+            {
+                Application.targetFrameRate = -1;
+                Application.runInBackground = false;
+                var driver = QuestLinkXRDriver.Create(new MockQuestLink());
+                Assert.AreEqual(Mathf.RoundToInt(driver.DeviceInfo.refreshHz), Application.targetFrameRate);
+                Assert.IsTrue(Application.runInBackground);
+                Object.Destroy(driver.gameObject);
+                yield return null;
+                Assert.AreEqual(-1, Application.targetFrameRate);
+                Assert.IsFalse(Application.runInBackground);
+            }
+            finally
+            {
+                Application.targetFrameRate = rate;
+                Application.runInBackground = background;
+            }
+        }
+
         [UnityTest]
         public IEnumerator MirrorCameraOnlyWhileRunning()
         {

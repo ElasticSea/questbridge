@@ -44,8 +44,7 @@ namespace ElasticSea.QuestLink
         bool hasDeviceInfo;
         Camera mirrorCamera, hiddenMainCamera;
         AudioListener hiddenListener;
-        bool paced, savedRunInBackground;
-        int savedVSync, savedFrameRate;
+        readonly QuestLinkPacing pacing = new QuestLinkPacing();
         float stateSince;
         bool hintLogged;
 
@@ -184,33 +183,13 @@ namespace ElasticSea.QuestLink
             mirrorCamera.stereoTargetEye = StereoTargetEyeMask.None;
         }
 
-        // Without this the Editor renders as fast as it can (Game view vSync is off by default),
-        // burning GPU on frames the encoder drops, and an unfocused Editor stops playing.
         void ApplyPacing()
         {
-            if (!headsetFramePacing || !Application.isPlaying)
-                return;
-            if (!paced)
-            {
-                paced = true;
-                savedRunInBackground = Application.runInBackground;
-                savedVSync = QualitySettings.vSyncCount;
-                savedFrameRate = Application.targetFrameRate;
-            }
-            Application.runInBackground = true;
-            QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = Mathf.Max(1, Mathf.RoundToInt(DeviceInfo.refreshHz));
+            if (headsetFramePacing)
+                pacing.Apply(DeviceInfo.refreshHz);
         }
 
-        void RestorePacing()
-        {
-            if (!paced)
-                return;
-            paced = false;
-            Application.runInBackground = savedRunInBackground;
-            QualitySettings.vSyncCount = savedVSync;
-            Application.targetFrameRate = savedFrameRate;
-        }
+        void RestorePacing() => pacing.Restore();
 
         void ConfigureEyes(QuestLinkDeviceInfo info)
         {
