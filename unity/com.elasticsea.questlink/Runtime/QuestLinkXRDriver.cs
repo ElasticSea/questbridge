@@ -42,6 +42,7 @@ namespace ElasticSea.QuestLink
         public Transform TrackingSpace => TargetCamera != null ? TargetCamera.transform.parent : null;
 
         bool latched, leftRendered, rightRendered, hasDeviceInfo;
+        readonly QuestLinkPacing pacing = new QuestLinkPacing();
         int latchedFrame = -1;
 
         // Hidden, scene-independent driver over b (owned: disposed on destroy).
@@ -61,6 +62,7 @@ namespace ElasticSea.QuestLink
             Backend = b;
             hasDeviceInfo = b.TryGetDeviceInfo(out var info);
             DeviceInfo = hasDeviceInfo ? info : QuestLinkDeviceInfo.Quest3Default;
+            pacing.Apply(DeviceInfo.refreshHz);
             if (Active != null && Active != this)
                 Debug.LogWarning("[QuestLink] a second QuestLinkXRDriver started; the newest one wins.", this);
             Active = this;
@@ -95,6 +97,7 @@ namespace ElasticSea.QuestLink
             DetachEyes();
             QuestLinkEyes.Release(EyeTexture);
             EyeTexture = null;
+            pacing.Restore();
         }
 
         void OnDestroy() => Shutdown();
@@ -111,6 +114,7 @@ namespace ElasticSea.QuestLink
             {
                 hasDeviceInfo = true;
                 DeviceInfo = info;
+                pacing.Apply(DeviceInfo.refreshHz);
                 if (TargetCamera != null)
                     ConfigureEyes();
             }
