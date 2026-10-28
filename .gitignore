@@ -1,0 +1,7 @@
+# Raw USB captures are large; keep locally, extract fixtures instead
+capture/pcaps/
+*.pcap
+*.pcapng
+capture/STOP
+__pycache__/
+*.pyc
