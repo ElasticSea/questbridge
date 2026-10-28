@@ -40,11 +40,11 @@ Probe ready_mac() {
     return p;
 }
 
-const Check& get(const std::vector<Check>& cs, const std::string& id) {
+// By value: callers pass evaluate()'s temporary
+Check get(const std::vector<Check>& cs, const std::string& id) {
     for (const auto& c : cs)
         if (c.id == id) return c;
-    static Check none{"missing", "", Status::Fail, "", ""};
-    return none;
+    return {"missing", "", Status::Fail, "", ""};
 }
 
 bool has(const std::string& text, const char* part) { return text.find(part) != std::string::npos; }
