@@ -19,10 +19,10 @@ That's all. No replug, no reboot, no Link quit, in any of these cases:
 | Host restarted / app relaunched / Unity Play stopped and started | same | Launch again if a stream was running | yes (soak, orphaned stream) |
 | Earlier host died right after reading the headset's HELLO | BYE → fresh HELLO | none | yes (soak) |
 | Headset slept and woke | BYE → fresh HELLO | none | yes (soak, 15 s sleep) |
-| Link quit in the headset while streaming | headset sends a new HELLO; host restarts phase 1 at once | Launch | unit test only |
+| Link quit in the headset (dialog or stream) | the headset drops its USB function (xrspd logs `REASON_CABLE_UNPLUGGED`); host reopens, BYE → fresh HELLO ~1.4 s later | Launch | yes (bench, 2× quit → Launch → picture) |
 | Headset dropped the stream (BYE, e.g. protocol error) | back to waiting for HELLO, BYE every 3 s until one comes | Launch | unit test only |
 | A handshake step stalls | BYE, start over | none | unit test only |
-| USB unplugged and replugged | reopen within 50 ms, then BYE | Launch | not yet |
+| USB unplugged and replugged | reopen within 50 ms, then BYE | Launch | same path as Link quit; physical replug not tried |
 
 Inside one process (Unity Editor, a player) the native runtime keeps the USB link and the
 headset session across Play sessions, so only a real new stream needs Launch.
