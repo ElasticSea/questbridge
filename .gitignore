@@ -12,3 +12,6 @@ capture/runs/
 # Generated test clips (rebuild with tools/encode_pattern.py or qlenc)
 host/replay/*.json
 !host/replay/meta-idr.json
+
+# Native build output
+native/**/build/

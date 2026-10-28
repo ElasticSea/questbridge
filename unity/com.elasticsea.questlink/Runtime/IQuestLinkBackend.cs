@@ -1,0 +1,23 @@
+using System;
+using UnityEngine;
+
+namespace ElasticSea.QuestLink
+{
+    // Transport-agnostic source of poses and sink for frames. All poses are in Unity convention.
+    public interface IQuestLinkBackend : IDisposable
+    {
+        string Name { get; }
+
+        // Main thread, once per frame.
+        QuestLinkState Poll();
+
+        bool TryGetDeviceInfo(out QuestLinkDeviceInfo info);
+        bool TryGetHeadPose(out QuestLinkPose pose);
+        bool TryGetController(QuestLinkHand hand, out QuestLinkControllerState state);
+        void SendHaptic(QuestLinkHand hand, float amplitude, float durationSeconds);
+
+        // Main thread, after the frame's cameras have rendered. Implementations hand the
+        // texture to the render thread themselves.
+        void SubmitFrame(RenderTexture eyes, QuestLinkPose renderPose, ulong frameIndex);
+    }
+}

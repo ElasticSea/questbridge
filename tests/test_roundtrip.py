@@ -4,6 +4,7 @@ import unittest
 
 from helpers import load, split_messages
 from capnp_codec import encode
+from decode_audio import encode_audio, parse_segment, unpad
 from xrsp import encode_message, pack_transfer
 
 SCENARIOS = ["handshake"]
@@ -77,6 +78,23 @@ class ControlCapnp(unittest.TestCase):
                 i = e["inner"]
                 with self.subTest(sc=sc, t=e["t"]):
                     self.assertEqual(struct.pack("<BBHI", i["type"], i["flags"], i["a"], i["b"]), raw[8:16])
+
+
+class Audio(unittest.TestCase):
+    def test_audio_blocks_reencode(self):
+        """Topic 6: segment table + padded {u64 ts, Data pcm} segment, both ways."""
+        sizes = {}
+        for sc in SCENARIOS:
+            for group in load(sc, "streams"):
+                if group["topic"] != 6:
+                    continue
+                table, seg = (bytes.fromhex(s["raw"]) for s in group["samples"][:2])
+                ts, pcm = parse_segment(unpad(seg[0], seg[8:]))
+                sizes[group["dir"]] = len(pcm)
+                with self.subTest(sc=sc, dir=group["dir"]):
+                    self.assertEqual(encode_audio(ts, pcm, parse_header(table)[2]), (table, seg))
+        # 10 ms at 48 kHz: stereo float32 to the Quest, mono int16 mic back
+        self.assertEqual(sizes, {"pc_to_quest": 480 * 2 * 4, "quest_to_pc": 480 * 2})
 
 
 if __name__ == "__main__":
