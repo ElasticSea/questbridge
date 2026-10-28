@@ -34,7 +34,7 @@ function Invoke-Logged($exe, [string]$argLine, $log, [int]$timeoutS = 1800) {
 function Add-Result($name, $status, $seconds, $detail, $log) {
     $script:results += [pscustomobject]@{ Step = $name; Status = $status; Seconds = [math]::Round($seconds, 1); Detail = $detail; Log = $log }
     $color = @{ PASS = "Green"; FAIL = "Red"; SKIP = "Yellow" }[$status]
-    Write-Host ("[{0}] {1,-22} {2,6:N1}s  {3}" -f $status, $name, $seconds, $detail) -ForegroundColor $color
+    Write-Host ("[{0}] {1,-26} {2,6:N1}s  {3}" -f $status, $name, $seconds, $detail) -ForegroundColor $color
     if ($status -eq "FAIL" -and $log -and (Test-Path $log)) {
         Get-Content $log -Tail 25 | ForEach-Object { Write-Host "    $_" }
         Write-Host "    full log: $log"
