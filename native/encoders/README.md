@@ -29,4 +29,8 @@ NVIDIA H.264 Encoder MFT, 4096x2240 @ 72, Constrained Baseline (constraint flags
   NV12 CPU 8.8 ms, BGRA CPU (parallel convert) 8.7 ms, D3D11 BGRA texture (video processor to
   NV12) 8.4 ms in the MFT, 10.7 ms including the test's 36 MB texture upload.
 - CBR 100 Mbit/s on the test pattern: ~3.3 Mbit/s with P frames, 26.6 Mbit/s all intra (no filler).
+- In-loop deblocking off (`CODECAPI_AVEnableInLoopDeblockFilter=0`, slices get
+  disable_deblocking_filter_idc 1): the Quest decodes each slice on its own decoder. SPS
+  fixed_frame_rate_flag is rewritten to 1 (`h264::set_fixed_frame_rate`). Compare headers with
+  `py tools\h264_fields.py a.h264 b.h264`.
 - Microsoft software MFT ignores slice control: 16 slices of uneven size, so no replay clip.
