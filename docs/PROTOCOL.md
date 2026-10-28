@@ -361,3 +361,37 @@ Wire id = Meta's internal `XrsSessionFeature` value − 1; both sides share the 
 The phase-1 lists (`[0,4,1,2,3,8]` offered, `[1,3,2,4,8]` / `[1,2,0,4,8]` exchanged) probably
 use a different id space; unknown. None of the features turns on hands or controllers; those
 are runtime controls (§7.3).
+
+## 5. Topics
+
+Names are Meta's, from the PC runtime log (`destroying topic N (Name)`; `TOPICS` in
+`tools/xrsp.py`). Meta's PC creates all of them every session. Rates are from an 8.5 s capture
+of the Link home environment (counts include segment-table messages) unless noted.
+
+| Id | Name | Dir | Rate | Format | Status |
+|---|---|---|---|---|---|
+| 0 | (filler) | both | per transfer | zero body (§2.3) | verified |
+| 1 | Builtin | both | ~5/s after setup | inner header + Cap'n Proto / clock (§3.2, §4) | verified |
+| 2 | Command | both | few | 32-byte record `{time, type, value}` (§7.6) | partial |
+| 3 | Pose | – | not seen | – | unknown (superseded by 34) |
+| 4 | Mesh | H→Q | once | Cap'n Proto, 3 data / 2 ptrs (§6.5) | partial |
+| 5 | Video | – | not seen | – | unknown (video uses 10–25) |
+| 6 | Audio | both | 200 msg/s each way | Cap'n Proto `{u64 ts, Data pcm}` (§7.4) | verified |
+| 7 | Haptic | H→Q | once at setup | Cap'n Proto, 3 data / 1 ptr (§7.7) | partial |
+| 8 | Hands | Q→H | 60/s when enabled | packed struct, 1320 B (§7.3) | verified (bench) |
+| 9 | Skeleton | Q→H | 46 msgs once when enabled | packed struct chunks, 4120 B (§7.3) | verified (bench) |
+| 10–25 | Slice0–Slice15 | H→Q | per frame | `EncodedSlice` + H.264 (§6); 10–14 used with 5 slices | verified |
+| 26 | AudioControl | both | once each way | Cap'n Proto, 2 data words (§7.4) | partial |
+| 27 | UserSettingsSync | – | not seen | – | unknown |
+| 28 | InputControl | H→Q | on change | Cap'n Proto, 1 data word (§7.3) | verified (bench) |
+| 29 | Asw | – | not seen | – | unknown (name suggests asynchronous spacewarp) |
+| 30 | Body | Q→H | not seen | – | unknown (body tracking, enabled by InputControl type 2) |
+| 31 | RuntimeIPC | both, mostly Q→H | ~600/s, ~590 B | RIPC state mirror (§7.8) | partial |
+| 32 | CameraStream | Q→H | not seen | camera images (§7.9) | unknown |
+| 33 | Logging | Q→H | ~7/s, ~190 B | Cap'n Proto, padded to 1 KiB; telemetry/stats | unknown |
+| 34 | Pose2 | Q→H | ~543 poses/s | Cap'n Proto head pose (§7.1) | verified |
+| 35 | DeviceInput | Q→H | ~543/s | Cap'n Proto, 2 data / 1 ptr (§7.2) | partial |
+
+Both binaries also hold a newer static table (`… 33 Logging, 35 UnreliablePose, 36 Pose2,
+37 DeviceInput, 38 FrameFeedback`) that is not used with this firmware/runtime pair; the log and
+captures agree on the ids above. Expect renumbering with future firmware.
